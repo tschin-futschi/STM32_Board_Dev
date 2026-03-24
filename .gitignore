@@ -1,0 +1,19 @@
+# 构建输出
+build/
+
+# 编译中间文件
+*.o
+*.d
+*.map
+*.elf
+*.hex
+*.bin
+*.lst
+
+# IDE 配置（按需保留）
+.vscode/settings.json
+.idea/
+
+# Windows 垃圾文件
+Thumbs.db
+Desktop.ini

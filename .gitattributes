@@ -1,0 +1,17 @@
+# 所有文本文件统一用 LF 存储
+* text=auto eol=lf
+
+# 明确指定源码和脚本用 LF
+*.c     text eol=lf
+*.h     text eol=lf
+*.s     text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+Makefile text eol=lf
+
+# 二进制文件不转换
+*.a     binary
+*.o     binary
+*.elf   binary
+*.bin   binary
+*.hex   binary
