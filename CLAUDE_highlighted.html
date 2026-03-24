@@ -5,54 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STM32F429ZG 电机调试板 — CLAUDE.md</title>
 <style>
-  body { font-family: -apple-system, "Segoe UI", sans-serif; max-width: 960px; margin: 0 auto; padding: 24px 32px; color: #1a1a1a; line-height: 1.7; }
-  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  body { font-family: -apple-system, "Segoe UI", sans-serif; max-width: 980px; margin: 0 auto; padding: 24px 32px; color: #1a1a1a; line-height: 1.7; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
   h2 { font-size: 1.25em; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 2em; }
   h3 { font-size: 1.05em; margin-top: 1.5em; }
   h4 { font-size: 0.95em; margin-top: 1.2em; color: #444; }
-  blockquote { border-left: 4px solid #f0a500; background: #fffbf0; margin: 0; padding: 10px 16px; border-radius: 0 6px 6px 0; }
-  pre { background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-size: 0.88em; line-height: 1.55; }
+  blockquote { border-left: 4px solid #f0a500; background: #fffbf0; margin: 8px 0; padding: 10px 16px; border-radius: 0 6px 6px 0; font-size: 0.93em; }
+  pre { background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-size: 0.87em; line-height: 1.55; }
   code { font-family: "Cascadia Code", "Fira Code", "Consolas", monospace; }
-  p code, li code, td code { background: #eef; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
-  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  p code, li code, td code, blockquote code { background: #eef; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.92em; }
   th { background: #f0f0f0; }
-  th, td { border: 1px solid #ccc; padding: 7px 12px; font-size: 0.92em; }
+  th, td { border: 1px solid #ccc; padding: 7px 12px; }
   hr { border: none; border-top: 1px solid #ddd; margin: 2em 0; }
   ul, ol { padding-left: 1.5em; }
   li { margin: 3px 0; }
-
-  /* ── 红色高亮：开发者必须填写的内容 ── */
-  .todo {
-    color: #c0392b;
-    font-weight: 600;
-    background: #fdecea;
-    padding: 0 3px;
-    border-radius: 3px;
-  }
-  .todo-block {
-    border: 2px solid #e74c3c;
-    border-radius: 6px;
-    padding: 14px 16px;
-    background: #fff5f5;
-    margin: 12px 0;
-    font-size: 0.88em;
-    line-height: 1.55;
-  }
-  .todo-block code { font-family: "Cascadia Code", "Fira Code", "Consolas", monospace; }
-  .todo-label {
-    display: inline-block;
-    background: #e74c3c;
-    color: white;
-    font-size: 0.75em;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 4px;
-    margin-bottom: 8px;
-    letter-spacing: 0.05em;
-  }
-  .checklist-todo { color: #c0392b; font-weight: 600; }
-
-  .notice { background: #fff8e1; border-left: 4px solid #f0a500; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.93em; }
+  .pending { display: inline-block; background: #fff3cd; border: 1px solid #f0c040; color: #856404; font-size: 0.75em; font-weight: 600; padding: 1px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+  .default-tag { display: inline-block; background: #e8f5e9; border: 1px solid #81c784; color: #2e7d32; font-size: 0.75em; font-weight: 600; padding: 1px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+  .warn-block { border: 1px solid #f5c542; background: #fffbe6; border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-size: 0.92em; }
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li { padding: 4px 0; }
+  .checklist li::before { content: "☐ "; font-size: 1.1em; color: #555; }
+  .phase-title { font-weight: 600; color: #333; margin: 16px 0 6px; font-size: 0.95em; }
+  .footer { color: #888; font-size: 0.82em; margin-top: 2em; border-top: 1px solid #eee; padding-top: 10px; }
+  .cm { color: #6a9955; }
 </style>
 </head>
 <body>
@@ -61,22 +37,20 @@
 <blockquote>本文件是 Claude Code 的行为契约，每次开始任务前必须完整读取。<br>非经开发者明确确认，任何约定不得自行修改。</blockquote>
 
 <hr>
-
 <h2>1. 项目定位</h2>
-<p>本板为<strong>通用电机调试板</strong>，唯一职责：</p>
 <pre>PC 上位机
-    ↕  UART 双向（指令下发 + 状态数据定期上报）
+    ↕  UART 双向（指令下发 + 状态数据定期上报 + 多通道波形数据上报）
 STM32F429ZG
     ↕  I2C
 电机驱动 IC（型号不固定，均通过 I2C 通信）</pre>
 <ul>
-  <li>STM32 <strong>不做闭环控制</strong>，无控制周期定时器需求</li>
+  <li>STM32 <strong>不做闭环控制</strong></li>
   <li>功能：解析上位机指令 → 读写电机 IC 寄存器 → 将结果上报上位机</li>
-  <li>电机 IC 可随时更换，切换只需修改 <code>bsp_i2c.h</code> 中的地址宏</li>
+  <li>支持多通道数据定时上报，用于上位机波形显示（示波器功能）</li>
+  <li>电机 IC 可随时更换，地址通过运行时变量动态设置，无需重新编译</li>
 </ul>
 
 <hr>
-
 <h2>2. 硬件规格</h2>
 
 <h3>2.1 MCU 核心参数</h3>
@@ -89,8 +63,8 @@ STM32F429ZG
 <tr><td>SRAM1</td><td>112 KB</td><td>0x2000_0000，主运行内存</td></tr>
 <tr><td>SRAM2</td><td>16 KB</td><td>0x2001_C000</td></tr>
 <tr><td>CCM</td><td>64 KB</td><td>0x1000_0000，<strong>CPU 独占，DMA 绝对禁止访问</strong></td></tr>
-<tr><td>APB1</td><td>45 MHz</td><td>I2C1/2/3、USART2/3/4/5 挂此总线</td></tr>
-<tr><td>APB2</td><td>90 MHz</td><td>USART1/6 挂此总线</td></tr>
+<tr><td>APB1</td><td>45 MHz</td><td>I2C1/2/3、USART2/3/4/5、TIM2-7/12-14 挂此总线</td></tr>
+<tr><td>APB2</td><td>90 MHz</td><td>USART1/6、TIM1/8-11 挂此总线</td></tr>
 </table>
 
 <h3>2.2 Flash Sector 分布</h3>
@@ -110,105 +84,110 @@ STM32F429ZG
 <tr><td>LED2</td><td>PG14</td><td>高电平点亮，错误指示</td></tr>
 </table>
 
-<h4>UART — 上位机双向通信（引脚开放配置）</h4>
-<div class="notice">所有硬件参数集中在 <code>BSP/Inc/bsp_uart.h</code> 宏定义中。换引脚只改此处，驱动逻辑代码不需要动。<br>
-<strong>Claude 遇到仍含 <code>_TODO_</code> 的宏时，必须停下来提示开发者填写，不得自行假设。</strong></div>
+<h4>UART — 上位机双向通信 <span class="default-tag">默认 USART1 PA9/PA10</span></h4>
+<blockquote>所有硬件参数集中在 <code>BSP/Inc/bsp_uart.h</code> 宏定义中。换引脚只改此处，驱动逻辑代码不需要动。</blockquote>
+<pre><code><span class="cm">/* 外设 */</span>
+#define BSP_UART_PERIPH             USART1
 
-<div class="todo-block">
-<span class="todo-label">⚠ 开发者必须填写</span>
-<pre style="background:transparent;border:none;padding:0;margin:0;"><code><span style="color:#888">/* 外设选择：USART1 / USART2 / USART3 / UART4 / UART5 */</span>
-#define BSP_UART_PERIPH             <span class="todo">USART_TODO_</span>
+<span class="cm">/* TX 引脚：PA9 */</span>
+#define BSP_UART_TX_PORT            GPIOA
+#define BSP_UART_TX_PIN             GPIO_Pin_9
+#define BSP_UART_TX_PINSRC          GPIO_PinSource9
 
-<span style="color:#888">/* TX 引脚 */</span>
-#define BSP_UART_TX_PORT            <span class="todo">GPIO_TODO_PORT</span>    <span style="color:#888">/* 例：GPIOA */</span>
-#define BSP_UART_TX_PIN             <span class="todo">GPIO_TODO_PIN</span>     <span style="color:#888">/* 例：GPIO_Pin_9 */</span>
-#define BSP_UART_TX_PINSRC          <span class="todo">GPIO_TODO_PINSRC</span>  <span style="color:#888">/* 例：GPIO_PinSource9 */</span>
+<span class="cm">/* RX 引脚：PA10 */</span>
+#define BSP_UART_RX_PORT            GPIOA
+#define BSP_UART_RX_PIN             GPIO_Pin_10
+#define BSP_UART_RX_PINSRC          GPIO_PinSource10
 
-<span style="color:#888">/* RX 引脚 */</span>
-#define BSP_UART_RX_PORT            <span class="todo">GPIO_TODO_PORT</span>
-#define BSP_UART_RX_PIN             <span class="todo">GPIO_TODO_PIN</span>
-#define BSP_UART_RX_PINSRC          <span class="todo">GPIO_TODO_PINSRC</span>
+<span class="cm">/* GPIO 时钟与复用功能 */</span>
+#define BSP_UART_GPIO_CLK           RCC_AHB1Periph_GPIOA
+#define BSP_UART_AF                 GPIO_AF_USART1       <span class="cm">/* = 7 */</span>
 
-<span style="color:#888">/* GPIO 时钟与复用功能 */</span>
-#define BSP_UART_GPIO_CLK           <span class="todo">RCC_TODO_</span>         <span style="color:#888">/* 例：RCC_AHB1Periph_GPIOA */</span>
-#define BSP_UART_AF                 <span class="todo">GPIO_AF_TODO_</span>     <span style="color:#888">/* 见下方速查表 */</span>
+<span class="cm">/* 外设时钟：USART1 挂 APB2 */</span>
+#define BSP_UART_RCC_APB2           RCC_APB2Periph_USART1
 
-<span style="color:#888">/* 外设时钟（USART1/6 → APB2；其余 → APB1，二选一取消注释）*/</span>
-<span class="todo">// #define BSP_UART_RCC_APB2        RCC_APB2Periph_TODO_</span>
-<span class="todo">// #define BSP_UART_RCC_APB1        RCC_APB1Periph_TODO_</span>
+<span class="cm">/* 中断 */</span>
+#define BSP_UART_IRQn               USART1_IRQn
+#define BSP_UART_IRQHandler         USART1_IRQHandler
 
-<span style="color:#888">/* 中断 */</span>
-#define BSP_UART_IRQn               <span class="todo">TODO_IRQn</span>         <span style="color:#888">/* 例：USART1_IRQn */</span>
-#define BSP_UART_IRQHandler         <span class="todo">TODO_IRQHandler</span>   <span style="color:#888">/* 例：USART1_IRQHandler */</span>
-
-<span style="color:#888">/* 波特率默认值（固定，无需修改）*/</span>
+<span class="cm">/* 波特率默认值 */</span>
 #define BSP_UART_BAUDRATE_DEFAULT   115200U</code></pre>
-</div>
 
-<p><strong>AF 编号速查：</strong></p>
+<p><strong>换引脚参考：</strong></p>
 <table>
-<tr><th>外设</th><th>AF 值</th><th>常用引脚</th></tr>
-<tr><td>USART1</td><td>GPIO_AF_USART1 = 7</td><td>TX=PA9, RX=PA10</td></tr>
-<tr><td>USART2</td><td>GPIO_AF_USART2 = 7</td><td>TX=PA2, RX=PA3</td></tr>
-<tr><td>USART3</td><td>GPIO_AF_USART3 = 7</td><td>TX=PB10, RX=PB11</td></tr>
-<tr><td>UART4</td><td>GPIO_AF_UART4 = 8</td><td>TX=PA0, RX=PA1</td></tr>
-</table>
-<table>
-<tr><th>外设</th><th>时钟域</th><th>时钟使能宏</th></tr>
-<tr><td>USART1 / USART6</td><td>APB2</td><td>RCC_APB2Periph_USARTx</td></tr>
-<tr><td>USART2 / USART3 / UART4 / UART5</td><td>APB1</td><td>RCC_APB1Periph_USARTx</td></tr>
+<tr><th>外设</th><th>AF</th><th>TX</th><th>RX</th><th>时钟域</th></tr>
+<tr><td>USART1</td><td>7</td><td>PA9</td><td>PA10</td><td>APB2</td></tr>
+<tr><td>USART2</td><td>7</td><td>PA2</td><td>PA3</td><td>APB1</td></tr>
+<tr><td>USART3</td><td>7</td><td>PB10</td><td>PB11</td><td>APB1</td></tr>
+<tr><td>UART4</td><td>8</td><td>PA0</td><td>PA1</td><td>APB1</td></tr>
 </table>
 
-<h4>I2C — 电机驱动 IC（引脚与速率开放配置）</h4>
-<div class="notice">所有硬件参数集中在 <code>BSP/Inc/bsp_i2c.h</code> 宏定义中。换引脚或换电机 IC 只改此处。</div>
+<h4>I2C — 电机驱动 IC <span class="default-tag">默认 I2C1 PB6/PB7</span></h4>
+<blockquote>所有硬件参数集中在 <code>BSP/Inc/bsp_i2c.h</code> 宏定义中。</blockquote>
+<pre><code><span class="cm">/* 外设 */</span>
+#define BSP_I2C_PERIPH              I2C1
 
-<div class="todo-block">
-<span class="todo-label">⚠ 开发者必须填写</span>
-<pre style="background:transparent;border:none;padding:0;margin:0;"><code><span style="color:#888">/* 外设选择：I2C1 / I2C2 / I2C3 */</span>
-#define BSP_I2C_PERIPH              <span class="todo">I2C_TODO_</span>
+<span class="cm">/* SCL 引脚：PB6 */</span>
+#define BSP_I2C_SCL_PORT            GPIOB
+#define BSP_I2C_SCL_PIN             GPIO_Pin_6
+#define BSP_I2C_SCL_PINSRC          GPIO_PinSource6
 
-<span style="color:#888">/* SCL 引脚 */</span>
-#define BSP_I2C_SCL_PORT            <span class="todo">GPIO_TODO_PORT</span>
-#define BSP_I2C_SCL_PIN             <span class="todo">GPIO_TODO_PIN</span>
-#define BSP_I2C_SCL_PINSRC          <span class="todo">GPIO_TODO_PINSRC</span>
+<span class="cm">/* SDA 引脚：PB7 */</span>
+#define BSP_I2C_SDA_PORT            GPIOB
+#define BSP_I2C_SDA_PIN             GPIO_Pin_7
+#define BSP_I2C_SDA_PINSRC          GPIO_PinSource7
 
-<span style="color:#888">/* SDA 引脚 */</span>
-#define BSP_I2C_SDA_PORT            <span class="todo">GPIO_TODO_PORT</span>
-#define BSP_I2C_SDA_PIN             <span class="todo">GPIO_TODO_PIN</span>
-#define BSP_I2C_SDA_PINSRC          <span class="todo">GPIO_TODO_PINSRC</span>
+<span class="cm">/* GPIO 时钟与复用功能（I2C1/2/3 的 AF 编号均为 4）*/</span>
+#define BSP_I2C_GPIO_CLK            RCC_AHB1Periph_GPIOB
+#define BSP_I2C_AF                  GPIO_AF_I2C1         <span class="cm">/* = 4，I2C1/2/3 均相同 */</span>
 
-<span style="color:#888">/* GPIO 时钟（I2C1/2/3 的 AF 编号均为 4，直接用 GPIO_AF_I2C1）*/</span>
-#define BSP_I2C_GPIO_CLK            <span class="todo">RCC_TODO_</span>         <span style="color:#888">/* 例：RCC_AHB1Periph_GPIOB */</span>
-#define BSP_I2C_AF                  GPIO_AF_I2C1      <span style="color:#888">/* 固定值，无需修改 */</span>
+<span class="cm">/* 外设时钟：I2C1/2/3 均挂 APB1 */</span>
+#define BSP_I2C_RCC_APB1            RCC_APB1Periph_I2C1
 
-<span style="color:#888">/* 外设时钟（I2C1/2/3 均挂 APB1）*/</span>
-#define BSP_I2C_RCC_APB1            <span class="todo">RCC_APB1Periph_TODO_</span>  <span style="color:#888">/* 例：RCC_APB1Periph_I2C1 */</span>
+<span class="cm">/* 中断 */</span>
+#define BSP_I2C_EV_IRQn             I2C1_EV_IRQn
+#define BSP_I2C_ER_IRQn             I2C1_ER_IRQn
+#define BSP_I2C_EV_IRQHandler       I2C1_EV_IRQHandler
+#define BSP_I2C_ER_IRQHandler       I2C1_ER_IRQHandler
 
-<span style="color:#888">/* 中断 */</span>
-#define BSP_I2C_EV_IRQn             <span class="todo">TODO_EV_IRQn</span>      <span style="color:#888">/* 例：I2C1_EV_IRQn */</span>
-#define BSP_I2C_ER_IRQn             <span class="todo">TODO_ER_IRQn</span>      <span style="color:#888">/* 例：I2C1_ER_IRQn */</span>
-#define BSP_I2C_EV_IRQHandler       <span class="todo">TODO_EV_IRQHandler</span>
-#define BSP_I2C_ER_IRQHandler       <span class="todo">TODO_ER_IRQHandler</span>
+<span class="cm">/* I2C 速率与超时 */</span>
+#define BSP_I2C_SPEED               400000U    <span class="cm">/* 400 kHz 快速模式，可改为 100000U */</span>
+#define BSP_I2C_TIMEOUT             10000U     <span class="cm">/* 软件超时计数上限 */</span></code></pre>
 
-<span style="color:#888">/* I2C 速率：标准模式 100000U / 快速模式 400000U */</span>
-#define BSP_I2C_SPEED               <span class="todo">400000U</span>           <span style="color:#888">/* 默认 400 kHz，按需修改 */</span>
-#define BSP_I2C_TIMEOUT             10000U            <span style="color:#888">/* 固定，无需修改 */</span>
-
-<span style="color:#888">/* 电机 IC 配置（换型号只改这两行）*/</span>
-#define BSP_MOTOR_IC_ADDR           <span class="todo">0x00U</span>             <span style="color:#888">/* 填写 7-bit 地址 */</span>
-#define BSP_MOTOR_IC_NAME           <span class="todo">"UNKNOWN"</span>         <span style="color:#888">/* 填写型号字符串 */</span></code></pre>
-</div>
-
-<p><strong>I2C 常用引脚速查：</strong></p>
+<p><strong>换引脚参考：</strong></p>
 <table>
-<tr><th>外设</th><th>SCL</th><th>SDA</th></tr>
-<tr><td>I2C1</td><td>PB6 或 PB8</td><td>PB7 或 PB9</td></tr>
-<tr><td>I2C2</td><td>PB10 或 PF1</td><td>PB11 或 PF0</td></tr>
-<tr><td>I2C3</td><td>PA8</td><td>PC9</td></tr>
+<tr><th>外设</th><th>SCL</th><th>SDA</th><th>AF</th></tr>
+<tr><td>I2C1</td><td>PB6 或 PB8</td><td>PB7 或 PB9</td><td>4</td></tr>
+<tr><td>I2C2</td><td>PB10 或 PF1</td><td>PB11 或 PF0</td><td>4</td></tr>
+<tr><td>I2C3</td><td>PA8</td><td>PC9</td><td>4</td></tr>
 </table>
+
+<h4>电机 IC 地址（运行时变量）</h4>
+<pre><code><span class="cm">/* bsp_i2c.h 中声明 */</span>
+extern uint8_t g_motorIcAddr;      <span class="cm">/* 当前电机 IC 7-bit 地址，默认 0x00 */</span>
+extern char    g_motorIcName[16];  <span class="cm">/* 当前电机 IC 型号字符串，默认 "UNKNOWN" */</span>
+
+<span class="cm">/* bsp_i2c.c 中定义 */</span>
+uint8_t g_motorIcAddr    = 0x00U;
+char    g_motorIcName[16] = "UNKNOWN";</code></pre>
+<p>上位机通过 <code>CMD_SET_MOTOR_ADDR</code> 命令动态设置，每次上电后重新设置，不做掉电保存。所有 I2C 读写使用 <code>g_motorIcAddr</code>，<strong>禁止硬编码地址</strong>。</p>
+
+<h4>定时器 — 多通道数据采样上报 <span class="default-tag">默认 TIM6</span> <span class="pending">待启用</span></h4>
+<blockquote><strong>Claude 在通讯协议未确定前，不得实现采样上报逻辑，只允许搭建框架。</strong></blockquote>
+<pre><code><span class="cm">/* 定时器选择：TIM6（基本定时器，挂 APB1）*/</span>
+#define BSP_SAMPLE_TIM              TIM6
+#define BSP_SAMPLE_TIM_RCC          RCC_APB1Periph_TIM6
+#define BSP_SAMPLE_TIM_IRQn         TIM6_DAC_IRQn        <span class="cm">/* TIM6 与 DAC 共享向量 */</span>
+#define BSP_SAMPLE_TIM_IRQHandler   TIM6_DAC_IRQHandler  <span class="cm">/* ISR 名称固定为此 */</span>
+
+#define BSP_SAMPLE_FREQ_DEFAULT     100U                 <span class="cm">/* 默认 100 Hz，待定 */</span>
+
+<span class="cm">/* 时钟计算：TIM6 挂 APB1，定时器时钟 = APB1 × 2 = 90 MHz
+ * PSC = 89（90MHz ÷ 90 = 1MHz），ARR = 1MHz ÷ 频率 - 1
+ * 例：100 Hz → ARR = 9999
+ * 注意：TIM6 中断名是 TIM6_DAC_IRQHandler，不是 TIM6_IRQHandler */</span></code></pre>
 
 <hr>
-
 <h2>3. 构建系统</h2>
 
 <h3>3.1 工具链与环境</h3>
@@ -247,7 +226,6 @@ STM32F429xx
 HSE_VALUE=8000000U</code></pre>
 
 <hr>
-
 <h2>4. 目录结构</h2>
 <pre><code>项目根/
 ├── CLAUDE.md
@@ -258,28 +236,32 @@ HSE_VALUE=8000000U</code></pre>
 │   │   ├── stm32f4xx_conf.h      ← SPL 按需 include
 │   │   └── stm32f4xx_it.h
 │   ├── Src/
-│   │   ├── main.c
-│   │   ├── stm32f4xx_it.c        ← 全部 ISR 集中在此
-│   │   ├── system_stm32f4xx.c
-│   │   └── retarget.c
+│   │   ├── main.c                ← 主循环：轮询协议解析，轮询采样上报
+│   │   ├── stm32f4xx_it.c        ← 全部 ISR 集中在此，不得分散
+│   │   ├── system_stm32f4xx.c    ← 时钟配置，不手动修改 PLL 参数
+│   │   └── retarget.c            ← printf 重定向（仅 DEBUG 模式编译）
 │   └── Startup/
 │       └── startup_stm32f429zgtx.s
 ├── BSP/
 │   ├── Inc/
-│   │   ├── bsp_uart.h            ← UART 引脚宏（开发者填写）
-│   │   ├── bsp_i2c.h             ← I2C 引脚/速率/地址宏（开发者填写）
+│   │   ├── bsp_uart.h            ← UART 引脚宏 + 函数声明
+│   │   ├── bsp_i2c.h             ← I2C 引脚宏 + 电机IC地址变量声明 + 函数声明
+│   │   ├── bsp_tim.h             ← 采样定时器宏 + 函数声明
 │   │   └── bsp_led.h
 │   └── Src/
-│       ├── bsp_uart.c
-│       ├── bsp_i2c.c
+│       ├── bsp_uart.c            ← 环形缓冲接收 + DMA 发送
+│       ├── bsp_i2c.c             ← 通用读/写/批量读/扫描，含总线软复位
+│       ├── bsp_tim.c             ← 采样定时器（框架已建，待启用）
 │       └── bsp_led.c
 ├── App/
 │   ├── Inc/
-│   │   ├── app_protocol.h
-│   │   └── app_motor.h
+│   │   ├── app_protocol.h        ← 帧格式定义、命令字枚举（待完善）
+│   │   ├── app_motor.h           ← 电机 IC 操作封装
+│   │   └── app_sample.h          ← 多通道采样调度（待实现）
 │   └── Src/
-│       ├── app_protocol.c
-│       └── app_motor.c
+│       ├── app_protocol.c        ← 帧解析、命令分发、数据上报
+│       ├── app_motor.c           ← 寄存器读写封装，换 IC 只改此文件
+│       └── app_sample.c          ← 多通道采样数据打包上报（待实现）
 ├── StdPeriph_Driver/             ← 只读，禁止修改
 ├── CMSIS/                        ← 只读，禁止修改
 └── Linker/
@@ -293,113 +275,218 @@ HSE_VALUE=8000000U</code></pre>
 </table>
 
 <hr>
-
 <h2>5. SPL 外设库使用规范</h2>
 
 <h3>5.1 stm32f4xx_conf.h 启用清单</h3>
 <pre><code>#include "stm32f4xx_rcc.h"
 #include "stm32f4xx_gpio.h"
-#include "stm32f4xx_usart.h"
-#include "stm32f4xx_i2c.h"
-#include "stm32f4xx_dma.h"
-// #include "stm32f4xx_tim.h"    // 本项目无定时器需求
+#include "stm32f4xx_usart.h"     <span class="cm">// UART 上位机通信</span>
+#include "stm32f4xx_i2c.h"       <span class="cm">// I2C 电机 IC</span>
+#include "stm32f4xx_dma.h"       <span class="cm">// UART TX DMA</span>
+#include "stm32f4xx_tim.h"       <span class="cm">// 采样定时器</span>
+<span class="cm">// #include "stm32f4xx_exti.h"   // 如需外部中断时开启
 // #include "stm32f4xx_adc.h"    // 暂不使用
-#include "misc.h"</code></pre>
+// #include "stm32f4xx_flash.h"  // IAP 时才开启</span>
+#include "misc.h"                <span class="cm">// NVIC / SysTick，始终包含</span></code></pre>
 
 <h3>5.2 时钟使能规则</h3>
 <p><strong>外设初始化函数第一步必须使能 RCC 时钟，Claude 生成代码时不得遗漏。</strong></p>
+<pre><code>RCC_AHB1PeriphClockCmd(BSP_UART_GPIO_CLK,    ENABLE);  <span class="cm">// UART GPIO（GPIOA）</span>
+RCC_AHB1PeriphClockCmd(BSP_I2C_GPIO_CLK,     ENABLE);  <span class="cm">// I2C GPIO（GPIOB）</span>
+RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOG, ENABLE);  <span class="cm">// LED</span>
+RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA2,  ENABLE);  <span class="cm">// USART1 TX 用 DMA2</span>
+RCC_APB2PeriphClockCmd(BSP_UART_RCC_APB2,    ENABLE);  <span class="cm">// USART1</span>
+RCC_APB1PeriphClockCmd(BSP_I2C_RCC_APB1,     ENABLE);  <span class="cm">// I2C1</span>
+RCC_APB1PeriphClockCmd(BSP_SAMPLE_TIM_RCC,   ENABLE);  <span class="cm">// TIM6</span></code></pre>
 
 <h3>5.3 GPIO 复用功能（两步缺一不可）</h3>
-<pre><code>GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;
+<pre><code><span class="cm">// 步骤 1：设置引脚为复用模式</span>
+GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;
 GPIO_Init(GPIOx, &amp;GPIO_InitStruct);
+<span class="cm">// 步骤 2：绑定具体 AF 编号</span>
 GPIO_PinAFConfig(GPIOx, GPIO_PinSourceN, GPIO_AF_xxx);</code></pre>
 
 <hr>
-
 <h2>6. 代码规范</h2>
 
 <h3>6.1 命名规范</h3>
-<pre><code>/* 宏：全大写 + 下划线 */
+<pre><code><span class="cm">/* 宏：全大写 + 下划线 */</span>
 #define BSP_UART_BAUDRATE_DEFAULT   115200U
-#define PROTO_SOF                   0xAAU
+#define PROTO_FRAME_MAX_LEN         128U
 
-/* 类型：PascalCase + _t */
+<span class="cm">/* 类型：PascalCase + _t */</span>
 typedef struct { uint8_t sof; uint8_t len; uint8_t cmd; uint8_t data[64]; uint8_t crc; } Proto_Frame_t;
 
-/* BSP 函数：BSP_模块_动词 */
+<span class="cm">/* BSP 函数：BSP_模块_动词 */</span>
 ErrorStatus BSP_UART_Init(void);
 ErrorStatus BSP_I2C_WriteReg(uint8_t devAddr, uint8_t reg, uint8_t *pData, uint16_t len);
 ErrorStatus BSP_I2C_Scan(uint8_t *pAddrList, uint8_t *pCount);
 
-/* 静态/全局变量：s_ 前缀，ISR 共享加 volatile */
-static volatile uint8_t s_uartRxFlag = 0U;</code></pre>
+<span class="cm">/* App 函数：App_模块_动词 */</span>
+void App_Protocol_Poll(void);
+void App_Sample_Poll(void);
 
-<h3>6.2 BSP 驱动层规则</h3>
+<span class="cm">/* 静态/全局变量：s_ 前缀，ISR 共享加 volatile */</span>
+static volatile uint8_t s_uartRxFlag = 0U;
+static volatile uint8_t s_sampleFlag = 0U;  <span class="cm">// 定时器 ISR 置位，主循环清零</span>
+
+<span class="cm">/* 编译期常量：k_ 前缀 */</span>
+static const uint8_t k_protoSof = 0xAAU;</code></pre>
+
+<h3>6.2 电机 IC 运行时配置</h3>
+<p><strong>电机 IC 地址和名称为运行时变量，不使用宏定义，不做掉电保存。</strong>上位机通过通讯协议动态设置，每次上电后重新设置。</p>
+
+<h3>6.3 BSP 驱动层规则</h3>
 <ul>
-  <li>每个外设一对 <code>bsp_xxx.h / bsp_xxx.c</code></li>
+  <li>每个外设一对 <code>bsp_xxx.h / bsp_xxx.c</code>，放 <code>BSP/</code></li>
   <li><strong>所有硬件参数只在 .h 宏中定义，.c 只引用宏，禁止裸端口/引脚数字</strong></li>
-  <li>初始化函数返回 <code>ErrorStatus</code>（SUCCESS / ERROR）</li>
-  <li>驱动层禁止调用 <code>printf()</code>、<code>Delay_ms()</code>、业务逻辑</li>
+  <li>初始化函数统一返回 <code>ErrorStatus</code>（SUCCESS / ERROR）</li>
+  <li>驱动层禁止调用 <code>printf()</code>、<code>Delay_ms()</code>、业务逻辑、协议解析</li>
 </ul>
 
-<h3>6.4 中断优先级配置</h3>
-<pre><code>NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);  /* main() 第一行，只调用一次 */</code></pre>
+<h3>6.4 应用层规则（App/）</h3>
+<ul>
+  <li><code>app_protocol.c</code>：帧解包/组包、命令字分发、调用 BSP 执行、组织回包</li>
+  <li><code>app_motor.c</code>：I2C 寄存器操作封装，使用 <code>g_motorIcAddr</code> 作为设备地址</li>
+  <li><code>app_sample.c</code>：检查 <code>s_sampleFlag</code>，读取数据，打包上报（待实现）</li>
+  <li>应用层可调用 <code>printf()</code>（<code>#ifdef DEBUG</code> 包裹），BSP 层不可以</li>
+</ul>
+
+<h3>6.5 中断优先级配置</h3>
+<pre><code>NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);  <span class="cm">/* main() 第一行，只调用一次 */</span></code></pre>
 <table>
-<tr><th>抢占优先级</th><th>外设 / 用途</th></tr>
-<tr><td>2</td><td>UART RX（RXNE 中断）</td></tr>
-<tr><td>5</td><td>I2C 事件中断（EV）</td></tr>
-<tr><td>6</td><td>I2C 错误中断（ER）</td></tr>
-<tr><td>10</td><td>UART TX DMA 完成</td></tr>
-<tr><td>15</td><td>SysTick</td></tr>
+<tr><th>抢占优先级</th><th>外设 / 用途</th><th>说明</th></tr>
+<tr><td>0</td><td>保留</td><td>不使用，留给将来硬件保护</td></tr>
+<tr><td>2</td><td>UART RX（RXNE 中断）</td><td>确保不丢接收字节</td></tr>
+<tr><td>5</td><td>I2C 事件中断（EV）</td><td>电机 IC 通信</td></tr>
+<tr><td>6</td><td>I2C 错误中断（ER）</td><td>总线错误处理</td></tr>
+<tr><td>7</td><td>采样定时器中断（TIM6）</td><td>多通道数据采样触发（待启用）</td></tr>
+<tr><td>10</td><td>UART TX DMA 完成</td><td>数据上报发送完成</td></tr>
+<tr><td>15</td><td>SysTick</td><td>毫秒计时</td></tr>
 </table>
 
-<h3>6.5 ISR 规则</h3>
+<h3>6.6 ISR 编写规则</h3>
+<pre><code><span class="cm">/* UART 接收：只写环形缓冲区 */</span>
+void USART1_IRQHandler(void)
+{
+    if (USART_GetITStatus(BSP_UART_PERIPH, USART_IT_RXNE) != RESET)
+    {
+        uint8_t byte = (uint8_t)USART_ReceiveData(BSP_UART_PERIPH);
+        RingBuf_Push(&amp;s_rxRing, byte);
+    }
+}
+
+<span class="cm">/* 采样定时器：只置标志 */</span>
+void TIM6_DAC_IRQHandler(void)
+{
+    if (TIM_GetITStatus(BSP_SAMPLE_TIM, TIM_IT_Update) != RESET)
+    {
+        TIM_ClearITPendingBit(BSP_SAMPLE_TIM, TIM_IT_Update);
+        s_sampleFlag = 1U;
+    }
+}</code></pre>
 <p><strong>ISR 内绝对禁止</strong>：<code>printf</code>、<code>Delay_ms</code>、<code>malloc/free</code>、I2C 阻塞传输、任何 <code>while</code> 等待循环。</p>
 
-<hr>
+<h3>6.7 volatile 与临界区</h3>
+<pre><code>static volatile uint8_t s_sampleFlag = 0U;   <span class="cm">// ISR 写，主循环读 → 必须 volatile</span>
 
+__disable_irq();
+RingBuf_Push(&amp;s_rxRing, byte);
+__enable_irq();
+
+uint32_t primask = __get_PRIMASK();           <span class="cm">// 可嵌套场景</span>
+__disable_irq();
+<span class="cm">/* ... */</span>
+__set_PRIMASK(primask);</code></pre>
+
+<hr>
 <h2>7. 各模块实现约定</h2>
 
-<h3>7.1 UART</h3>
+<h3>7.1 UART（bsp_uart.c）</h3>
 <ul>
-  <li>接收：RXNE 中断逐字节写环形缓冲区，主循环解析完整帧</li>
-  <li>发送：DMA 发送，发送前检查 <code>s_uartTxDone</code></li>
-  <li>支持动态修改波特率：9600 / 19200 / 38400 / 57600 / 115200 / 230400 / 460800 / 921600</li>
+  <li><strong>接收</strong>：RXNE 中断逐字节写入环形缓冲区，主循环调用 <code>App_Protocol_Poll()</code> 解析完整帧</li>
+  <li><strong>发送</strong>：DMA 发送，避免阻塞主循环，发送前检查 <code>s_uartTxDone</code> 标志</li>
+  <li><strong>波特率动态修改</strong>：支持 9600 / 19200 / 38400 / 57600 / 115200 / 230400 / 460800 / 921600</li>
 </ul>
 
-<h3>7.2 I2C 通用驱动接口</h3>
+<h3>7.2 I2C 通用驱动（bsp_i2c.c）</h3>
 <pre><code>ErrorStatus BSP_I2C_WriteReg(uint8_t devAddr, uint8_t reg, uint8_t *pData, uint16_t len);
 ErrorStatus BSP_I2C_ReadReg(uint8_t devAddr, uint8_t reg, uint8_t *pData, uint16_t len);
 ErrorStatus BSP_I2C_ReadRegs(uint8_t devAddr, uint8_t startReg, uint8_t *pData, uint16_t len);
 ErrorStatus BSP_I2C_Scan(uint8_t *pAddrList, uint8_t *pCount);</code></pre>
-<p>所有 I2C 等待必须有超时（<code>BSP_I2C_TIMEOUT</code>），超时后自动调用 <code>BSP_I2C_RecoverBus()</code>（9 个 SCL 脉冲 + 软复位）。</p>
+<ul>
+  <li>所有 I2C 等待必须有超时（<code>BSP_I2C_TIMEOUT</code>），超时后自动调用 <code>BSP_I2C_RecoverBus()</code></li>
+  <li>总线锁死恢复：手动产生 9 个 SCL 脉冲 + <code>I2C_SoftwareResetCmd</code></li>
+  <li>7-bit 地址调用时左移 1 位：<code>I2C_Send7bitAddress(BSP_I2C_PERIPH, devAddr &lt;&lt; 1, ...)</code></li>
+</ul>
 
-<h3>7.3 上位机通信协议帧格式</h3>
+<h3>7.3 采样定时器（bsp_tim.c）<span class="pending">框架已建，待启用</span></h3>
+<pre><code>ErrorStatus BSP_SampleTim_Init(uint32_t freq);     <span class="cm">// 初始化，freq 单位 Hz</span>
+ErrorStatus BSP_SampleTim_SetFreq(uint32_t freq);  <span class="cm">// 动态修改频率</span>
+void        BSP_SampleTim_Start(void);
+void        BSP_SampleTim_Stop(void);</code></pre>
+
+<h3>7.4 上位机通信协议（app_protocol.c）<span class="pending">待完善</span></h3>
+<div class="warn-block"><strong>通讯协议细节待后续单独讨论。协议未确定前，Claude 不得基于此生成完整实现。</strong></div>
+<p>帧格式（暂定）：</p>
 <pre><code>[SOF 0xAA][LEN 1B][CMD 1B][DATA N B][CRC8 1B]
-CRC8 覆盖：LEN + CMD + DATA</code></pre>
+  LEN = DATA 字段字节数
+  CRC8 覆盖范围：LEN + CMD + DATA</code></pre>
 <table>
 <tr><th>命令字</th><th>值</th><th>说明</th></tr>
-<tr><td>CMD_PING</td><td>0x01</td><td>心跳，回 ACK + 固件版本</td></tr>
+<tr><td>CMD_PING</td><td>0x01</td><td>心跳</td></tr>
 <tr><td>CMD_I2C_WRITE_REG</td><td>0x10</td><td>写电机 IC 寄存器</td></tr>
 <tr><td>CMD_I2C_READ_REG</td><td>0x11</td><td>读单个寄存器</td></tr>
 <tr><td>CMD_I2C_READ_REGS</td><td>0x12</td><td>批量读寄存器</td></tr>
-<tr><td>CMD_I2C_SCAN</td><td>0x13</td><td>扫描总线设备</td></tr>
+<tr><td>CMD_I2C_SCAN</td><td>0x13</td><td>扫描 I2C 总线</td></tr>
+<tr><td>CMD_SET_MOTOR_ADDR</td><td>0x14</td><td>设置电机 IC 地址和名称</td></tr>
 <tr><td>CMD_REPORT_STATUS</td><td>0x20</td><td>主动上报电机状态</td></tr>
 <tr><td>CMD_SET_BAUDRATE</td><td>0x30</td><td>修改波特率</td></tr>
+<tr><td colspan="3" style="color:#888;font-style:italic">波形采样相关命令待通讯协议讨论后补充</td></tr>
 <tr><td>CMD_ACK</td><td>0xF0</td><td>成功应答</td></tr>
-<tr><td>CMD_NACK</td><td>0xF1</td><td>失败应答 + 错误码</td></tr>
+<tr><td>CMD_NACK</td><td>0xF1</td><td>失败应答</td></tr>
 </table>
 
-<hr>
+<h3>7.5 主循环结构（main.c）</h3>
+<pre><code>int main(void)
+{
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+    SysTick_Config(SystemCoreClock / 1000);
 
+    BSP_LED_Init();
+    BSP_UART_Init();
+    BSP_I2C_Init();
+    <span class="cm">/* BSP_SampleTim_Init(BSP_SAMPLE_FREQ_DEFAULT); */</span>  <span class="cm">/* 通讯协议确定后启用 */</span>
+    App_Protocol_Init();
+
+    while (1)
+    {
+        App_Protocol_Poll();   <span class="cm">/* 解析指令，执行，回包 */</span>
+        App_Sample_Poll();     <span class="cm">/* 检查采样标志，上报波形数据（待实现）*/</span>
+        BSP_LED_Toggle(LED1);  <span class="cm">/* 心跳 */</span>
+    }
+}</code></pre>
+
+<hr>
 <h2>8. Claude Code 操作规范</h2>
 
-<h3>8.1 每次任务开始流程</h3>
+<h3>8.1 每次任务开始的标准流程</h3>
 <ol>
   <li>完整读取本 CLAUDE.md</li>
-  <li>检查 <code>bsp_uart.h</code> 和 <code>bsp_i2c.h</code> 中是否仍含 <code>_TODO_</code> → 有则停止，提示开发者填写</li>
-  <li>Read 工具读取目标文件当前内容</li>
-  <li>说明修改计划 → 执行 → 运行 <code>make DEBUG=1 2>&amp;&1 | tail -30</code> → 汇报结果</li>
+  <li>用 Read 工具读取目标文件当前内容</li>
+  <li>说明修改计划</li>
+  <li>执行修改</li>
+  <li>运行 <code>make DEBUG=1 2&gt;&amp;1 | tail -30</code> 验证编译</li>
+  <li>汇报：修改了哪些文件，编译结果，warning 说明</li>
+</ol>
+
+<h3>8.2 新增代码的标准步骤</h3>
+<ol>
+  <li>确认 <code>stm32f4xx_conf.h</code> 已取消注释对应外设头文件</li>
+  <li>新建 .h：引脚宏 / 类型定义 / 函数声明</li>
+  <li>新建 .c：实现，第一步使能 RCC 时钟</li>
+  <li>在 Makefile <code>C_SOURCES</code> 追加新的 .c 文件路径</li>
+  <li>运行 <code>make DEBUG=1</code> 验证，无报错无 warning</li>
 </ol>
 
 <h3>8.3 禁止行为</h3>
@@ -407,23 +494,32 @@ CRC8 覆盖：LEN + CMD + DATA</code></pre>
 <tr><th>禁止</th><th>原因</th></tr>
 <tr><td>修改 StdPeriph_Driver/ 或 CMSIS/</td><td>只读库</td></tr>
 <tr><td>使用 HAL / LL API</td><td>项目统一使用 SPL</td></tr>
-<tr><td>BSP 层写业务逻辑或协议解析</td><td>违反分层原则</td></tr>
-<tr><td>ISR 中调用阻塞函数</td><td>破坏实时性</td></tr>
+<tr><td>在 BSP 层写业务逻辑或协议解析</td><td>违反分层原则</td></tr>
+<tr><td>ISR 中调用任何阻塞函数</td><td>破坏实时性</td></tr>
 <tr><td>外设操作前未使能 RCC 时钟</td><td>触发 HardFault</td></tr>
-<tr><td>.c 文件出现裸引脚数字</td><td>必须引用 .h 宏</td></tr>
-<tr><td>宏含 _TODO_ 时自行假设生成代码</td><td>必须先让开发者填写</td></tr>
-<tr><td>Makefile 使用反斜杠或 %VAR%</td><td>MSYS2 不兼容</td></tr>
+<tr><td>.c 文件中出现裸端口/引脚数字</td><td>必须引用 .h 中的宏</td></tr>
+<tr><td>使用宏硬编码电机 IC 地址</td><td>必须用 g_motorIcAddr 运行时变量</td></tr>
+<tr><td>协议未确定前实现完整采样上报逻辑</td><td>等通讯协议讨论完成后再实现</td></tr>
+<tr><td>Makefile / 脚本使用反斜杠路径或 %VAR%</td><td>MSYS2 不兼容</td></tr>
 </table>
 
-<hr>
+<h3>8.4 必须询问开发者的情况</h3>
+<ul>
+  <li>需要新增当前未定义的外设或功能</li>
+  <li>通讯协议帧格式或命令字有疑问</li>
+  <li>分配新的中断优先级（防止冲突）</li>
+  <li>采样定时器相关完整实现（协议未确定前禁止）</li>
+  <li>引脚宏与实际硬件不符时</li>
+</ul>
 
+<hr>
 <h2>9. 调试速查</h2>
 
 <h3>9.1 HardFault 信息采集</h3>
-<pre><code>p/x SCB->CFSR
-p/x SCB->HFSR
-p/x SCB->MMFAR
-p/x SCB->BFAR
+<pre><code>p/x SCB-&gt;CFSR
+p/x SCB-&gt;HFSR
+p/x SCB-&gt;MMFAR
+p/x SCB-&gt;BFAR
 info registers pc lr sp xpsr
 backtrace
 x/8xw $sp</code></pre>
@@ -432,30 +528,43 @@ x/8xw $sp</code></pre>
 <table>
 <tr><th>现象</th><th>优先排查</th></tr>
 <tr><td>I2C BUSY 无法清除</td><td>调用 BSP_I2C_RecoverBus()；检查上拉电阻</td></tr>
-<tr><td>I2C 读回全 0xFF</td><td>设备地址是否正确？是否左移 1 位？</td></tr>
+<tr><td>I2C 读回全 0xFF</td><td>g_motorIcAddr 是否已设置？是否左移 1 位？</td></tr>
 <tr><td>I2C Scan 扫不到设备</td><td>示波器确认波形；地址范围 0x08–0x77</td></tr>
 <tr><td>UART 无响应</td><td>GPIO AF 是否配置？APB1/APB2 时钟是否正确？</td></tr>
-<tr><td>UART 乱码</td><td>波特率是否一致？HSE 是否 8 MHz？</td></tr>
+<tr><td>UART 乱码</td><td>波特率与上位机一致？HSE 是否 8 MHz？</td></tr>
 <tr><td>DMA 缓冲区数据异常</td><td>缓冲区是否在 CCM？→ 必须移至 SRAM1</td></tr>
+<tr><td>采样数据不更新</td><td>s_sampleFlag 是否被置位？定时器中断是否使能？</td></tr>
+<tr><td>TIM6 中断不进入</td><td>ISR 名称是否为 TIM6_DAC_IRQHandler？</td></tr>
 <tr><td>编译报 undefined reference</td><td>对应 .c 是否加入 Makefile C_SOURCES？</td></tr>
+<tr><td>MSYS2 路径报错</td><td>Makefile 所有路径改为正斜杠 /</td></tr>
 </table>
 
+<h3>9.3 工具链验证</h3>
+<pre><code>arm-none-eabi-gcc --version   # 期望：12.x 或 13.x
+openocd --version              # 期望：0.12.x
+make --version                 # 期望：GNU Make 4.x</code></pre>
+
 <hr>
+<h2>10. 开发者 Checklist</h2>
 
-<h2>10. 开发者上线前 Checklist</h2>
-
-<p>完成以下所有项目后，方可让 Claude Code 开始生成代码：</p>
-<ul>
-  <li class="checklist-todo">☐ 填写 <code>BSP/Inc/bsp_uart.h</code> 中所有 <code>_TODO_</code> 宏（外设编号、TX/RX 引脚、AF、时钟域、IRQ）</li>
-  <li class="checklist-todo">☐ 填写 <code>BSP/Inc/bsp_i2c.h</code> 中所有 <code>_TODO_</code> 宏（外设编号、SCL/SDA 引脚、时钟域、IRQ）</li>
-  <li class="checklist-todo">☐ 确认 <code>BSP_I2C_SPEED</code>（默认 400000U，IC 只支持 100 kHz 则改为 100000U）</li>
-  <li class="checklist-todo">☐ 填写 <code>BSP_MOTOR_IC_ADDR</code>（电机 IC 的 7-bit 地址）</li>
-  <li class="checklist-todo">☐ 填写 <code>BSP_MOTOR_IC_NAME</code>（型号字符串，用于日志输出）</li>
+<div class="phase-title">第一阶段 — 基础驱动（当前可开始）</div>
+<ul class="checklist">
+  <li>核对 <code>BSP/Inc/bsp_uart.h</code> 引脚宏与实际板子一致（默认 USART1 PA9/PA10）</li>
+  <li>核对 <code>BSP/Inc/bsp_i2c.h</code> 引脚宏与实际板子一致（默认 I2C1 PB6/PB7）</li>
+  <li>确认 <code>BSP_I2C_SPEED</code>（默认 400 kHz，如电机 IC 只支持 100 kHz 则改为 100000U）</li>
 </ul>
 
-<hr>
-<p style="color:#888;font-size:0.85em;">MCU: STM32F429ZG | 库: STM32F4xx SPL V1.8.0 | 构建: GNU Make | 环境: MSYS2/MinGW<br>
-定位: 通用电机调试板（无闭环控制）| 通信: UART 双向 + I2C 通用读写</p>
+<div class="phase-title">第二阶段 — 通讯协议确定后</div>
+<ul class="checklist">
+  <li>完善 <code>app_protocol.h</code> 命令字定义</li>
+  <li>确认采样定时器频率，启用 <code>BSP_SampleTim_Init()</code></li>
+  <li>实现 <code>app_sample.c</code> 多通道采样上报逻辑</li>
+</ul>
+
+<div class="footer">
+  MCU: STM32F429ZG | 库: STM32F4xx SPL V1.8.0 | 构建: GNU Make | 环境: MSYS2/MinGW<br>
+  定位: 通用电机调试板（无闭环控制）| 通信: UART 双向 + I2C 通用读写 + 多通道波形上报（待实现）
+</div>
 
 </body>
 </html>
