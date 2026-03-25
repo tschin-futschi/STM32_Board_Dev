@@ -16,7 +16,24 @@ void NMI_Handler(void)
 
 void HardFault_Handler(void)
 {
-    while (1) {}
+    volatile uint32_t i;
+
+    /* Enable GPIOF clock — RCC AHB1ENR bit 5 */
+    RCC->AHB1ENR |= (1U << 5);
+    /* Brief delay for clock to stabilize */
+    (void)RCC->AHB1ENR;
+
+    /* PF13 as push-pull output: MODER[27:26] = 01 */
+    GPIOF->MODER &= ~(3U << (13 * 2));
+    GPIOF->MODER |=  (1U << (13 * 2));
+    GPIOF->OTYPER &= ~(1U << 13);
+
+    /* Fast blink ~100ms interval — unmistakable fault indicator */
+    while (1)
+    {
+        GPIOF->ODR ^= (1U << 13);
+        for (i = 0; i < 600000; i++) {}
+    }
 }
 
 void MemManage_Handler(void)
