@@ -3,16 +3,16 @@
 # Toolchain: arm-none-eabi-gcc (MSYS2/MinGW)
 ######################################################################
 
-# Fix temp dir permission issue on Windows (linker needs writable TEMP)
-export TMPDIR := $(CURDIR)/$(BUILD_DIR)
-export TMP    := $(CURDIR)/$(BUILD_DIR)
-export TEMP   := $(CURDIR)/$(BUILD_DIR)
-
 # Project name
 TARGET = firmware
 
 # Build directory
 BUILD_DIR = build
+
+# Fix temp dir permission issue on Windows (linker needs writable TEMP)
+export TMPDIR := $(CURDIR)/$(BUILD_DIR)
+export TMP    := $(CURDIR)/$(BUILD_DIR)
+export TEMP   := $(CURDIR)/$(BUILD_DIR)
 
 # Debug/Release
 ifdef DEBUG
@@ -142,8 +142,8 @@ $(BUILD_DIR):
 ######################################################################
 
 flash: all
-	openocd -f interface/stlink-v2.cfg -f target/stm32f4x.cfg \
-		-c "program $(BUILD_DIR)/$(TARGET).bin verify reset exit 0x08000000"
+	openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
+		-c "program $(BUILD_DIR)/$(TARGET).elf verify reset exit"
 
 clean:
 	rm -rf $(BUILD_DIR)
