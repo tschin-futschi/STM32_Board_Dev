@@ -9,11 +9,21 @@ build/
 *.hex
 *.bin
 *.lst
+*.su
+*.lss
 
-# IDE 配置（按需保留）
-.vscode/settings.json
+# IDE 配置
+.vscode/
 .idea/
+*.iml
+.settings/
+.project
+.cproject
 
-# Windows 垃圾文件
+# OS 垃圾文件
 Thumbs.db
 Desktop.ini
+.DS_Store
+
+# Claude Code 本地缓存
+.claude/
