@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STM32F429ZGT6 外设配置总览</title>
+<style>
+    :root {
+        --bg: #1a1a2e;
+        --card: #16213e;
+        --accent: #0f3460;
+        --highlight: #e94560;
+        --text: #eee;
+        --text-dim: #aab;
+        --green: #4ecca3;
+        --yellow: #f0c040;
+        --blue: #4dc9f6;
+        --orange: #f67019;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.7;
+        padding: 30px;
+    }
+    h1 {
+        text-align: center;
+        font-size: 2em;
+        margin-bottom: 8px;
+        color: var(--highlight);
+    }
+    .subtitle {
+        text-align: center;
+        color: var(--text-dim);
+        margin-bottom: 40px;
+        font-size: 0.95em;
+    }
+    h2 {
+        color: var(--green);
+        border-left: 4px solid var(--green);
+        padding-left: 12px;
+        margin: 40px 0 16px;
+        font-size: 1.4em;
+    }
+    h3 {
+        color: var(--blue);
+        margin: 20px 0 10px;
+        font-size: 1.1em;
+    }
+
+    /* 时钟树视图 */
+    .clock-tree {
+        background: var(--card);
+        border-radius: 12px;
+        padding: 30px;
+        margin: 20px 0;
+        overflow-x: auto;
+    }
+    .clock-tree pre {
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--text);
+        white-space: pre;
+    }
+    .clock-tree .clk-val { color: var(--yellow); font-weight: bold; }
+    .clock-tree .clk-name { color: var(--green); }
+    .clock-tree .clk-div { color: var(--orange); }
+    .clock-tree .clk-arrow { color: var(--text-dim); }
+
+    /* 内存布局视图 */
+    .memory-map {
+        display: flex;
+        gap: 30px;
+        margin: 20px 0;
+        flex-wrap: wrap;
+    }
+    .mem-block {
+        background: var(--card);
+        border-radius: 10px;
+        padding: 0;
+        min-width: 260px;
+        flex: 1;
+        overflow: hidden;
+    }
+    .mem-block .mem-title {
+        background: var(--accent);
+        padding: 10px 16px;
+        font-weight: bold;
+        font-size: 1.05em;
+    }
+    .mem-bar {
+        margin: 16px;
+        border: 1px solid #444;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    .mem-seg {
+        padding: 8px 12px;
+        font-size: 0.85em;
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid #333;
+    }
+    .mem-seg:last-child { border-bottom: none; }
+    .mem-seg.flash-isr { background: #2d1f3d; }
+    .mem-seg.flash-text { background: #1f2d3d; }
+    .mem-seg.flash-rodata { background: #1f3d2d; }
+    .mem-seg.flash-data-lma { background: #3d2d1f; }
+    .mem-seg.sram-data { background: #3d2d1f; }
+    .mem-seg.sram-bss { background: #2d3d1f; }
+    .mem-seg.sram-stack { background: #3d1f2d; }
+    .mem-seg.sram-free { background: #1a2a1a; }
+
+    /* 表格 */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0 24px;
+        background: var(--card);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    th {
+        background: var(--accent);
+        padding: 12px 16px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 0.92em;
+        color: var(--green);
+    }
+    td {
+        padding: 10px 16px;
+        border-bottom: 1px solid #2a2a4a;
+        font-size: 0.9em;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.03); }
+    code {
+        background: #2a2a4a;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Consolas', monospace;
+        font-size: 0.92em;
+        color: var(--yellow);
+    }
+
+    /* 外设卡片 */
+    .periph-card {
+        background: var(--card);
+        border-radius: 12px;
+        padding: 24px;
+        margin: 16px 0;
+        border-left: 4px solid var(--accent);
+    }
+    .periph-card.active { border-left-color: var(--green); }
+    .periph-card.special { border-left-color: var(--yellow); }
+
+    .tag {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 0.8em;
+        margin-right: 6px;
+    }
+    .tag-active { background: #1a3d2a; color: var(--green); }
+    .tag-cortex { background: #2a2a4d; color: var(--blue); }
+    .tag-config { background: #3d2d1a; color: var(--orange); }
+
+    /* GPIO 引脚视图 */
+    .gpio-visual {
+        background: var(--card);
+        border-radius: 12px;
+        padding: 24px;
+        margin: 16px 0;
+        text-align: center;
+    }
+    .gpio-chip {
+        display: inline-block;
+        background: #222;
+        border: 2px solid #555;
+        border-radius: 8px;
+        padding: 20px 40px;
+        margin: 10px;
+    }
+    .gpio-chip .chip-name {
+        font-size: 1.2em;
+        font-weight: bold;
+        color: var(--blue);
+        margin-bottom: 12px;
+    }
+    .gpio-pin {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 8px 0;
+        padding: 6px 12px;
+        border-radius: 6px;
+    }
+    .gpio-pin.used { background: #1a3d2a; }
+    .pin-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--green);
+    }
+    .pin-dot.off { background: #555; }
+    .pin-name { font-family: monospace; color: var(--yellow); width: 50px; }
+    .pin-func { color: var(--text-dim); font-size: 0.9em; }
+
+    /* 中断优先级视图 */
+    .irq-bar {
+        display: flex;
+        align-items: center;
+        margin: 6px 0;
+        gap: 8px;
+    }
+    .irq-label {
+        width: 180px;
+        text-align: right;
+        font-size: 0.88em;
+        color: var(--text-dim);
+    }
+    .irq-level {
+        height: 24px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        font-size: 0.8em;
+        font-weight: bold;
+        color: #fff;
+    }
+
+    /* 初始化流程 */
+    .flow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+        align-items: center;
+        margin: 16px 0;
+    }
+    .flow-step {
+        background: var(--accent);
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-size: 0.88em;
+        text-align: center;
+        min-width: 120px;
+    }
+    .flow-arrow {
+        color: var(--text-dim);
+        font-size: 1.4em;
+        padding: 0 6px;
+    }
+    .flow-step .step-file {
+        display: block;
+        font-size: 0.78em;
+        color: var(--text-dim);
+        margin-top: 4px;
+    }
+
+    /* 状态指示表 */
+    .led-state {
+        display: flex;
+        gap: 20px;
+        margin: 16px 0;
+        flex-wrap: wrap;
+    }
+    .led-card {
+        background: var(--card);
+        border-radius: 10px;
+        padding: 20px;
+        flex: 1;
+        min-width: 200px;
+        text-align: center;
+    }
+    .led-icon {
+        font-size: 2em;
+        margin-bottom: 8px;
+    }
+    .led-card .led-label {
+        font-weight: bold;
+        margin-bottom: 4px;
+    }
+    .led-card .led-desc {
+        color: var(--text-dim);
+        font-size: 0.88em;
+    }
+
+    .section-divider {
+        border: none;
+        border-top: 1px solid #2a2a4a;
+        margin: 40px 0;
+    }
+
+    .note {
+        background: #2a2a1a;
+        border-left: 3px solid var(--yellow);
+        padding: 10px 16px;
+        margin: 12px 0;
+        font-size: 0.9em;
+        border-radius: 0 6px 6px 0;
+    }
+
+    @media (max-width: 700px) {
+        body { padding: 12px; }
+        .memory-map { flex-direction: column; }
+        .flow { flex-direction: column; align-items: stretch; }
+        .flow-arrow { text-align: center; transform: rotate(90deg); }
+    }
+</style>
+</head>
+<body>
+
+<h1>STM32F429ZGT6 外设配置总览</h1>
+<p class="subtitle">电机调试板 &mdash; 阶段 1 完成时快照 &mdash; 2026-03-25</p>
+
+<!-- ============================================================ -->
+<h2>1. 外设使用总表</h2>
+
+<table>
+<tr>
+    <th>外设</th>
+    <th>类型</th>
+    <th>状态</th>
+    <th>用途</th>
+    <th>配置文件</th>
+</tr>
+<tr>
+    <td><strong>RCC</strong></td>
+    <td><span class="tag tag-config">时钟</span></td>
+    <td>已启用</td>
+    <td>系统时钟配置（HSE → PLL → 180 MHz）</td>
+    <td><code>system_stm32f4xx.c</code></td>
+</tr>
+<tr>
+    <td><strong>FPU</strong></td>
+    <td><span class="tag tag-cortex">Cortex-M4</span></td>
+    <td>已启用</td>
+    <td>硬件浮点单元 CP10/CP11</td>
+    <td><code>system_stm32f4xx.c</code></td>
+</tr>
+<tr>
+    <td><strong>PWR</strong></td>
+    <td><span class="tag tag-config">电源</span></td>
+    <td>已启用</td>
+    <td>电压调节器 Scale 1 + Over-drive（180 MHz 必需）</td>
+    <td><code>system_stm32f4xx.c</code></td>
+</tr>
+<tr>
+    <td><strong>FLASH</strong></td>
+    <td><span class="tag tag-config">存储</span></td>
+    <td>已配置</td>
+    <td>5 等待周期 + 预取 + 指令缓存 + 数据缓存</td>
+    <td><code>system_stm32f4xx.c</code></td>
+</tr>
+<tr>
+    <td><strong>NVIC</strong></td>
+    <td><span class="tag tag-cortex">Cortex-M4</span></td>
+    <td>已配置</td>
+    <td>中断优先级分组（Group 4）</td>
+    <td><code>main.c</code></td>
+</tr>
+<tr>
+    <td><strong>SysTick</strong></td>
+    <td><span class="tag tag-cortex">Cortex-M4</span></td>
+    <td>已启用</td>
+    <td>1 ms 系统节拍定时器</td>
+    <td><code>bsp_tick.c</code></td>
+</tr>
+<tr>
+    <td><strong>GPIOF</strong></td>
+    <td><span class="tag tag-active">GPIO</span></td>
+    <td>已启用</td>
+    <td>PF13 → LED 心跳指示</td>
+    <td><code>bsp_led.c</code></td>
+</tr>
+</table>
+
+<!-- ============================================================ -->
+<hr class="section-divider">
+<h2>2. 时钟树</h2>
+
+<div class="clock-tree"><pre>
+<span class="clk-name">HSE 晶振</span>                          <span class="clk-name">SYSCLK</span>                         <span class="clk-name">总线时钟</span>
+  <span class="clk-val">8 MHz</span>
+    │
+    ▼
+┌─────────┐   ┌────────────────────────┐   ┌──────────┐      ┌──────────────┐
+│ <span class="clk-div">PLL_M=8</span> │──▶│ VCO = 1 MHz × <span class="clk-div">PLL_N</span>  │──▶│ <span class="clk-div">PLL_P=2</span> │─────▶│ <span class="clk-name">SYSCLK</span>       │
+│  ÷ 8    │   │       = 1 × <span class="clk-val">360</span>       │   │  ÷ 2    │      │ <span class="clk-val">180 MHz</span>      │
+└─────────┘   │       = <span class="clk-val">360 MHz</span>      │   └──────────┘      └──────┬───────┘
+              └────────────────────────┘                             │
+                                                                     ├──▶ <span class="clk-name">AHB</span>   <span class="clk-div">÷1</span>  = <span class="clk-val">180 MHz</span>  (HCLK)
+          ┌────────────────────────┐                                 │
+          │ <span class="clk-name">Over-Drive</span>: <span class="clk-val">已启用</span>      │                                 ├──▶ <span class="clk-name">APB2</span>  <span class="clk-div">÷2</span>  = <span class="clk-val">90 MHz</span>   (USART1, TIM1/8-11)
+          │ <span class="clk-name">电压调节器</span>: Scale 1     │                                 │     定时器 ×2 = <span class="clk-val">180 MHz</span>
+          │ <span class="clk-name">Flash</span>: <span class="clk-val">5 WS</span> + 预取    │                                 │
+          │         + I-Cache      │                                 └──▶ <span class="clk-name">APB1</span>  <span class="clk-div">÷4</span>  = <span class="clk-val">45 MHz</span>   (I2C1, USART2-5, TIM2-7)
+          │         + D-Cache      │                                       定时器 ×2 = <span class="clk-val">90 MHz</span>
+          └────────────────────────┘
+
+<span class="clk-name">SysTick</span> = HCLK = <span class="clk-val">180 MHz</span>  →  Reload = 180000 - 1  →  中断周期 = <span class="clk-val">1 ms</span>
+</pre></div>
+
+<div class="note">
+    <strong>PLL 计算公式：</strong><br>
+    VCO_input = HSE / PLL_M = 8 / 8 = <strong>1 MHz</strong><br>
+    VCO_output = VCO_input × PLL_N = 1 × 360 = <strong>360 MHz</strong><br>
+    SYSCLK = VCO_output / PLL_P = 360 / 2 = <strong>180 MHz</strong>
+</div>
+
+<!-- ============================================================ -->
+<hr class="section-divider">
+<h2>3. 内存布局</h2>
+
+<div class="memory-map">
+    <div class="mem-block">
+        <div class="mem-title">FLASH &mdash; 1 MB @ 0x0800_0000</div>
+        <div class="mem-bar">
+            <div class="mem-seg flash-isr">
+                <span>.isr_vector</span>
+                <span>中断向量表</span>
+            </div>
+            <div class="mem-seg flash-text">
+                <span>.text</span>
+                <span>程序代码</span>
+            </div>
+            <div class="mem-seg flash-rodata">
+                <span>.rodata</span>
+                <span>只读常量</span>
+            </div>
+            <div class="mem-seg flash-data-lma">
+                <span>.data (LMA)</span>
+                <span>已初始化变量的初始值</span>
+            </div>
+        </div>
+        <div style="padding: 0 16px 12px; font-size: 0.82em; color: var(--text-dim);">
+            当前占用：text=1484 B, data=12 B
+        </div>
+    </div>
+
+    <div class="mem-block">
+        <div class="mem-title">SRAM1 &mdash; 112 KB @ 0x2000_0000</div>
+        <div class="mem-bar">
+            <div class="mem-seg sram-data">
+                <span>.data (VMA)</span>
+                <span>已初始化全局/静态变量</span>
+            </div>
+            <div class="mem-seg sram-bss">
+                <span>.bss</span>
+                <span>零初始化变量（2084 B）</span>
+            </div>
+            <div class="mem-seg sram-free">
+                <span>（空闲）</span>
+                <span>~110 KB 可用</span>
+            </div>
+            <div class="mem-seg sram-stack">
+                <span>Stack ↓</span>
+                <span>2 KB, 栈顶 0x2001_C000</span>
+            </div>
+        </div>
+        <div style="padding: 0 16px 12px; font-size: 0.82em; color: var(--text-dim);">
+            堆 = 0（禁止 malloc/free）| 栈从 SRAM1 顶部向下生长
+        </div>
+    </div>
+
+    <div class="mem-block">
+        <div class="mem-title">CCM &mdash; 64 KB @ 0x1000_0000</div>
+        <div class="mem-bar">
+            <div class="mem-seg" style="background: #1a1a2a;">
+                <span>（未使用）</span>
+                <span>DMA 不可访问</span>
+            </div>
+        </div>
+        <div style="padding: 0 16px 12px; font-size: 0.82em; color: var(--text-dim);">
+            仅 CPU 可访问，适合放纯计算数据
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<hr class="section-divider">
+<h2>4. 各外设详细配置</h2>
+
+<!-- RCC -->
+<div class="periph-card active">
+    <h3>4.1 RCC &mdash; 时钟控制</h3>
+    <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>时钟源</td><td><code>HSE 8 MHz</code></td><td>外部高速晶振</td></tr>
+    <tr><td>PLL_M</td><td><code>8</code></td><td>VCO 输入 = HSE / 8 = 1 MHz</td></tr>
+    <tr><td>PLL_N</td><td><code>360</code></td><td>VCO 输出 = 1 × 360 = 360 MHz</td></tr>
+    <tr><td>PLL_P</td><td><code>2</code></td><td>SYSCLK = 360 / 2 = 180 MHz</td></tr>
+    <tr><td>PLL_Q</td><td><code>7</code></td><td>USB OTG FS = 360 / 7 ≈ 51.4 MHz（未使用）</td></tr>
+    <tr><td>AHB 分频</td><td><code>÷1</code></td><td>HCLK = 180 MHz</td></tr>
+    <tr><td>APB1 分频</td><td><code>÷4</code></td><td>PCLK1 = 45 MHz（定时器 ×2 = 90 MHz）</td></tr>
+    <tr><td>APB2 分频</td><td><code>÷2</code></td><td>PCLK2 = 90 MHz（定时器 ×2 = 180 MHz）</td></tr>
+    </table>
+    <p style="font-size:0.88em; color:var(--text-dim);">
+        配置位置：<code>system_stm32f4xx.c</code> → <code>SetSysClock()</code>，启动时由 <code>SystemInit()</code> 调用
+    </p>
+</div>
+
+<!-- FPU -->
+<div class="periph-card">
+    <h3>4.2 FPU &mdash; 浮点单元</h3>
+    <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>状态</td><td><code>Full Access</code></td><td>CP10、CP11 均开启完全访问</td></tr>
+    <tr><td>编译选项</td><td><code>-mfpu=fpv4-sp-d16 -mfloat-abi=hard</code></td><td>单精度硬浮点</td></tr>
+    <tr><td>寄存器</td><td><code>SCB->CPACR |= (3UL<<20) | (3UL<<22)</code></td><td>SystemInit() 中设置</td></tr>
+    </table>
+</div>
+
+<!-- PWR -->
+<div class="periph-card">
+    <h3>4.3 PWR &mdash; 电源控制</h3>
+    <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>时钟使能</td><td><code>RCC->APB1ENR |= RCC_APB1ENR_PWREN</code></td><td>APB1 总线上</td></tr>
+    <tr><td>电压调节器</td><td><code>Scale 1 模式</code></td><td>PWR_CR_VOS = 1，支持最高 180 MHz</td></tr>
+    <tr><td>Over-Drive</td><td><code>ODEN + ODSWEN</code></td><td>180 MHz 必须启用，等待 ODRDY 和 ODSWRDY</td></tr>
+    </table>
+</div>
+
+<!-- FLASH -->
+<div class="periph-card">
+    <h3>4.4 FLASH &mdash; 闪存接口</h3>
+    <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>等待周期</td><td><code>5 WS</code></td><td>180 MHz / 3.3V 需要 5 个等待周期</td></tr>
+    <tr><td>预取缓冲</td><td><code>ON</code></td><td>FLASH_ACR_PRFTEN</td></tr>
+    <tr><td>指令缓存</td><td><code>ON</code></td><td>FLASH_ACR_ICEN</td></tr>
+    <tr><td>数据缓存</td><td><code>ON</code></td><td>FLASH_ACR_DCEN</td></tr>
+    </table>
+</div>
+
+<!-- NVIC -->
+<div class="periph-card active">
+    <h3>4.5 NVIC &mdash; 中断控制器</h3>
+    <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>优先级分组</td><td><code>Group 4</code></td><td>4 位抢占优先级，0 位子优先级（16 级抢占）</td></tr>
+    <tr><td>向量表基址</td><td><code>0x0800_0000</code></td><td>FLASH 起始地址，SCB->VTOR 设置</td></tr>
+    </table>
+
+    <h3 style="margin-top:16px;">当前中断优先级分配</h3>
+
+    <div style="background:var(--card); padding:16px; border-radius:8px; margin:10px 0;">
+        <div class="irq-bar">
+            <span class="irq-label">SysTick</span>
+            <div class="irq-level" style="width:100%; background: linear-gradient(90deg, #4ecca3 0%, #2d6a5a 100%);">
+                优先级 15（最低） &mdash; 1ms 节拍
+            </div>
+        </div>
+        <div class="irq-bar">
+            <span class="irq-label" style="color:#555;">UART RX（待启用）</span>
+            <div class="irq-level" style="width:14%; background: #444;">2</div>
+        </div>
+        <div class="irq-bar">
+            <span class="irq-label" style="color:#555;">I2C EV/ER（待启用）</span>
+            <div class="irq-level" style="width:38%; background: #444;">5 / 6</div>
+        </div>
+        <div class="irq-bar">
+            <span class="irq-label" style="color:#555;">TIM6 采样（待启用）</span>
+            <div class="irq-level" style="width:47%; background: #444;">7</div>
+        </div>
+        <div class="irq-bar">
+            <span class="irq-label" style="color:#555;">UART TX DMA（待启用）</span>
+            <div class="irq-level" style="width:67%; background: #444;">10</div>
+        </div>
+    </div>
+    <p style="font-size:0.82em; color:var(--text-dim);">灰色 = 规划中未启用 | 绿色 = 当前已启用</p>
+</div>
+
+<!-- SysTick -->
+<div class="periph-card active">
+    <h3>4.6 SysTick &mdash; 系统节拍定时器</h3>
+    <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>时钟源</td><td><code>HCLK = 180 MHz</code></td><td>Cortex-M4 系统定时器，不分频</td></tr>
+    <tr><td>重装载值</td><td><code>180000 - 1 = 179999</code></td><td>SystemCoreClock / 1000</td></tr>
+    <tr><td>中断周期</td><td><code>1 ms</code></td><td>180000 / 180 MHz = 1 ms</td></tr>
+    <tr><td>中断优先级</td><td><code>15</code></td><td>SysTick_Config() 默认设为最低优先级</td></tr>
+    <tr><td>ISR</td><td><code>SysTick_Handler()</code></td><td>调用 BSP_Tick_Increment() 递增 s_tickMs</td></tr>
+    </table>
+    <p style="font-size:0.88em; color:var(--text-dim);">
+        配置位置：<code>bsp_tick.c</code> → <code>BSP_Tick_Init()</code><br>
+        中断服务：<code>stm32f4xx_it.c</code> → <code>SysTick_Handler()</code>
+    </p>
+</div>
+
+<!-- GPIOF -->
+<div class="periph-card active">
+    <h3>4.7 GPIOF &mdash; LED 驱动</h3>
+
+    <div class="gpio-visual">
+        <div class="gpio-chip">
+            <div class="chip-name">GPIOF</div>
+            <div class="gpio-pin used">
+                <div class="pin-dot"></div>
+                <span class="pin-name">PF13</span>
+                <span class="pin-func">LED1 心跳 &mdash; 推挽输出, 高电平点亮</span>
+            </div>
+            <div class="gpio-pin">
+                <div class="pin-dot off"></div>
+                <span class="pin-name">PF0-12</span>
+                <span class="pin-func">未使用</span>
+            </div>
+            <div class="gpio-pin">
+                <div class="pin-dot off"></div>
+                <span class="pin-name">PF14-15</span>
+                <span class="pin-func">未使用</span>
+            </div>
+        </div>
+    </div>
+
+    <table>
+    <tr><th>参数</th><th>值</th><th>SPL 常量 / 宏</th></tr>
+    <tr><td>时钟使能</td><td>RCC AHB1 GPIOF</td><td><code>RCC_AHB1Periph_GPIOF</code></td></tr>
+    <tr><td>引脚</td><td>PF13</td><td><code>GPIO_Pin_13</code></td></tr>
+    <tr><td>模式</td><td>通用输出</td><td><code>GPIO_Mode_OUT</code></td></tr>
+    <tr><td>输出类型</td><td>推挽</td><td><code>GPIO_OType_PP</code></td></tr>
+    <tr><td>速度</td><td>低速（2 MHz）</td><td><code>GPIO_Low_Speed</code></td></tr>
+    <tr><td>上下拉</td><td>无</td><td><code>GPIO_PuPd_NOPULL</code></td></tr>
+    <tr><td>初始电平</td><td>低（LED 灭）</td><td><code>GPIO_ResetBits()</code></td></tr>
+    </table>
+    <p style="font-size:0.88em; color:var(--text-dim);">
+        宏定义位置：<code>bsp_led.h</code> | 驱动实现：<code>bsp_led.c</code>
+    </p>
+</div>
+
+<!-- ============================================================ -->
+<hr class="section-divider">
+<h2>5. 系统启动与初始化流程</h2>
+
+<div class="flow">
+    <div class="flow-step">
+        Reset_Handler
+        <span class="step-file">startup_stm32f429_439xx.s</span>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step">
+        .data 复制<br>.bss 清零
+        <span class="step-file">startup (汇编)</span>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step">
+        SystemInit()
+        <span class="step-file">system_stm32f4xx.c</span>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step">
+        FPU 使能<br>RCC 复位<br>SetSysClock()
+        <span class="step-file">HSE→PLL→180MHz</span>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step">
+        __libc_init_array
+        <span class="step-file">C 运行时</span>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step" style="border: 2px solid var(--green);">
+        main()
+        <span class="step-file">main.c</span>
+    </div>
+</div>
+
+<div class="flow" style="margin-top: 10px;">
+    <div class="flow-step" style="border: 2px solid var(--green);">
+        main() 内部
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step">
+        NVIC_PriorityGroupConfig
+        <span class="step-file">Group 4</span>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step">
+        BSP_Tick_Init()
+        <span class="step-file">SysTick 1ms</span>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step">
+        BSP_LED_Init()
+        <span class="step-file">PF13 输出</span>
+    </div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step" style="background: var(--highlight);">
+        while(1) 主循环
+        <span class="step-file">500ms LED 翻转</span>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<hr class="section-divider">
+<h2>6. 异常处理与 LED 状态指示</h2>
+
+<div class="led-state">
+    <div class="led-card" style="border-top: 3px solid var(--green);">
+        <div class="led-icon" style="color: var(--green);">&#9679; &mdash; &#9675;</div>
+        <div class="led-label">正常心跳</div>
+        <div class="led-desc">500 ms 间隔闪烁<br>程序正常运行</div>
+    </div>
+    <div class="led-card" style="border-top: 3px solid var(--highlight);">
+        <div class="led-icon" style="color: var(--highlight);">&#9679;&#9675;&#9679;&#9675;</div>
+        <div class="led-label">HardFault</div>
+        <div class="led-desc">快速闪烁（~100ms 间隔）<br>直接寄存器操作，不依赖 BSP</div>
+    </div>
+    <div class="led-card" style="border-top: 3px solid #555;">
+        <div class="led-icon" style="color: #555;">&#9675;</div>
+        <div class="led-label">不亮</div>
+        <div class="led-desc">程序未运行<br>检查烧录 / 供电 / 复位</div>
+    </div>
+</div>
+
+<table>
+<tr>
+    <th>异常处理函数</th>
+    <th>行为</th>
+    <th>位置</th>
+</tr>
+<tr>
+    <td><code>HardFault_Handler</code></td>
+    <td>使能 GPIOF 时钟 → PF13 推挽输出 → 快速闪 LED（寄存器直操）</td>
+    <td><code>stm32f4xx_it.c:17</code></td>
+</tr>
+<tr>
+    <td><code>MemManage_Handler</code></td>
+    <td><code>while(1) {}</code>（未单独使能时上升为 HardFault）</td>
+    <td><code>stm32f4xx_it.c:39</code></td>
+</tr>
+<tr>
+    <td><code>BusFault_Handler</code></td>
+    <td><code>while(1) {}</code>（同上）</td>
+    <td><code>stm32f4xx_it.c:44</code></td>
+</tr>
+<tr>
+    <td><code>UsageFault_Handler</code></td>
+    <td><code>while(1) {}</code>（同上）</td>
+    <td><code>stm32f4xx_it.c:49</code></td>
+</tr>
+<tr>
+    <td><code>SysTick_Handler</code></td>
+    <td>调用 <code>BSP_Tick_Increment()</code> 递增毫秒计数器</td>
+    <td><code>stm32f4xx_it.c:66</code></td>
+</tr>
+</table>
+
+<!-- ============================================================ -->
+<hr class="section-divider">
+<h2>7. 编译配置摘要</h2>
+
+<table>
+<tr><th>配置项</th><th>值</th></tr>
+<tr><td>工具链</td><td><code>arm-none-eabi-gcc 13.x</code>（MSYS2/MinGW）</td></tr>
+<tr><td>CPU 标志</td><td><code>-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb</code></td></tr>
+<tr><td>预定义宏</td><td><code>USE_STDPERIPH_DRIVER</code> <code>STM32F429_439xx</code> <code>HSE_VALUE=8000000U</code></td></tr>
+<tr><td>优化（Release）</td><td><code>-O2</code></td></tr>
+<tr><td>优化（Debug）</td><td><code>-Og -g3 -DDEBUG</code></td></tr>
+<tr><td>链接</td><td><code>-specs=nano.specs -Wl,--gc-sections</code></td></tr>
+<tr><td>固件大小</td><td>text=1484 B, data=12 B, bss=2084 B（合计 3580 B）</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<hr class="section-divider">
+<p style="text-align:center; color:var(--text-dim); font-size:0.85em; margin-top:30px;">
+    STM32F429ZGT6 电机调试板 &mdash; 阶段 1 外设配置快照<br>
+    生成时间：2026-03-25 &mdash; Claude Code
+</p>
+
+</body>
+</html>
