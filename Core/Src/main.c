@@ -7,6 +7,8 @@
 #include "bsp_tick.h"
 #include "bsp_led.h"
 
+#define HEARTBEAT_INTERVAL_MS   500U
+
 int main(void)
 {
     /* NVIC priority group — must be first */
@@ -24,8 +26,8 @@ int main(void)
     {
         uint32_t now = BSP_GetTick();
 
-        /* Heartbeat LED1: toggle every 500 ms */
-        if (now - prevTick >= 500)
+        /* Heartbeat LED1: toggle every HEARTBEAT_INTERVAL_MS */
+        if (now - prevTick >= HEARTBEAT_INTERVAL_MS)
         {
             prevTick = now;
             BSP_LED1_Toggle();
