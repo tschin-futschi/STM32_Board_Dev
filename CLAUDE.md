@@ -247,6 +247,7 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 | 禁止 | 原因 |
 |------|------|
 | 修改 `StdPeriph_Driver/` 或 `CMSIS/` | 只读库 |
+| 主动读取 `STM32F4xx_DSP_StdPeriph_Lib_V1.9.0/` 目录下的文件 | 只读标准库，需先询问开发者同意后才能加载到上下文中 |
 | 使用 HAL / LL API | 项目统一 SPL |
 | BSP 层写业务逻辑或协议解析 | 违反分层 |
 | ISR 中调用阻塞函数（printf/delay/malloc/while 等待） | 破坏实时性 |
