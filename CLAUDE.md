@@ -34,8 +34,7 @@ STM32F429ZG  ↕ I2C
 
 | 外设 | 默认配置 | 宏前缀 | 说明 |
 |------|----------|--------|------|
-| LED1 | PG13 | `BSP_LED_` | 高电平点亮，心跳 |
-| LED2 | PG14 | `BSP_LED_` | 高电平点亮，错误 |
+| LED1 | PF13 | `BSP_LED_` | 高电平点亮，心跳（仅此一个 LED） |
 | UART | USART1, PA9/PA10, AF7 | `BSP_UART_` | APB2, 115200 默认 |
 | I2C | I2C1, PB6/PB7, AF4 | `BSP_I2C_` | APB1, 400 kHz 默认 |
 | 采样定时器 | TIM6 | `BSP_SAMPLE_TIM_` | APB1, **ISR 名 `TIM6_DAC_IRQHandler`** |
@@ -211,8 +210,8 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 
 | 阶段 | 内容 | 验收标准 | 状态 |
 |------|------|----------|------|
-| 0 | CLAUDE.md 规则确定 | 开发者确认 | **进行中** |
-| 1 | Makefile + 启动文件 + LED 闪烁 | 编译通过，烧录后 LED 闪烁 | 未开始 |
+| 0 | CLAUDE.md 规则确定 | 开发者确认 | **完成** |
+| 1 | Makefile + 启动文件 + LED 闪烁 | 编译通过，烧录后 LED 闪烁 | **完成** |
 | 2 | UART 收发（环形缓冲 + DMA 发送） | 串口助手手动收发字节 | 未开始 |
 | 3 | I2C 驱动 + Scan | 接电机 IC，扫到地址 | 未开始 |
 | 4 | 协议框架（空函数 + 结构体） | 编译通过，为协议讨论做准备 | 未开始 |
@@ -232,6 +231,7 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 6. 开发者明确要求总结时，在 `TRACKING/` 目录下生成总结文件，文件名格式 `MMDD_HHmm_summary.md`（月日\_时分）。内容结构：
    - **变更清单**：逐条列出本次新增/修改/删除的文件及具体改动
    - **当前系统状态**：路线图进度、各模块完成度、已知遗留问题
+7. **总结后提交（强制）**：完成总结后，必须 `git commit` 所有改动并 `git push` 到 GitHub
 
 ### 复用原则
 
