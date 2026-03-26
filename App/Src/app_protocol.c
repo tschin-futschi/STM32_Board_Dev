@@ -13,6 +13,10 @@
 #include "bsp_uart.h"
 #include <stddef.h>
 
+/* Compile-time guard: TX frame must fit inside BSP DMA buffer */
+_Static_assert(PROTO_MAX_FRAME_LEN <= BSP_UART_TX_BUF_SIZE,
+               "PROTO_MAX_FRAME_LEN exceeds BSP_UART_TX_BUF_SIZE");
+
 /*--------------------------------------------------------------------------*/
 /*                         RX state machine                                 */
 /*--------------------------------------------------------------------------*/
@@ -33,7 +37,10 @@ static Proto_State_t s_state;
 static Proto_Frame_t s_rxFrame;
 static uint8_t       s_dataIdx;
 static uint8_t       s_rxCrcHigh;
-static uint16_t      s_rxCrcAccum;  /* Running CRC16 over SEQ+CMD+LEN+DATA */
+static uint16_t      s_rxCrcAccum;          /* Running CRC16 over SEQ+CMD+LEN+DATA */
+static uint8_t       s_rxBuf[BSP_UART_RX_BUF_SIZE];
+
+static const uint16_t k_crc16Init = 0xFFFFU; /* CRC16-MODBUS initial value  */
 
 /*--------------------------------------------------------------------------*/
 /*                      CRC16-MODBUS (poly 0x8005)                          */
@@ -73,20 +80,17 @@ static ErrorStatus SendFrame(uint8_t seq, uint8_t cmd,
                               const uint8_t *pData, uint8_t len)
 {
     static uint8_t s_txBuf[PROTO_MAX_FRAME_LEN];
-    uint16_t crc = 0xFFFFU;
+    uint16_t crc = k_crc16Init;
     uint8_t  idx = 0U;
     uint8_t  i;
 
-    /* Frame header (excluded from CRC) */
     s_txBuf[idx++] = PROTO_SOF1;
     s_txBuf[idx++] = PROTO_SOF2;
 
-    /* CRC-covered fields: SEQ, CMD, LEN */
     s_txBuf[idx] = seq; crc = CRC16_Update(crc, seq); idx++;
     s_txBuf[idx] = cmd; crc = CRC16_Update(crc, cmd); idx++;
     s_txBuf[idx] = len; crc = CRC16_Update(crc, len); idx++;
 
-    /* Data payload */
     for (i = 0U; i < len; i++)
     {
         s_txBuf[idx] = pData[i];
@@ -94,7 +98,7 @@ static ErrorStatus SendFrame(uint8_t seq, uint8_t cmd,
         idx++;
     }
 
-    /* CRC16 big-endian */
+    /* CRC16 big-endian (protocol spec: high byte first) */
     s_txBuf[idx++] = (uint8_t)(crc >> 8U);
     s_txBuf[idx++] = (uint8_t)(crc & 0xFFU);
 
@@ -144,7 +148,7 @@ static void ProcessByte(uint8_t byte)
 
         case STATE_WAIT_SEQ:
             s_rxFrame.seq = byte;
-            s_rxCrcAccum  = CRC16_Update(0xFFFFU, byte);
+            s_rxCrcAccum  = CRC16_Update(k_crc16Init, byte);
             s_state       = STATE_WAIT_CMD;
             break;
 
@@ -221,7 +225,6 @@ void App_Protocol_Init(void)
 
 void App_Protocol_Poll(void)
 {
-    static uint8_t s_rxBuf[BSP_UART_RX_BUF_SIZE];
     uint16_t len;
     uint16_t i;
 

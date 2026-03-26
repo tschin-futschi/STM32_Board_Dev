@@ -44,7 +44,7 @@
 
 /* Buffer sizes */
 #define BSP_UART_RX_BUF_SIZE        256U
-#define BSP_UART_TX_BUF_SIZE        256U
+#define BSP_UART_TX_BUF_SIZE        264U    /* >= PROTO_MAX_FRAME_LEN (262) */
 
 /*--------------------------------------------------------------------------*/
 /*                               API                                        */
