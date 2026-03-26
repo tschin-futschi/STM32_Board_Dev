@@ -9,7 +9,7 @@
 #include "bsp_uart.h"
 #include "app_protocol.h"
 
-#define HEARTBEAT_INTERVAL_MS   100U
+#define HEARTBEAT_INTERVAL_MS   500U
 
 int main(void)
 {
