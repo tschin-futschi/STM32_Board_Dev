@@ -112,12 +112,25 @@ static void SendErrorResp(uint8_t seq, Proto_ErrCode_t err)
 }
 
 /*--------------------------------------------------------------------------*/
-/*                        Command handlers                                  */
+/*                   Command handlers & dispatcher                          */
 /*--------------------------------------------------------------------------*/
 
 static void HandleHeartbeat(const Proto_Frame_t *pFrame)
 {
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_HEARTBEAT, NULL, 0U);
+}
+
+static void DispatchFrame(const Proto_Frame_t *pFrame)
+{
+    switch (pFrame->cmd)
+    {
+        case PROTO_CMD_HEARTBEAT:
+            HandleHeartbeat(pFrame);
+            break;
+        default:
+            SendErrorResp(pFrame->seq, PROTO_ERR_UNKNOWN_CMD);
+            break;
+    }
 }
 
 /*--------------------------------------------------------------------------*/
@@ -182,25 +195,10 @@ static void ProcessByte(uint8_t byte)
         case STATE_WAIT_CRC_L:
         {
             uint16_t rxCrc = ((uint16_t)s_rxCrcHigh << 8U) | (uint16_t)byte;
-
             if (rxCrc != s_rxCrcAccum)
-            {
-                /* SEQ is untrusted on CRC failure, fill 0xFF per spec */
                 SendErrorResp(PROTO_CRC_ERR_SEQ, PROTO_ERR_CRC_FAIL);
-            }
             else
-            {
-                switch (s_rxFrame.cmd)
-                {
-                    case PROTO_CMD_HEARTBEAT:
-                        HandleHeartbeat(&s_rxFrame);
-                        break;
-
-                    default:
-                        SendErrorResp(s_rxFrame.seq, PROTO_ERR_UNKNOWN_CMD);
-                        break;
-                }
-            }
+                DispatchFrame(&s_rxFrame);
             s_state = STATE_WAIT_SOF1;
             break;
         }
