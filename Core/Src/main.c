@@ -6,8 +6,10 @@
 #include "main.h"
 #include "bsp_tick.h"
 #include "bsp_led.h"
+#include "bsp_uart.h"
+#include "app_protocol.h"
 
-#define HEARTBEAT_INTERVAL_MS   500U
+#define HEARTBEAT_INTERVAL_MS   100U
 
 int main(void)
 {
@@ -20,11 +22,19 @@ int main(void)
     /* LED */
     BSP_LED_Init();
 
+    /* UART */
+    BSP_UART_Init();
+
+    /* App */
+    App_Protocol_Init();
+
     uint32_t prevTick = BSP_GetTick();
 
     while (1)
     {
         uint32_t now = BSP_GetTick();
+
+        App_Protocol_Poll();
 
         /* Heartbeat LED1: toggle every HEARTBEAT_INTERVAL_MS */
         if (now - prevTick >= HEARTBEAT_INTERVAL_MS)

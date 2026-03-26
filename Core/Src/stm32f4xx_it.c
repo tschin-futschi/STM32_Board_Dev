@@ -5,6 +5,7 @@
 
 #include "stm32f4xx_it.h"
 #include "bsp_tick.h"
+#include "bsp_uart.h"
 
 /*--------------------------------------------------------------------------*/
 /*                    Cortex-M4 Processor Exception Handlers                */
@@ -66,4 +67,22 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
     BSP_Tick_Increment();
+}
+
+void USART1_IRQHandler(void)
+{
+    if (USART_GetITStatus(BSP_UART_PERIPH, USART_IT_RXNE) != RESET)
+    {
+        BSP_UART_RxISR_Callback();
+        USART_ClearITPendingBit(BSP_UART_PERIPH, USART_IT_RXNE);
+    }
+}
+
+void DMA2_Stream7_IRQHandler(void)
+{
+    if (DMA_GetITStatus(BSP_UART_DMA_STREAM, DMA_IT_TCIF7) != RESET)
+    {
+        BSP_UART_TxDmaISR_Callback();
+        DMA_ClearITPendingBit(BSP_UART_DMA_STREAM, DMA_IT_TCIF7);
+    }
 }

@@ -9,6 +9,8 @@
 /* Peripheral header files — enable as needed per phase */
 #include "stm32f4xx_rcc.h"
 #include "stm32f4xx_gpio.h"
+#include "stm32f4xx_usart.h"
+#include "stm32f4xx_dma.h"
 #include "misc.h"
 
 /* assert_param definition */

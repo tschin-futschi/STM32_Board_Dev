@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STM32F429 UART + DMA 实现详解</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    line-height: 1.7;
+    padding: 40px 20px;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 2rem;
+    color: #58a6ff;
+    border-bottom: 2px solid #21262d;
+    padding-bottom: 12px;
+    margin-bottom: 32px;
+  }
+
+  h2 {
+    font-size: 1.4rem;
+    color: #79c0ff;
+    margin: 40px 0 16px;
+    padding-left: 12px;
+    border-left: 4px solid #1f6feb;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    color: #e3b341;
+    margin: 24px 0 10px;
+  }
+
+  p {
+    margin-bottom: 12px;
+    color: #c9d1d9;
+  }
+
+  code {
+    font-family: "Consolas", "Courier New", monospace;
+    background: #161b22;
+    color: #ff7b72;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  pre {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 20px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+
+  .kw  { color: #ff7b72; }   /* keyword */
+  .cm  { color: #8b949e; font-style: italic; } /* comment */
+  .str { color: #a5d6ff; }   /* string/number */
+  .fn  { color: #d2a8ff; }   /* function */
+  .mc  { color: #79c0ff; }   /* macro */
+  .tp  { color: #ffa657; }   /* type */
+
+  .box {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+
+  .box.info   { border-left: 4px solid #1f6feb; }
+  .box.warn   { border-left: 4px solid #e3b341; }
+  .box.danger { border-left: 4px solid #f85149; }
+  .box.ok     { border-left: 4px solid #3fb950; }
+
+  .box-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .info   .box-title { color: #58a6ff; }
+  .warn   .box-title { color: #e3b341; }
+  .danger .box-title { color: #f85149; }
+  .ok     .box-title { color: #3fb950; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.9rem;
+  }
+
+  th {
+    background: #21262d;
+    color: #79c0ff;
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid #30363d;
+  }
+
+  td {
+    padding: 9px 14px;
+    border: 1px solid #30363d;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) td { background: #161b22; }
+  tr:nth-child(odd)  td { background: #0d1117; }
+
+  .flow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 20px 0;
+    padding: 20px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+  }
+
+  .flow-node {
+    background: #1f6feb;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    font-weight: bold;
+    white-space: nowrap;
+  }
+
+  .flow-node.green  { background: #238636; }
+  .flow-node.orange { background: #9e6a03; color: #fff; }
+  .flow-node.red    { background: #da3633; }
+  .flow-node.purple { background: #6e40c9; }
+
+  .flow-arrow {
+    color: #8b949e;
+    font-size: 1.2rem;
+  }
+
+  .section-num {
+    display: inline-block;
+    background: #1f6feb;
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    text-align: center;
+    border-radius: 50%;
+    font-size: 0.85rem;
+    font-weight: bold;
+    margin-right: 8px;
+  }
+
+  .toc {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 40px;
+  }
+
+  .toc h3 { color: #79c0ff; margin-bottom: 12px; }
+
+  .toc ol {
+    padding-left: 20px;
+    color: #58a6ff;
+  }
+
+  .toc li { margin: 6px 0; }
+
+  .toc a {
+    color: #58a6ff;
+    text-decoration: none;
+  }
+
+  .toc a:hover { text-decoration: underline; }
+
+  hr {
+    border: none;
+    border-top: 1px solid #21262d;
+    margin: 40px 0;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>STM32F429 UART + DMA 实现详解</h1>
+<p style="color:#8b949e;">项目：电机调试板 · 阶段2 · USART1 环形缓冲接收 + DMA 发送</p>
+
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#overview">整体架构</a></li>
+    <li><a href="#gpio">硬件层 — GPIO 复用配置</a></li>
+    <li><a href="#usart">硬件层 — USART1 外设配置</a></li>
+    <li><a href="#dma-principle">DMA 工作原理</a></li>
+    <li><a href="#dma-config">硬件层 — DMA 配置</a></li>
+    <li><a href="#rx-flow">接收数据流：RXNE 中断 → 环形缓冲区</a></li>
+    <li><a href="#tx-flow">发送数据流：CPU → DMA → USART1</a></li>
+    <li><a href="#ringbuf">环形缓冲区详解</a></li>
+    <li><a href="#full-flow">完整数据路径（Echo 回显）</a></li>
+  </ol>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="overview"><span class="section-num">1</span>整体架构</h2>
+
+<p>串口功能分为三层，各层职责明确：</p>
+
+<div class="flow">
+  <div class="flow-node purple">串口助手（PC）</div>
+  <div class="flow-arrow">⇅ UART 物理信号</div>
+  <div class="flow-node red">BSP 驱动层<br><small>bsp_uart.c</small></div>
+  <div class="flow-arrow">⇅ API 调用</div>
+  <div class="flow-node green">App 应用层<br><small>app_protocol.c</small></div>
+  <div class="flow-arrow">↑ 调用</div>
+  <div class="flow-node orange">主循环<br><small>main.c</small></div>
+</div>
+
+<table>
+  <tr><th>层</th><th>文件</th><th>职责</th></tr>
+  <tr><td>BSP 驱动层</td><td>bsp_uart.h / bsp_uart.c</td><td>GPIO、USART1、DMA 初始化；环形缓冲区读写；ISR 回调</td></tr>
+  <tr><td>App 应用层</td><td>app_protocol.h / app_protocol.c</td><td>从缓冲区读字节，阶段2做 echo 回显，后续实现协议解析</td></tr>
+  <tr><td>Core 框架层</td><td>main.c / stm32f4xx_it.c</td><td>初始化调用顺序；所有 ISR 入口</td></tr>
+</table>
+
+<div class="box info">
+  <div class="box-title">设计原则</div>
+  BSP 层只做字节收发，不知道"帧"和"电机"。换协议只改 App 层，BSP 不受影响。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="gpio"><span class="section-num">2</span>硬件层 — GPIO 复用配置</h2>
+
+<p>STM32F4 的引脚内部有一个复用选择器（AF Mux），每个引脚可以连接到不同的外设。PA9 和 PA10 通过 AF7 连接到 USART1。</p>
+
+<p><strong>GPIO 复用必须做两步，缺一不可：</strong></p>
+
+<pre><span class="cm">/* 步骤①：把引脚模式设为复用（AF），并配置电气特性 */</span>
+gpio.<span class="mc">GPIO_Pin</span>   = <span class="mc">BSP_UART_TX_PIN</span>;     <span class="cm">// PA9</span>
+gpio.<span class="mc">GPIO_Mode</span>  = <span class="mc">GPIO_Mode_AF</span>;       <span class="cm">// 复用模式，引脚交给外设控制</span>
+gpio.<span class="mc">GPIO_Speed</span> = <span class="mc">GPIO_Speed_50MHz</span>;
+gpio.<span class="mc">GPIO_OType</span> = <span class="mc">GPIO_OType_PP</span>;      <span class="cm">// 推挽输出</span>
+gpio.<span class="mc">GPIO_PuPd</span>  = <span class="mc">GPIO_PuPd_UP</span>;       <span class="cm">// 上拉，UART 空闲态为高电平</span>
+<span class="fn">GPIO_Init</span>(<span class="mc">BSP_UART_TX_GPIO_PORT</span>, &amp;gpio);
+
+<span class="cm">/* 步骤②：把引脚的复用选择器拨到 USART1（AF7） */</span>
+<span class="fn">GPIO_PinAFConfig</span>(<span class="mc">BSP_UART_TX_GPIO_PORT</span>, <span class="mc">BSP_UART_TX_PIN_SOURCE</span>, <span class="mc">BSP_UART_TX_AF</span>);</pre>
+
+<div class="box warn">
+  <div class="box-title">为什么两步缺一不可？</div>
+  步骤①只是把引脚电气特性设好，但内部复用选择器还没拨过来，USART1 仍然无法驱动这个引脚。<br>
+  步骤②只拨选择器，但引脚模式还是普通 GPIO，外设输出无法正常传出。<br>
+  <strong>两步都做，PA9 才真正被 USART1 接管。</strong>
+</div>
+
+<table>
+  <tr><th>引脚</th><th>方向</th><th>复用功能</th><th>电气配置</th></tr>
+  <tr><td>PA9</td><td>TX（输出）</td><td>AF7 = USART1_TX</td><td>推挽、上拉、50MHz</td></tr>
+  <tr><td>PA10</td><td>RX（输入）</td><td>AF7 = USART1_RX</td><td>推挽、上拉、50MHz</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<h2 id="usart"><span class="section-num">3</span>硬件层 — USART1 外设配置</h2>
+
+<pre><span class="cm">/* USART1 挂在 APB2 总线，时钟 90 MHz，必须先使能 */</span>
+<span class="fn">RCC_APB2PeriphClockCmd</span>(<span class="mc">BSP_UART_CLK</span>, <span class="mc">ENABLE</span>);
+
+<span class="cm">/* 帧格式：115200 / 8位数据 / 1位停止 / 无奇偶校验 = 标准 8N1 */</span>
+usart.<span class="mc">USART_BaudRate</span>            = <span class="str">115200</span>;
+usart.<span class="mc">USART_WordLength</span>          = <span class="mc">USART_WordLength_8b</span>;
+usart.<span class="mc">USART_StopBits</span>            = <span class="mc">USART_StopBits_1</span>;
+usart.<span class="mc">USART_Parity</span>              = <span class="mc">USART_Parity_No</span>;
+usart.<span class="mc">USART_HardwareFlowControl</span> = <span class="mc">USART_HardwareFlowControl_None</span>;
+usart.<span class="mc">USART_Mode</span>                = <span class="mc">USART_Mode_Rx</span> | <span class="mc">USART_Mode_Tx</span>;
+<span class="fn">USART_Init</span>(<span class="mc">BSP_UART_PERIPH</span>, &amp;usart);
+
+<span class="cm">/* 每收到一个字节，RXNE 标志置位，触发中断 */</span>
+<span class="fn">USART_ITConfig</span>(<span class="mc">BSP_UART_PERIPH</span>, <span class="mc">USART_IT_RXNE</span>, <span class="mc">ENABLE</span>);
+
+<span class="cm">/* TX 寄存器空时，自动通知 DMA 填下一个字节（CPU 不参与） */</span>
+<span class="fn">USART_DMACmd</span>(<span class="mc">BSP_UART_PERIPH</span>, <span class="mc">USART_DMAReq_Tx</span>, <span class="mc">ENABLE</span>);
+
+<span class="fn">USART_Cmd</span>(<span class="mc">BSP_UART_PERIPH</span>, <span class="mc">ENABLE</span>);</pre>
+
+<p>SPL 的 <code>USART_Init()</code> 会根据 APB2 时钟（90 MHz）和目标波特率自动计算 BRR（波特率寄存器）的值，无需手动计算。</p>
+
+<div class="box info">
+  <div class="box-title">RXNE 是什么？</div>
+  RXNE = RX Not Empty。每当 USART1 接收移位寄存器把一个完整字节移入 DR 寄存器时，硬件自动将 RXNE 标志置 1，并触发 USART1_IRQHandler 中断。读取 DR 后 RXNE 自动清零。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="dma-principle"><span class="section-num">4</span>DMA 工作原理</h2>
+
+<h3>4.1 为什么需要 DMA？</h3>
+
+<p>没有 DMA 时，CPU 发送 256 字节需要亲自搬运每一个字节：</p>
+
+<pre><span class="cm">/* 轮询发送（无 DMA）— CPU 被完全占用 */</span>
+<span class="kw">for</span> (i = <span class="str">0</span>; i &lt; len; i++) {
+    <span class="kw">while</span> (!(USART1-&gt;SR &amp; USART_SR_TXE));  <span class="cm">// 等 TX 寄存器空</span>
+    USART1-&gt;DR = buf[i];                    <span class="cm">// 写一个字节</span>
+}</pre>
+
+<p>CPU 在循环里空转等待，这段时间内无法处理其他任何事情。</p>
+
+<p>有了 DMA，CPU 只需下达指令，DMA 硬件自动完成搬运：</p>
+
+<div class="flow">
+  <div class="flow-node orange">CPU：配置 DMA<br>启动传输</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node red">DMA 硬件<br>自动搬运</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node green">USART1 DR<br>逐字节发出</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node purple">DMA TC 中断<br>通知 CPU 完成</div>
+</div>
+
+<h3>4.2 STM32F4 DMA 结构</h3>
+
+<p>STM32F4 有两个 DMA 控制器，每个有 8 条 Stream，每条 Stream 有 8 个 Channel 可选：</p>
+
+<table>
+  <tr><th>DMA 控制器</th><th>Stream 数量</th><th>Channel 数量</th><th>典型用途</th></tr>
+  <tr><td>DMA1</td><td>8（Stream0~7）</td><td>每条 8 个</td><td>APB1 外设（I2C、SPI、USART2~5 等）</td></tr>
+  <tr><td>DMA2</td><td>8（Stream0~7）</td><td>每条 8 个</td><td>APB2 外设（USART1/6、SPI1 等）+ SRAM</td></tr>
+</table>
+
+<div class="box warn">
+  <div class="box-title">为什么必须用 DMA2 Stream7 Channel4？</div>
+  每个外设的 DMA 请求信号只接在特定的 Stream + Channel 上，这是硬件固定连线，查数据手册《DMA request mapping》表才能确认。USART1_TX 固定对应 DMA2 Stream7 Channel4，不能选其他组合。
+</div>
+
+<h3>4.3 DMA 传输的三个要素</h3>
+
+<table>
+  <tr><th>要素</th><th>本项目配置</th><th>含义</th></tr>
+  <tr><td>源地址（Memory）</td><td><code>s_txBuf</code> 的地址</td><td>从哪里取数据，每次传完地址 +1</td></tr>
+  <tr><td>目标地址（Peripheral）</td><td><code>&amp;USART1-&gt;DR</code></td><td>搬到哪里，地址固定不变</td></tr>
+  <tr><td>传输计数（NDTR）</td><td>动态设置（= 发送长度）</td><td>搬多少字节，每搬一个自动减 1，减到 0 停止</td></tr>
+</table>
+
+<h3>4.4 DMA 触发机制</h3>
+
+<p>DMA 不是一次性把所有字节瞬间搬完，而是<strong>由外设的"准备好"信号逐字节触发</strong>：</p>
+
+<pre><span class="cm">/* DMA 内部工作逻辑（示意，非真实代码）*/</span>
+<span class="kw">while</span> (NDTR &gt; <span class="str">0</span>) {
+    等待 USART1 发出 "TX 寄存器空" 请求信号;
+    DR = s_txBuf[index++];   <span class="cm">// 搬一个字节</span>
+    NDTR--;                  <span class="cm">// 计数减一</span>
+}
+触发 TC（Transfer Complete）中断;</pre>
+
+<p>USART1 每发完一个字节，就向 DMA 发出请求，DMA 立即填入下一个字节，如此循环，直到 NDTR 减到 0。</p>
+
+<h3>4.5 为什么 DMA 缓冲区不能放在 CCM？</h3>
+
+<div class="box danger">
+  <div class="box-title">CCM（0x1000_0000）DMA 绝对禁止访问</div>
+  CCM（Core Coupled Memory）是 CPU 专属的紧耦合内存，只有 CPU 的 D-Code 总线能访问。DMA 控制器走的是 AHB 总线，根本看不到 CCM 地址空间。<br><br>
+  如果把 <code>s_txBuf</code> 放在 CCM，DMA 读到的是垃圾数据，或直接触发 HardFault。<br><br>
+  <code>s_txBuf</code> 是 <code>static</code> 全局变量，链接器默认放在 SRAM1（0x2000_0000），DMA 可以正常访问。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="dma-config"><span class="section-num">5</span>硬件层 — DMA 配置</h2>
+
+<pre><span class="fn">RCC_AHB1PeriphClockCmd</span>(<span class="mc">BSP_UART_DMA_CLK</span>, <span class="mc">ENABLE</span>);  <span class="cm">// DMA2 挂 AHB1</span>
+<span class="fn">DMA_DeInit</span>(<span class="mc">BSP_UART_DMA_STREAM</span>);                   <span class="cm">// 复位，防止上电残留状态</span>
+
+dma.<span class="mc">DMA_Channel</span>            = <span class="mc">BSP_UART_DMA_CHANNEL</span>;           <span class="cm">// Channel 4（硬件固定）</span>
+dma.<span class="mc">DMA_PeripheralBaseAddr</span> = (<span class="tp">uint32_t</span>)(&amp;<span class="mc">BSP_UART_PERIPH</span>-&gt;DR); <span class="cm">// 目标：USART1->DR</span>
+dma.<span class="mc">DMA_Memory0BaseAddr</span>    = (<span class="tp">uint32_t</span>)s_txBuf;               <span class="cm">// 源：TX 缓冲区</span>
+dma.<span class="mc">DMA_DIR</span>                = <span class="mc">DMA_DIR_MemoryToPeripheral</span>;       <span class="cm">// 内存 → 外设</span>
+dma.<span class="mc">DMA_BufferSize</span>         = <span class="str">1U</span>;                              <span class="cm">// 初始占位，Transmit 时动态改</span>
+dma.<span class="mc">DMA_PeripheralInc</span>      = <span class="mc">DMA_PeripheralInc_Disable</span>;        <span class="cm">// DR 地址固定</span>
+dma.<span class="mc">DMA_MemoryInc</span>          = <span class="mc">DMA_MemoryInc_Enable</span>;             <span class="cm">// 内存地址每次 +1</span>
+dma.<span class="mc">DMA_PeripheralDataSize</span> = <span class="mc">DMA_PeripheralDataSize_Byte</span>;      <span class="cm">// 按字节传</span>
+dma.<span class="mc">DMA_MemoryDataSize</span>     = <span class="mc">DMA_MemoryDataSize_Byte</span>;
+dma.<span class="mc">DMA_Mode</span>               = <span class="mc">DMA_Mode_Normal</span>;                  <span class="cm">// 传完即停，不循环</span>
+dma.<span class="mc">DMA_Priority</span>           = <span class="mc">DMA_Priority_Low</span>;
+dma.<span class="mc">DMA_FIFOMode</span>           = <span class="mc">DMA_FIFOMode_Disable</span>;             <span class="cm">// 直接模式，无 FIFO</span>
+<span class="fn">DMA_Init</span>(<span class="mc">BSP_UART_DMA_STREAM</span>, &amp;dma);
+
+<span class="cm">/* 传输完成时触发中断，通知 CPU 可以发下一包 */</span>
+<span class="fn">DMA_ITConfig</span>(<span class="mc">BSP_UART_DMA_STREAM</span>, <span class="mc">DMA_IT_TC</span>, <span class="mc">ENABLE</span>);</pre>
+
+<!-- ================================================================ -->
+<h2 id="rx-flow"><span class="section-num">6</span>接收数据流：RXNE 中断 → 环形缓冲区</h2>
+
+<p>接收方向完全由中断驱动，CPU 主循环只需轮询读取缓冲区：</p>
+
+<div class="flow">
+  <div class="flow-node purple">PA10 收到字节</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node red">USART1 RXNE<br>中断触发</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node orange">ISR 回调<br>读 DR，写环形缓冲</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node green">主循环 Poll<br>读缓冲区处理</div>
+</div>
+
+<h3>6.1 ISR 入口（stm32f4xx_it.c）</h3>
+
+<pre><span class="kw">void</span> <span class="fn">USART1_IRQHandler</span>(<span class="kw">void</span>)
+{
+    <span class="kw">if</span> (<span class="fn">USART_GetITStatus</span>(<span class="mc">BSP_UART_PERIPH</span>, <span class="mc">USART_IT_RXNE</span>) != <span class="mc">RESET</span>)
+    {
+        <span class="fn">BSP_UART_RxISR_Callback</span>();                                    <span class="cm">// 交给 BSP 处理</span>
+        <span class="fn">USART_ClearITPendingBit</span>(<span class="mc">BSP_UART_PERIPH</span>, <span class="mc">USART_IT_RXNE</span>);    <span class="cm">// 清中断标志</span>
+    }
+}</pre>
+
+<h3>6.2 BSP 回调（bsp_uart.c）</h3>
+
+<pre><span class="kw">void</span> <span class="fn">BSP_UART_RxISR_Callback</span>(<span class="kw">void</span>)
+{
+    <span class="tp">uint8_t</span>  byte     = (<span class="tp">uint8_t</span>)<span class="fn">USART_ReceiveData</span>(<span class="mc">BSP_UART_PERIPH</span>); <span class="cm">// 读走字节，RXNE 自动清零</span>
+    <span class="tp">uint16_t</span> nextHead = (s_rxHead + <span class="str">1U</span>) % <span class="mc">BSP_UART_RX_BUF_SIZE</span>;
+
+    <span class="kw">if</span> (nextHead != s_rxTail)   <span class="cm">// 缓冲区未满</span>
+    {
+        s_rxBuf[s_rxHead] = byte;
+        s_rxHead = nextHead;
+    }
+    <span class="cm">// 满了就丢弃新数据，保护旧数据不被覆盖</span>
+}</pre>
+
+<div class="box info">
+  <div class="box-title">ISR 原则：最小操作</div>
+  ISR 只做：读字节 → 写缓冲区 → 返回。绝对不能调用 printf、Delay_ms、malloc 等任何可能阻塞的函数，否则破坏实时性。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="tx-flow"><span class="section-num">7</span>发送数据流：CPU → DMA → USART1</h2>
+
+<div class="flow">
+  <div class="flow-node green">App 调用<br>BSP_UART_Transmit()</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node orange">检查 s_txDone<br>复制到 s_txBuf</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node red">启动 DMA<br>设置 NDTR</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node purple">DMA 自动搬运<br>至 USART1->DR</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node green">TC 中断<br>s_txDone = 1</div>
+</div>
+
+<pre><span class="tp">ErrorStatus</span> <span class="fn">BSP_UART_Transmit</span>(<span class="kw">const</span> <span class="tp">uint8_t</span> *pData, <span class="tp">uint16_t</span> len)
+{
+    <span class="cm">/* 参数校验 */</span>
+    <span class="kw">if</span> (pData == <span class="mc">NULL</span> || len == <span class="str">0U</span> || len &gt; <span class="mc">BSP_UART_TX_BUF_SIZE</span>)
+        <span class="kw">return</span> <span class="mc">ERROR</span>;
+
+    <span class="cm">/* DMA 上一次传输尚未完成 → 返回 BUSY，由调用方下次重试 */</span>
+    <span class="kw">if</span> (s_txDone == <span class="str">0U</span>)
+        <span class="kw">return</span> <span class="mc">ERROR</span>;
+
+    s_txDone = <span class="str">0U</span>;   <span class="cm">// 标记忙</span>
+
+    <span class="cm">/* 把数据复制到 DMA 缓冲区（s_txBuf 在 SRAM1，DMA 可访问）*/</span>
+    <span class="tp">uint16_t</span> i;
+    <span class="kw">for</span> (i = <span class="str">0U</span>; i &lt; len; i++)
+        s_txBuf[i] = pData[i];
+
+    <span class="cm">/* 重新配置 DMA 传输长度并启动 */</span>
+    <span class="fn">DMA_Cmd</span>(<span class="mc">BSP_UART_DMA_STREAM</span>, <span class="mc">DISABLE</span>);  <span class="cm">// 必须先停才能修改 NDTR</span>
+    <span class="mc">BSP_UART_DMA_STREAM</span>-&gt;NDTR = len;         <span class="cm">// 设置本次传输字节数</span>
+    <span class="fn">DMA_Cmd</span>(<span class="mc">BSP_UART_DMA_STREAM</span>, <span class="mc">ENABLE</span>);   <span class="cm">// 启动，DMA 开始工作</span>
+
+    <span class="kw">return</span> <span class="mc">SUCCESS</span>;
+}</pre>
+
+<h3>DMA TX 完成中断</h3>
+
+<pre><span class="kw">void</span> <span class="fn">DMA2_Stream7_IRQHandler</span>(<span class="kw">void</span>)
+{
+    <span class="kw">if</span> (<span class="fn">DMA_GetITStatus</span>(<span class="mc">BSP_UART_DMA_STREAM</span>, <span class="mc">DMA_IT_TCIF7</span>) != <span class="mc">RESET</span>)
+    {
+        <span class="fn">BSP_UART_TxDmaISR_Callback</span>();                                      <span class="cm">// s_txDone = 1</span>
+        <span class="fn">DMA_ClearITPendingBit</span>(<span class="mc">BSP_UART_DMA_STREAM</span>, <span class="mc">DMA_IT_TCIF7</span>);
+    }
+}</pre>
+
+<div class="box warn">
+  <div class="box-title">如果 DMA 未完成就来了新数据？</div>
+  <code>s_txDone == 0</code> 时 <code>BSP_UART_Transmit()</code> 直接返回 ERROR（BUSY）。<br>
+  <code>App_Protocol_Poll()</code> 拿到 ERROR 后丢弃这帧，等下次 Poll 再尝试。<br>
+  阶段2 echo 测试中，DMA 传输速度远快于手动发送速度，实际极少触发。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="ringbuf"><span class="section-num">8</span>环形缓冲区详解</h2>
+
+<p>环形缓冲区（Ring Buffer）解决了 ISR 与主循环速度不匹配的问题：ISR 高速写入，主循环慢速读取，两者互不阻塞。</p>
+
+<h3>8.1 数据结构</h3>
+
+<pre><span class="kw">static</span> <span class="tp">uint8_t</span>  s_rxBuf[<span class="mc">BSP_UART_RX_BUF_SIZE</span>];       <span class="cm">// 256 字节数组</span>
+<span class="kw">static volatile</span> <span class="tp">uint16_t</span> s_rxHead = <span class="str">0U</span>;  <span class="cm">// ISR 写入位置（写指针）</span>
+<span class="kw">static volatile</span> <span class="tp">uint16_t</span> s_rxTail = <span class="str">0U</span>;  <span class="cm">// 主循环读取位置（读指针）</span></pre>
+
+<h3>8.2 工作原理图</h3>
+
+<pre>
+  索引:  0   1   2   3   4   5   6   7  ...  255
+         ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
+  数组:  │'H'│'e'│'l'│'l'│'o'│   │   │   │   │   │
+         └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
+                              ↑               ↑
+                           Head=5           Tail=0
+                         （ISR 下次写这里）（主循环下次读这里）
+
+  读取 'H' 后：Tail = 1
+  ISR 再写 '!'：Head = 6
+
+  Head == Tail 时：缓冲区为空
+  (Head+1) % SIZE == Tail 时：缓冲区为满（牺牲一格判断满）
+</pre>
+
+<h3>8.3 溢出策略：丢弃新数据</h3>
+
+<pre><span class="tp">uint16_t</span> nextHead = (s_rxHead + <span class="str">1U</span>) % <span class="mc">BSP_UART_RX_BUF_SIZE</span>;
+
+<span class="kw">if</span> (nextHead != s_rxTail)   <span class="cm">// 未满 → 写入</span>
+{
+    s_rxBuf[s_rxHead] = byte;
+    s_rxHead = nextHead;
+}
+<span class="cm">// 满了 → 直接丢弃，已有数据不被覆盖</span></pre>
+
+<h3>8.4 临界区保护</h3>
+
+<p>主循环读取 <code>s_rxHead</code> 时，需要防止 ISR 在读取中途修改它：</p>
+
+<pre><span class="fn">__disable_irq</span>();    <span class="cm">// 关中断，读取 head 快照</span>
+head = s_rxHead;
+<span class="fn">__enable_irq</span>();     <span class="cm">// 立刻恢复，临界区尽可能短</span></pre>
+
+<div class="box ok">
+  <div class="box-title">为什么用 volatile？</div>
+  <code>s_rxHead</code> 和 <code>s_rxTail</code> 被 ISR 和主循环同时访问。<code>volatile</code> 告诉编译器每次都从内存读取，不允许缓存到寄存器，防止优化导致读到旧值。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="full-flow"><span class="section-num">9</span>完整数据路径（Echo 回显）</h2>
+
+<p>串口助手发送 <code>"Hello"</code> 到开发板，开发板原样回显的完整过程：</p>
+
+<pre>
+串口助手发送 "Hello"
+    │
+    ▼
+PA10 接收物理信号
+    │
+    ▼
+USART1 接收移位寄存器逐位采样，组装成字节 'H'
+RXNE 标志置 1 → 触发 USART1_IRQHandler
+    │
+    ▼
+USART1_IRQHandler → BSP_UART_RxISR_Callback()
+    读 USART1->DR = 'H'，写入 s_rxBuf[0]，s_rxHead = 1
+    （'e','l','l','o' 同样处理，s_rxHead 最终 = 5）
+    │
+    ▼
+主循环 App_Protocol_Poll()
+    BSP_UART_RxRead(s_echoBuf, 256)
+    → 从 s_rxBuf 读出 ['H','e','l','l','o']，共 5 字节
+    → s_rxTail = 5
+    │
+    ▼
+BSP_UART_Transmit(s_echoBuf, 5)
+    s_txDone 检查通过
+    复制到 s_txBuf = ['H','e','l','l','o']
+    设置 NDTR = 5，启动 DMA
+    │
+    ▼
+DMA2 Stream7 逐字节搬运：
+    等 USART1 TX 空 → 写 'H' 到 DR → USART1 发出 'H'
+    等 USART1 TX 空 → 写 'e' 到 DR → USART1 发出 'e'
+    ... 直到 'o' 发完，NDTR = 0
+    │
+    ▼
+DMA TC 中断 → DMA2_Stream7_IRQHandler
+    s_txDone = 1（标记空闲，可接受下一包）
+    │
+    ▼
+PA9 发出物理信号
+串口助手收到 "Hello" ✓
+</pre>
+
+<div class="box ok">
+  <div class="box-title">阶段2验收状态</div>
+  串口助手发送任意字节，开发板原样回显 ✓<br>
+  DMA TX 传输正常，RXNE 中断接收正常，环形缓冲区工作正常 ✓
+</div>
+
+<hr>
+<p style="color:#8b949e; font-size:0.85rem; text-align:center;">
+  STM32F429ZGT6 · SPL V1.9.0 · 阶段2完成 · 2026-03-26
+</p>
+
+</div>
+</body>
+</html>

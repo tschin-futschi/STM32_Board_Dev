@@ -42,10 +42,16 @@ C_SOURCES += Core/Src/system_stm32f4xx.c
 # BSP sources
 C_SOURCES += BSP/Src/bsp_tick.c
 C_SOURCES += BSP/Src/bsp_led.c
+C_SOURCES += BSP/Src/bsp_uart.c
+
+# App sources
+C_SOURCES += App/Src/app_protocol.c
 
 # SPL driver sources (add as needed per phase)
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_rcc.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_gpio.c
+C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_usart.c
+C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_dma.c
 C_SOURCES += $(SPL_DRV_DIR)/src/misc.c
 
 # Startup
