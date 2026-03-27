@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PMIC RT5112WSC 代码讲解</title>
+<style>
+  body { font-family: "Microsoft YaHei", Arial, sans-serif; background: #1e1e1e; color: #d4d4d4; margin: 0; padding: 0; }
+  .container { max-width: 960px; margin: 0 auto; padding: 40px 24px; }
+  h1 { color: #569cd6; border-bottom: 2px solid #569cd6; padding-bottom: 10px; }
+  h2 { color: #4ec9b0; margin-top: 48px; border-left: 4px solid #4ec9b0; padding-left: 12px; }
+  h3 { color: #dcdcaa; margin-top: 32px; }
+  h4 { color: #ce9178; margin-top: 24px; }
+  p  { line-height: 1.8; color: #cccccc; }
+  .tag { display: inline-block; background: #264f78; color: #9cdcfe; border-radius: 4px; padding: 2px 8px; font-size: 13px; margin: 2px; }
+  pre { background: #252526; border: 1px solid #3c3c3c; border-radius: 6px; padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
+  code { font-family: "Consolas", "Courier New", monospace; }
+  .kw  { color: #569cd6; }   /* keyword */
+  .cm  { color: #6a9955; }   /* comment */
+  .str { color: #ce9178; }   /* string / value */
+  .fn  { color: #dcdcaa; }   /* function */
+  .num { color: #b5cea8; }   /* number */
+  .tp  { color: #4ec9b0; }   /* type */
+  .mc  { color: #9cdcfe; }   /* macro */
+  .note { background: #1f3a2a; border-left: 4px solid #4ec9b0; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 16px 0; }
+  .warn { background: #3a2a1f; border-left: 4px solid #ce9178; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 16px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th { background: #2d2d2d; color: #4ec9b0; padding: 10px 14px; text-align: left; border: 1px solid #3c3c3c; }
+  td { padding: 9px 14px; border: 1px solid #3c3c3c; color: #cccccc; }
+  tr:nth-child(even) td { background: #252526; }
+  .arrow { color: #569cd6; font-weight: bold; }
+  .step { display: inline-block; background: #264f78; color: #9cdcfe; border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; font-size: 13px; margin-right: 8px; }
+  hr { border: none; border-top: 1px solid #3c3c3c; margin: 40px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>PMIC RT5112WSC 代码讲解</h1>
+<p>芯片：RT5112WSC &nbsp;|&nbsp; 接口：I2C3（PA8/PC9）&nbsp;|&nbsp; 地址：0x20 &nbsp;|&nbsp; 日期：2026-03-27</p>
+
+<!-- ============================================================ -->
+<h2>1. 整体架构</h2>
+
+<p>PMIC 驱动分布在三个层次：</p>
+
+<table>
+  <tr><th>层次</th><th>文件</th><th>职责</th></tr>
+  <tr><td>BSP 传输层</td><td>bsp_i2c3.h / bsp_i2c3.c</td><td>I2C3 字节收发，不知道 PMIC 的存在</td></tr>
+  <tr><td>BSP 设备层</td><td>bsp_pmic.h / bsp_pmic.c</td><td>RT5112WSC 寄存器操作、上电时序、HWEN 中断</td></tr>
+  <tr><td>框架层</td><td>Core/Src/main.c<br>Core/Src/stm32f4xx_it.c</td><td>初始化调用顺序、HWEN 中断服务程序</td></tr>
+</table>
+
+<p>调用链示意：</p>
+<pre><code>main()
+  <span class="arrow">→</span> <span class="fn">BSP_I2C3_Init</span>()          <span class="cm">// 建立 I2C3 传输通道</span>
+  <span class="arrow">→</span> <span class="fn">BSP_PMIC_Init</span>()          <span class="cm">// 设置电压 + 使能各路 LDO</span>
+  <span class="arrow">→</span> <span class="fn">BSP_PMIC_HwenInit</span>()      <span class="cm">// 开启 HWEN 中断监控</span>
+
+EXTI4_IRQHandler()
+  <span class="arrow">→</span> g_pmicHwenFlag = 1       <span class="cm">// 仅置标志，不做任何阻塞操作</span>
+
+主循环
+  <span class="arrow">→</span> 检测 g_pmicHwenFlag
+  <span class="arrow">→</span> <span class="fn">BSP_PMIC_Init</span>()          <span class="cm">// HWEN 重新触发时重新初始化</span></code></pre>
+
+<!-- ============================================================ -->
+<h2>2. bsp_pmic.h — 寄存器与参数定义</h2>
+
+<h3>2.1 I2C 地址</h3>
+<pre><code><span class="kw">#define</span> <span class="mc">BSP_PMIC_I2C_ADDR</span>    <span class="num">0x20U</span>   <span class="cm">/* 7-bit 地址，硬件固定 */</span></code></pre>
+<p>RT5112WSC 的 I2C 地址由芯片内部硬连线决定，固定为 <code>0x20</code>。调用 <code>BSP_I2C3_WriteReg</code> / <code>BSP_I2C3_ReadReg</code> 时，驱动会在地址末位附加读/写方向位（<code>devAddr &lt;&lt; 1</code>），实际总线上出现的是 <code>0x40</code>（写）或 <code>0x41</code>（读）。</p>
+
+<h3>2.2 寄存器映射</h3>
+<table>
+  <tr><th>宏名</th><th>地址</th><th>用途</th></tr>
+  <tr><td>BSP_PMIC_REG_BUCK_CTRL</td><td>0x00</td><td>BUCK 使能控制</td></tr>
+  <tr><td>BSP_PMIC_REG_LDO1_CTRL</td><td>0x01</td><td>LDO1 使能控制</td></tr>
+  <tr><td>BSP_PMIC_REG_LDO2_CTRL</td><td>0x02</td><td>LDO2 使能控制</td></tr>
+  <tr><td>BSP_PMIC_REG_LDO3_CTRL</td><td>0x03</td><td>LDO3 使能控制</td></tr>
+  <tr><td>BSP_PMIC_REG_LDO4_CTRL</td><td>0x04</td><td>LDO4 使能控制</td></tr>
+  <tr><td>BSP_PMIC_REG_PRODUCT_ID</td><td>0x07</td><td>芯片 ID（只读，用于自检）</td></tr>
+  <tr><td>BSP_PMIC_REG_BUCK_VOUT</td><td>0x0C</td><td>BUCK 输出电压设置</td></tr>
+  <tr><td>BSP_PMIC_REG_LDO1_VOUT</td><td>0x0D</td><td>LDO1 输出电压设置</td></tr>
+  <tr><td>BSP_PMIC_REG_LDO2_VOUT</td><td>0x0E</td><td>LDO2 输出电压设置</td></tr>
+  <tr><td>BSP_PMIC_REG_LDO3_VOUT</td><td>0x0F</td><td>LDO3 输出电压设置</td></tr>
+  <tr><td>BSP_PMIC_REG_LDO4_VOUT</td><td>0x10</td><td>LDO4 输出电压设置</td></tr>
+</table>
+
+<h3>2.3 控制寄存器位定义</h3>
+<pre><code><span class="kw">#define</span> <span class="mc">BSP_PMIC_CTRL_ENABLE</span>     <span class="num">0x8C</span>   <span class="cm">/* Bit7=1：使能输出；Bits[3:2]=0b11：模式位保持 */</span>
+<span class="kw">#define</span> <span class="mc">BSP_PMIC_CTRL_DISABLE</span>    <span class="num">0x0C</span>   <span class="cm">/* Bit7=0：关闭输出；Bits[3:2]=0b11：模式位保持 */</span></code></pre>
+<p>LDO_CTRL 寄存器的位布局：</p>
+<pre><code>Bit7   Bit6~4   Bit3  Bit2   Bit1  Bit0
+ EN    保留      模式位[1]  模式位[0]   保留   保留
+  1     0  0  0    1     1     0     0   →  0x8C（使能）
+  0     0  0  0    1     1     0     0   →  0x0C（关闭）</code></pre>
+<div class="note">读回验证时只检查 Bit7 是否为 1（<code>tmp &amp; 0x80U</code>），因为寄存器中其他位可能存在只读状态位，严格比对 0x8C 可能误判失败。</div>
+
+<h3>2.4 电压公式</h3>
+<pre><code><span class="kw">#define</span> <span class="mc">BSP_PMIC_VOLT_MIN_V</span>    <span class="num">0.6f</span>
+<span class="kw">#define</span> <span class="mc">BSP_PMIC_VOLT_MAX_V</span>    <span class="num">3.775f</span>
+<span class="kw">#define</span> <span class="mc">BSP_PMIC_VOLT_SCALE</span>    <span class="num">80.0f</span>
+
+<span class="cm">/* 寄存器值 = (目标电压 - 0.6) × 80，步进 12.5 mV */</span></code></pre>
+<p>示例计算：</p>
+<table>
+  <tr><th>目标电压</th><th>计算过程</th><th>寄存器值（十进制）</th><th>寄存器值（十六进制）</th></tr>
+  <tr><td>1.80 V（LDO2）</td><td>(1.8 - 0.6) × 80 = 96</td><td>96</td><td>0x60</td></tr>
+  <tr><td>2.80 V（LDO1/LDO4）</td><td>(2.8 - 0.6) × 80 = 176</td><td>176</td><td>0xB0</td></tr>
+  <tr><td>3.20 V（LDO3）</td><td>(3.2 - 0.6) × 80 = 208</td><td>208</td><td>0xD0</td></tr>
+</table>
+
+<h3>2.5 HWEN 信号引脚</h3>
+<pre><code><span class="kw">#define</span> <span class="mc">BSP_PMIC_HWEN_GPIO_PORT</span>    GPIOE
+<span class="kw">#define</span> <span class="mc">BSP_PMIC_HWEN_PIN</span>          GPIO_Pin_4      <span class="cm">/* PE4 */</span>
+<span class="kw">#define</span> <span class="mc">BSP_PMIC_HWEN_EXTI_LINE</span>    EXTI_Line4
+<span class="kw">#define</span> <span class="mc">BSP_PMIC_HWEN_IRQn</span>         EXTI4_IRQn
+<span class="kw">#define</span> <span class="mc">BSP_PMIC_HWEN_IRQ_PRIORITY</span> <span class="num">8U</span></code></pre>
+<p>HWEN（Hardware Enable）是 PMIC 的硬件使能信号，由外部电路（如 AP/SoC）控制。当 HWEN 从低变高时，PMIC 硬件上电，STM32 同时收到 EXTI4 中断通知，在主循环中重新执行软件初始化序列。</p>
+
+<!-- ============================================================ -->
+<h2>3. bsp_pmic.c — 函数详解</h2>
+
+<h3>3.1 静态辅助函数</h3>
+
+<h4>WaitMs — 阻塞等待</h4>
+<pre><code><span class="kw">static void</span> <span class="fn">WaitMs</span>(<span class="tp">uint32_t</span> ms)
+{
+    <span class="tp">uint32_t</span> start = <span class="fn">BSP_GetTick</span>();
+    <span class="kw">while</span> ((<span class="fn">BSP_GetTick</span>() - start) &lt; ms) { ; }
+}</code></pre>
+<p>使用系统滴答计数器（SysTick，1ms 精度）做差值等待，不调用任何外部延时库。差值运算 <code>BSP_GetTick() - start</code> 在计数器溢出（约 49 天）时仍能正确工作。</p>
+
+<h4>WriteReg / ReadReg — I2C 单字节封装</h4>
+<pre><code><span class="kw">static</span> <span class="tp">ErrorStatus</span> <span class="fn">WriteReg</span>(<span class="tp">uint8_t</span> reg, <span class="tp">uint8_t</span> val)
+{
+    <span class="kw">return</span> <span class="fn">BSP_I2C3_WriteReg</span>(<span class="mc">BSP_PMIC_I2C_ADDR</span>, reg, &amp;val, <span class="num">1U</span>);
+}
+
+<span class="kw">static</span> <span class="tp">ErrorStatus</span> <span class="fn">ReadReg</span>(<span class="tp">uint8_t</span> reg, <span class="tp">uint8_t</span> *pVal)
+{
+    <span class="kw">return</span> <span class="fn">BSP_I2C3_ReadReg</span>(<span class="mc">BSP_PMIC_I2C_ADDR</span>, reg, pVal, <span class="num">1U</span>);
+}</code></pre>
+<p>将 I2C 地址固定为 <code>BSP_PMIC_I2C_ADDR</code>（0x20），上层代码只需关心寄存器地址和数据，不必每次传入设备地址。</p>
+
+<!-- ---- -->
+<h3>3.2 BSP_PMIC_Init — 核心初始化</h3>
+
+<pre><code><span class="tp">ErrorStatus</span> <span class="fn">BSP_PMIC_Init</span>(<span class="kw">void</span>)
+{
+    <span class="tp">uint8_t</span>     tmp;
+    <span class="tp">ErrorStatus</span> ret = SUCCESS;
+
+    <span class="cm">/* ── Step 1：预设各路输出电压（通道尚未使能）─────────────────── */</span>
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetVout</span>(<span class="mc">BSP_PMIC_CH_LDO2</span>, <span class="mc">BSP_PMIC_DEFAULT_LDO2_V</span>) != SUCCESS) { ret = ERROR; }
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetVout</span>(<span class="mc">BSP_PMIC_CH_LDO1</span>, <span class="mc">BSP_PMIC_DEFAULT_LDO1_V</span>) != SUCCESS) { ret = ERROR; }
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetVout</span>(<span class="mc">BSP_PMIC_CH_LDO3</span>, <span class="mc">BSP_PMIC_DEFAULT_LDO3_V</span>) != SUCCESS) { ret = ERROR; }
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetVout</span>(<span class="mc">BSP_PMIC_CH_LDO4</span>, <span class="mc">BSP_PMIC_DEFAULT_LDO4_V</span>) != SUCCESS) { ret = ERROR; }
+    <span class="kw">if</span> (ret != SUCCESS) { <span class="kw">return</span> ERROR; }
+
+    <span class="cm">/* ── Step 2：按顺序使能各路 LDO，步间延时 10 ms ──────────────── */</span>
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetEnable</span>(<span class="mc">BSP_PMIC_CH_LDO2</span>, ENABLE) != SUCCESS) { <span class="kw">return</span> ERROR; }
+    <span class="fn">WaitMs</span>(<span class="mc">BSP_PMIC_SEQ_DELAY_MS</span>);   <span class="cm">// 10 ms</span>
+
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetEnable</span>(<span class="mc">BSP_PMIC_CH_LDO1</span>, ENABLE) != SUCCESS) { <span class="kw">return</span> ERROR; }
+    <span class="fn">WaitMs</span>(<span class="mc">BSP_PMIC_SEQ_DELAY_MS</span>);
+
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetEnable</span>(<span class="mc">BSP_PMIC_CH_LDO3</span>, ENABLE) != SUCCESS) { <span class="kw">return</span> ERROR; }
+    <span class="fn">WaitMs</span>(<span class="mc">BSP_PMIC_SEQ_DELAY_MS</span>);
+
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetEnable</span>(<span class="mc">BSP_PMIC_CH_LDO4</span>, ENABLE) != SUCCESS) { <span class="kw">return</span> ERROR; }
+
+    <span class="cm">/* ── Step 3：读回验证——确认 Bit7（使能位）已置 1 ─────────────── */</span>
+    <span class="kw">if</span> (<span class="fn">ReadReg</span>(<span class="mc">BSP_PMIC_REG_LDO1_CTRL</span>, &amp;tmp) != SUCCESS) { <span class="kw">return</span> ERROR; }
+    <span class="kw">if</span> ((tmp &amp; <span class="num">0x80U</span>) == <span class="num">0U</span>) { <span class="kw">return</span> ERROR; }
+
+    <span class="kw">if</span> (<span class="fn">ReadReg</span>(<span class="mc">BSP_PMIC_REG_LDO2_CTRL</span>, &amp;tmp) != SUCCESS) { <span class="kw">return</span> ERROR; }
+    <span class="kw">if</span> ((tmp &amp; <span class="num">0x80U</span>) == <span class="num">0U</span>) { <span class="kw">return</span> ERROR; }
+
+    <span class="kw">if</span> (<span class="fn">ReadReg</span>(<span class="mc">BSP_PMIC_REG_LDO3_CTRL</span>, &amp;tmp) != SUCCESS) { <span class="kw">return</span> ERROR; }
+    <span class="kw">if</span> ((tmp &amp; <span class="num">0x80U</span>) == <span class="num">0U</span>) { <span class="kw">return</span> ERROR; }
+
+    <span class="kw">if</span> (<span class="fn">ReadReg</span>(<span class="mc">BSP_PMIC_REG_LDO4_CTRL</span>, &amp;tmp) != SUCCESS) { <span class="kw">return</span> ERROR; }
+    <span class="kw">if</span> ((tmp &amp; <span class="num">0x80U</span>) == <span class="num">0U</span>) { <span class="kw">return</span> ERROR; }
+
+    <span class="kw">return</span> SUCCESS;
+}</code></pre>
+
+<p>三个步骤的设计理由：</p>
+<table>
+  <tr><th>步骤</th><th>目的</th><th>为何先设电压再使能</th></tr>
+  <tr><td>Step 1：预设电压</td><td>写入 VOUT 寄存器，但输出尚未开启</td><td>防止使能瞬间输出错误电压，损坏负载</td></tr>
+  <tr><td>Step 2：顺序使能</td><td>LDO2→LDO1→LDO3→LDO4，步间 10ms</td><td>让每路电源充分稳定后再上下一路，避免浪涌</td></tr>
+  <tr><td>Step 3：读回验证</td><td>回读 CTRL 寄存器 Bit7</td><td>确认 I2C 写入成功，芯片实际执行了使能</td></tr>
+</table>
+
+<div class="warn">Step 1 使用 <code>ret</code> 累积所有 SetVout 失败，四路全部尝试后再统一返回错误，避免某一路失败时跳过其余路的设置。Step 2 和 Step 3 则遇到第一个失败立即返回。</div>
+
+<!-- ---- -->
+<h3>3.3 BSP_PMIC_SetVout — 设置输出电压</h3>
+
+<pre><code><span class="tp">ErrorStatus</span> <span class="fn">BSP_PMIC_SetVout</span>(<span class="tp">uint8_t</span> ch, <span class="kw">float</span> voltV)
+{
+    <span class="tp">uint8_t</span> regAddr;
+    <span class="tp">uint8_t</span> regVal;
+
+    <span class="cm">/* 范围检查（闭区间：0.6 V ≤ voltV ≤ 3.775 V）*/</span>
+    <span class="kw">if</span> (!((voltV &gt;= <span class="mc">BSP_PMIC_VOLT_MIN_V</span>) &amp;&amp; (voltV &lt;= <span class="mc">BSP_PMIC_VOLT_MAX_V</span>)))
+        <span class="kw">return</span> ERROR;
+
+    <span class="cm">/* 电压 → 寄存器值转换（四舍五入）*/</span>
+    regVal = (<span class="tp">uint8_t</span>)((voltV - <span class="mc">BSP_PMIC_VOLT_MIN_V</span>) * <span class="mc">BSP_PMIC_VOLT_SCALE</span> + <span class="num">0.5f</span>);
+
+    <span class="cm">/* 通道 → 寄存器地址映射 */</span>
+    <span class="kw">switch</span> (ch)
+    {
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_BUCK</span>: regAddr = <span class="mc">BSP_PMIC_REG_BUCK_VOUT</span>; <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_LDO1</span>: regAddr = <span class="mc">BSP_PMIC_REG_LDO1_VOUT</span>; <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_LDO2</span>: regAddr = <span class="mc">BSP_PMIC_REG_LDO2_VOUT</span>; <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_LDO3</span>: regAddr = <span class="mc">BSP_PMIC_REG_LDO3_VOUT</span>; <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_LDO4</span>: regAddr = <span class="mc">BSP_PMIC_REG_LDO4_VOUT</span>; <span class="kw">break</span>;
+        <span class="kw">default</span>: <span class="kw">return</span> ERROR;
+    }
+
+    <span class="kw">return</span> <span class="fn">WriteReg</span>(regAddr, regVal);
+}</code></pre>
+
+<p>关键点：</p>
+<ul>
+  <li>加 <code>0.5f</code> 实现四舍五入，避免浮点截断导致实际电压偏低 12.5mV</li>
+  <li>只写 VOUT 寄存器，不使能通道——使能由 <code>BSP_PMIC_SetEnable</code> 单独控制</li>
+</ul>
+
+<!-- ---- -->
+<h3>3.4 BSP_PMIC_SetEnable — 使能/关闭通道</h3>
+
+<pre><code><span class="tp">ErrorStatus</span> <span class="fn">BSP_PMIC_SetEnable</span>(<span class="tp">uint8_t</span> ch, <span class="tp">FunctionalState</span> state)
+{
+    <span class="tp">uint8_t</span> regAddr;
+    <span class="tp">uint8_t</span> val = (state == ENABLE) ? <span class="mc">BSP_PMIC_CTRL_ENABLE</span> : <span class="mc">BSP_PMIC_CTRL_DISABLE</span>;
+    <span class="cm">/*                                     0x8C                    0x0C          */</span>
+
+    <span class="kw">switch</span> (ch)
+    {
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_BUCK</span>: regAddr = <span class="mc">BSP_PMIC_REG_BUCK_CTRL</span>; <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_LDO1</span>: regAddr = <span class="mc">BSP_PMIC_REG_LDO1_CTRL</span>; <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_LDO2</span>: regAddr = <span class="mc">BSP_PMIC_REG_LDO2_CTRL</span>; <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_LDO3</span>: regAddr = <span class="mc">BSP_PMIC_REG_LDO3_CTRL</span>; <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="mc">BSP_PMIC_CH_LDO4</span>: regAddr = <span class="mc">BSP_PMIC_REG_LDO4_CTRL</span>; <span class="kw">break</span>;
+        <span class="kw">default</span>: <span class="kw">return</span> ERROR;
+    }
+
+    <span class="kw">return</span> <span class="fn">WriteReg</span>(regAddr, val);
+}</code></pre>
+
+<!-- ---- -->
+<h3>3.5 BSP_PMIC_ReadPid — 读取芯片 ID</h3>
+
+<pre><code><span class="tp">ErrorStatus</span> <span class="fn">BSP_PMIC_ReadPid</span>(<span class="tp">uint8_t</span> *pPid)
+{
+    <span class="kw">return</span> <span class="fn">ReadReg</span>(<span class="mc">BSP_PMIC_REG_PRODUCT_ID</span>, pPid);
+}</code></pre>
+
+<p>读取 <code>0x07</code> 寄存器的产品 ID，用于启动时验证 I2C 通信是否正常、芯片型号是否匹配。I2C 失败时返回 <code>ERROR</code>，调用方可据此判断通信状态。</p>
+
+<!-- ---- -->
+<h3>3.6 BSP_PMIC_HwenInit — HWEN 中断初始化</h3>
+
+<pre><code><span class="kw">void</span> <span class="fn">BSP_PMIC_HwenInit</span>(<span class="kw">void</span>)
+{
+    <span class="cm">/* 1. 使能时钟：GPIOE（AHB1）和 SYSCFG（APB2）*/</span>
+    <span class="fn">RCC_AHB1PeriphClockCmd</span>(<span class="mc">BSP_PMIC_HWEN_GPIO_CLK</span>, ENABLE);
+    <span class="fn">RCC_APB2PeriphClockCmd</span>(RCC_APB2Periph_SYSCFG,   ENABLE);
+
+    <span class="cm">/* 2. PE4 配置为浮空输入（外部电路已定义空闲电平）*/</span>
+    gpioInit.GPIO_Pin  = <span class="mc">BSP_PMIC_HWEN_PIN</span>;
+    gpioInit.GPIO_Mode = GPIO_Mode_IN;
+    gpioInit.GPIO_PuPd = GPIO_PuPd_NOPULL;
+    <span class="fn">GPIO_Init</span>(<span class="mc">BSP_PMIC_HWEN_GPIO_PORT</span>, &amp;gpioInit);
+
+    <span class="cm">/* 3. SYSCFG：将 GPIOE Pin4 路由到 EXTI Line4 */</span>
+    <span class="fn">SYSCFG_EXTILineConfig</span>(<span class="mc">BSP_PMIC_HWEN_EXTI_PORT</span>, <span class="mc">BSP_PMIC_HWEN_EXTI_PIN</span>);
+
+    <span class="cm">/* 4. EXTI：上升沿触发，中断模式 */</span>
+    extiInit.EXTI_Line    = <span class="mc">BSP_PMIC_HWEN_EXTI_LINE</span>;
+    extiInit.EXTI_Trigger = EXTI_Trigger_Rising;   <span class="cm">// HWEN 低→高时触发</span>
+    extiInit.EXTI_Mode    = EXTI_Mode_Interrupt;
+    extiInit.EXTI_LineCmd = ENABLE;
+    <span class="fn">EXTI_Init</span>(&amp;extiInit);
+
+    <span class="cm">/* 5. NVIC：优先级 8（低于 UART/I2C，高于 SysTick）*/</span>
+    nvicInit.NVIC_IRQChannel                   = <span class="mc">BSP_PMIC_HWEN_IRQn</span>;
+    nvicInit.NVIC_IRQChannelPreemptionPriority = <span class="mc">BSP_PMIC_HWEN_IRQ_PRIORITY</span>;  <span class="cm">// 8</span>
+    nvicInit.NVIC_IRQChannelSubPriority        = <span class="num">0U</span>;   <span class="cm">// Group_4：子优先级无效</span>
+    nvicInit.NVIC_IRQChannelCmd                = ENABLE;
+    <span class="fn">NVIC_Init</span>(&amp;nvicInit);
+}</code></pre>
+
+<div class="note">此函数必须在 <code>BSP_PMIC_Init()</code> 之后调用。若在 PMIC 初始化完成前开启 HWEN 中断，上电时的 HWEN 上升沿会触发中断，导致 <code>BSP_PMIC_Init()</code> 被重复调用。</div>
+
+<!-- ============================================================ -->
+<h2>4. HWEN 中断服务程序</h2>
+
+<p>位于 <code>Core/Src/stm32f4xx_it.c</code>：</p>
+
+<pre><code><span class="kw">void</span> <span class="fn">EXTI4_IRQHandler</span>(<span class="kw">void</span>)
+{
+    <span class="kw">if</span> (<span class="fn">EXTI_GetITStatus</span>(<span class="mc">BSP_PMIC_HWEN_EXTI_LINE</span>) != RESET)
+    {
+        <span class="fn">EXTI_ClearITPendingBit</span>(<span class="mc">BSP_PMIC_HWEN_EXTI_LINE</span>);  <span class="cm">// 先清标志，防止重入</span>
+
+        <span class="cm">/* 读取 GPIO 电平确认 HWEN 仍为高（简单去抖）*/</span>
+        <span class="kw">if</span> (<span class="fn">GPIO_ReadInputDataBit</span>(<span class="mc">BSP_PMIC_HWEN_GPIO_PORT</span>, <span class="mc">BSP_PMIC_HWEN_PIN</span>) != RESET)
+        {
+            g_pmicHwenFlag = <span class="num">1U</span>;   <span class="cm">// 仅置标志，所有重初始化工作交给主循环</span>
+        }
+    }
+}</code></pre>
+
+<p>ISR 遵循"最小操作"原则：</p>
+<ul>
+  <li>先清中断标志，再读 GPIO，防止在读取期间新边沿到来时丢失</li>
+  <li>读 GPIO 电平做去抖：若已回落为低，说明是毛刺，不置标志</li>
+  <li>不调用任何阻塞函数（无 DelayMs、无 I2C 操作）</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>5. main.c 中的集成</h2>
+
+<h3>5.1 初始化顺序</h3>
+
+<pre><code><span class="fn">BSP_Tick_Init</span>();       <span class="cm">// SysTick — WaitMs 依赖此模块，必须最先初始化</span>
+<span class="fn">BSP_LED_Init</span>();
+<span class="fn">BSP_UART_Init</span>();
+
+<span class="fn">BSP_I2C1_Init</span>();       <span class="cm">// 电机 IC 通道</span>
+<span class="fn">BSP_I2C3_Init</span>();       <span class="cm">// PMIC 通道 — 必须在 PMIC_Init 之前</span>
+
+<span class="fn">BSP_PMIC_Init</span>();       <span class="cm">// 上电时序：预设电压 → 顺序使能 → 读回验证</span>
+<span class="fn">BSP_PMIC_HwenInit</span>();   <span class="cm">// HWEN 中断 — 必须在 PMIC_Init 之后</span>
+
+<span class="fn">App_Protocol_Init</span>();   <span class="cm">// 协议层 — PMIC 供电正常后才启动上层应用</span></code></pre>
+
+<div class="warn">若 <code>BSP_I2C3_Init()</code> 或 <code>BSP_PMIC_Init()</code> 返回 ERROR，程序立即进入 <code>while(1)</code> 死循环。此时 LED 不再闪烁，可直观判断故障发生在哪个阶段。</div>
+
+<h3>5.2 主循环中的 HWEN 处理</h3>
+
+<pre><code><span class="kw">while</span> (<span class="num">1</span>)
+{
+    <span class="fn">App_Protocol_Poll</span>();
+
+    <span class="kw">if</span> (g_pmicHwenFlag != <span class="num">0U</span>)          <span class="cm">// ISR 置位</span>
+    {
+        g_pmicHwenFlag = <span class="num">0U</span>;            <span class="cm">// 先清标志</span>
+        (<span class="kw">void</span>)<span class="fn">BSP_PMIC_Init</span>();            <span class="cm">// 重新执行完整上电时序</span>
+    }
+
+    <span class="cm">/* LED 心跳 */</span>
+}</code></pre>
+
+<p>主循环中的 <code>BSP_PMIC_Init()</code> 调用包含约 30ms 的阻塞（3 次 WaitMs(10ms)）。由于串口协议超时为 100ms，30ms 阻塞在容限内，不会触发上位机超时重传。</p>
+
+<!-- ============================================================ -->
+<h2>6. 上电完整时序图</h2>
+
+<pre><code>时间轴 ──────────────────────────────────────────────────────────────▶
+
+main() 启动
+  │
+  ├─ BSP_I2C3_Init()         I2C3 总线建立
+  │
+  ├─ BSP_PMIC_Init()
+  │     │
+  │     ├─ SetVout(LDO2, 1.8V)   写 LDO2_VOUT = 0x60
+  │     ├─ SetVout(LDO1, 2.8V)   写 LDO1_VOUT = 0xB0
+  │     ├─ SetVout(LDO3, 3.2V)   写 LDO3_VOUT = 0xD0
+  │     ├─ SetVout(LDO4, 2.8V)   写 LDO4_VOUT = 0xB0
+  │     │
+  │     ├─ SetEnable(LDO2)        写 LDO2_CTRL = 0x8C  ──▶ LDO2 上电 1.8V
+  │     ├─ WaitMs(10)
+  │     ├─ SetEnable(LDO1)        写 LDO1_CTRL = 0x8C  ──▶ LDO1 上电 2.8V
+  │     ├─ WaitMs(10)
+  │     ├─ SetEnable(LDO3)        写 LDO3_CTRL = 0x8C  ──▶ LDO3 上电 3.2V
+  │     ├─ WaitMs(10)
+  │     ├─ SetEnable(LDO4)        写 LDO4_CTRL = 0x8C  ──▶ LDO4 上电 2.8V
+  │     │
+  │     └─ ReadBack(LDO1~4)       验证 Bit7 = 1 ✓
+  │
+  ├─ BSP_PMIC_HwenInit()      开启 EXTI4 中断
+  │
+  └─ App_Protocol_Init()      协议层启动，系统就绪</code></pre>
+
+<hr>
+<p style="color:#6a9955; font-size:13px;">生成日期：2026-03-27 &nbsp;|&nbsp; MCU: STM32F429ZGT6 &nbsp;|&nbsp; PMIC: RT5112WSC &nbsp;|&nbsp; 工具链: arm-none-eabi-gcc + SPL V1.9.0</p>
+
+</div>
+</body>
+</html>
