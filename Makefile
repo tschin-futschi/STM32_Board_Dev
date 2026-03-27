@@ -43,6 +43,7 @@ C_SOURCES += Core/Src/system_stm32f4xx.c
 C_SOURCES += BSP/Src/bsp_tick.c
 C_SOURCES += BSP/Src/bsp_led.c
 C_SOURCES += BSP/Src/bsp_uart.c
+C_SOURCES += BSP/Src/bsp_i2c1.c
 
 # App sources
 C_SOURCES += App/Src/app_protocol.c
@@ -52,6 +53,7 @@ C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_rcc.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_gpio.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_usart.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_dma.c
+C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_i2c.c
 C_SOURCES += $(SPL_DRV_DIR)/src/misc.c
 
 # Startup

@@ -7,9 +7,10 @@
 #include "bsp_tick.h"
 #include "bsp_led.h"
 #include "bsp_uart.h"
+#include "bsp_i2c1.h"
 #include "app_protocol.h"
 
-#define HEARTBEAT_INTERVAL_MS   100U
+#define HEARTBEAT_INTERVAL_MS   500U
 
 int main(void)
 {
@@ -24,6 +25,12 @@ int main(void)
 
     /* UART */
     BSP_UART_Init();
+
+    /* I2C1 (motor IC) */
+    if (BSP_I2C1_Init() != SUCCESS)
+    {
+        while (1) { ; }   /* Bus stuck — halt for debug */
+    }
 
     /* App */
     App_Protocol_Init();

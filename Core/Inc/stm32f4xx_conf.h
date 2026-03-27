@@ -11,6 +11,7 @@
 #include "stm32f4xx_gpio.h"
 #include "stm32f4xx_usart.h"
 #include "stm32f4xx_dma.h"
+#include "stm32f4xx_i2c.h"
 #include "misc.h"
 
 /* assert_param definition */
