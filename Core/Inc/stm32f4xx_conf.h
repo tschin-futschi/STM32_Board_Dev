@@ -12,6 +12,8 @@
 #include "stm32f4xx_usart.h"
 #include "stm32f4xx_dma.h"
 #include "stm32f4xx_i2c.h"
+#include "stm32f4xx_exti.h"
+#include "stm32f4xx_syscfg.h"
 #include "misc.h"
 
 /* assert_param definition */

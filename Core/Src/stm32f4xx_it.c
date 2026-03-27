@@ -6,6 +6,7 @@
 #include "stm32f4xx_it.h"
 #include "bsp_tick.h"
 #include "bsp_uart.h"
+#include "bsp_pmic.h"
 
 /*--------------------------------------------------------------------------*/
 /*                    Cortex-M4 Processor Exception Handlers                */
@@ -84,5 +85,19 @@ void DMA2_Stream7_IRQHandler(void)
     {
         BSP_UART_TxDmaISR_Callback();
         DMA_ClearITPendingBit(BSP_UART_DMA_STREAM, DMA_IT_TCIF7);
+    }
+}
+
+void EXTI4_IRQHandler(void)
+{
+    if (EXTI_GetITStatus(BSP_PMIC_HWEN_EXTI_LINE) != RESET)
+    {
+        EXTI_ClearITPendingBit(BSP_PMIC_HWEN_EXTI_LINE);
+
+        /* Only set flag if HWEN is still high (basic debounce) */
+        if (GPIO_ReadInputDataBit(BSP_PMIC_HWEN_GPIO_PORT, BSP_PMIC_HWEN_PIN) != RESET)
+        {
+            g_pmicHwenFlag = 1U;
+        }
     }
 }

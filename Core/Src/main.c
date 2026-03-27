@@ -8,6 +8,8 @@
 #include "bsp_led.h"
 #include "bsp_uart.h"
 #include "bsp_i2c1.h"
+#include "bsp_i2c3.h"
+#include "bsp_pmic.h"
 #include "app_protocol.h"
 
 #define HEARTBEAT_INTERVAL_MS   500U
@@ -32,6 +34,21 @@ int main(void)
         while (1) { ; }   /* Bus stuck — halt for debug */
     }
 
+    /* I2C3 (PMIC) */
+    if (BSP_I2C3_Init() != SUCCESS)
+    {
+        while (1) { ; }   /* Bus stuck — halt for debug */
+    }
+
+    /* PMIC RT5112WSC: power sequencing */
+    if (BSP_PMIC_Init() != SUCCESS)
+    {
+        while (1) { ; }   /* PMIC init failed — halt for debug */
+    }
+
+    /* HWEN interrupt — enable after PMIC init to avoid spurious re-init */
+    BSP_PMIC_HwenInit();
+
     /* App */
     App_Protocol_Init();
 
@@ -42,6 +59,13 @@ int main(void)
         uint32_t now = BSP_GetTick();
 
         App_Protocol_Poll();
+
+        /* PMIC re-init on HWEN rising edge */
+        if (g_pmicHwenFlag != 0U)
+        {
+            g_pmicHwenFlag = 0U;
+            (void)BSP_PMIC_Init();
+        }
 
         /* Heartbeat LED1: toggle every HEARTBEAT_INTERVAL_MS */
         if (now - prevTick >= HEARTBEAT_INTERVAL_MS)

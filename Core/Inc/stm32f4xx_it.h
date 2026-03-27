@@ -19,5 +19,6 @@ void PendSV_Handler(void);
 void SysTick_Handler(void);
 void USART1_IRQHandler(void);
 void DMA2_Stream7_IRQHandler(void);
+void EXTI4_IRQHandler(void);
 
 #endif /* __STM32F4xx_IT_H */
