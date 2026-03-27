@@ -153,7 +153,11 @@ $(BUILD_DIR):
 # Flash & Clean
 ######################################################################
 
-flash: all
+reset:
+	openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
+		-c "init; reset halt; reset run; exit"
+
+flash: all reset
 	openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
 		-c "program $(BUILD_DIR)/$(TARGET).elf verify reset exit"
 
@@ -164,4 +168,4 @@ clean:
 # Phony
 ######################################################################
 
-.PHONY: all clean flash size
+.PHONY: all clean flash reset size

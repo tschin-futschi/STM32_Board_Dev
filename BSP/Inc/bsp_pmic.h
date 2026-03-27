@@ -110,7 +110,7 @@ extern volatile uint8_t g_pmicHwenFlag;
 
 ErrorStatus BSP_PMIC_Init(void);
 void        BSP_PMIC_HwenInit(void);
-uint8_t     BSP_PMIC_ReadPid(void);
+ErrorStatus BSP_PMIC_ReadPid(uint8_t *pPid);
 ErrorStatus BSP_PMIC_SetVout(uint8_t ch, float voltV);
 ErrorStatus BSP_PMIC_SetEnable(uint8_t ch, FunctionalState state);
 

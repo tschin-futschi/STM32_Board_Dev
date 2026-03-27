@@ -12,7 +12,7 @@
 #include "bsp_pmic.h"
 #include "app_protocol.h"
 
-#define HEARTBEAT_INTERVAL_MS   500U
+#define HEARTBEAT_INTERVAL_MS   100U
 
 int main(void)
 {

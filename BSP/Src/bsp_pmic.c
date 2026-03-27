@@ -92,18 +92,18 @@ ErrorStatus BSP_PMIC_Init(void)
 
     if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO4, ENABLE) != SUCCESS)  { return ERROR; }
 
-    /* Step 3: Read-back to verify */
+    /* Step 3: Read-back to verify Bit7 (enable bit) is set */
     if (ReadReg(BSP_PMIC_REG_LDO1_CTRL, &tmp) != SUCCESS) { return ERROR; }
-    if (tmp != BSP_PMIC_CTRL_ENABLE) { return ERROR; }
+    if ((tmp & 0x80U) == 0U) { return ERROR; }
 
     if (ReadReg(BSP_PMIC_REG_LDO2_CTRL, &tmp) != SUCCESS) { return ERROR; }
-    if (tmp != BSP_PMIC_CTRL_ENABLE) { return ERROR; }
+    if ((tmp & 0x80U) == 0U) { return ERROR; }
 
     if (ReadReg(BSP_PMIC_REG_LDO3_CTRL, &tmp) != SUCCESS) { return ERROR; }
-    if (tmp != BSP_PMIC_CTRL_ENABLE) { return ERROR; }
+    if ((tmp & 0x80U) == 0U) { return ERROR; }
 
     if (ReadReg(BSP_PMIC_REG_LDO4_CTRL, &tmp) != SUCCESS) { return ERROR; }
-    if (tmp != BSP_PMIC_CTRL_ENABLE) { return ERROR; }
+    if ((tmp & 0x80U) == 0U) { return ERROR; }
 
     return SUCCESS;
 }
@@ -149,13 +149,12 @@ void BSP_PMIC_HwenInit(void)
 
 /**
   * @brief  Read PRODUCT_ID register. Used for startup self-check.
-  * @return Product ID byte, or 0x00 on I2C failure.
+  * @param  pPid  Output: product ID byte.
+  * @retval SUCCESS / ERROR (I2C failure)
   */
-uint8_t BSP_PMIC_ReadPid(void)
+ErrorStatus BSP_PMIC_ReadPid(uint8_t *pPid)
 {
-    uint8_t pid = 0x00U;
-    (void)ReadReg(BSP_PMIC_REG_PRODUCT_ID, &pid);
-    return pid;
+    return ReadReg(BSP_PMIC_REG_PRODUCT_ID, pPid);
 }
 
 /**
@@ -168,13 +167,13 @@ ErrorStatus BSP_PMIC_SetVout(uint8_t ch, float voltV)
     uint8_t regAddr;
     uint8_t regVal;
 
-    /* Range check (exclusive bounds) */
-    if (!((voltV > BSP_PMIC_VOLT_MIN_V) && (voltV < BSP_PMIC_VOLT_MAX_V)))
+    /* Range check (inclusive bounds) */
+    if (!((voltV >= BSP_PMIC_VOLT_MIN_V) && (voltV <= BSP_PMIC_VOLT_MAX_V)))
     {
         return ERROR;
     }
 
-    regVal = (uint8_t)((voltV - BSP_PMIC_VOLT_MIN_V) * BSP_PMIC_VOLT_SCALE);
+    regVal = (uint8_t)((voltV - BSP_PMIC_VOLT_MIN_V) * BSP_PMIC_VOLT_SCALE + 0.5f);
 
     switch (ch)
     {
