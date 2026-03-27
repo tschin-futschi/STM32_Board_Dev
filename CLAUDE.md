@@ -321,4 +321,55 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 
 ---
 
+## 9. 测试框架规范
+
+### 目录结构
+
+```
+Test/
+  Inc/
+    test_config.h      ← 所有测试项使能宏，统一在此修改
+    test_<模块>.h      ← 每个测试模块的函数声明
+  Src/
+    test_<模块>.c      ← 测试实现
+```
+
+### 使能宏规则
+
+- `test_config.h` 中每个测试项定义一个宏，`1` = 启用，`0` = 禁用
+- 宏命名：`TEST_<模块>_<功能>`，全大写下划线，例如 `TEST_PMIC_PID_READ`
+- **所有测试宏默认值为 `0`**，正式固件编译时不引入任何测试代码
+
+### 测试模块规范
+
+- 测试函数命名：`Test_模块_功能_Poll(uint32_t tick)`（必要时加 `_Init()`）
+- 测试代码**只能调用 BSP/App 公开 API**，不得修改任何业务文件的逻辑
+- 测试代码不得在 BSP/App 文件中插入任何内容；所有测试逻辑放在 `Test/` 目录下
+
+### main.c 接入方式
+
+```c
+/* 文件顶部 */
+#include "test_config.h"
+#if TEST_PMIC_PID_READ
+#include "test_pmic.h"
+#endif
+
+/* 主循环中 */
+#if TEST_PMIC_PID_READ
+    Test_PMIC_PidRead_Poll(now);
+#endif
+```
+
+### Makefile
+
+测试源文件统一追加到 `C_SOURCES`（宏为 0 时 `--gc-sections` 自动裁剪死代码，无需条件编译 Makefile）：
+
+```makefile
+# Test sources
+C_SOURCES += Test/Src/test_pmic.c
+```
+
+---
+
 *MCU: STM32F429ZG | SPL V1.9.0 | GNU Make + MSYS2 | 通用电机调试板（无闭环）*

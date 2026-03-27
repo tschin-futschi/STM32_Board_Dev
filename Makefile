@@ -50,6 +50,9 @@ C_SOURCES += BSP/Src/bsp_pmic.c
 # App sources
 C_SOURCES += App/Src/app_protocol.c
 
+# Test sources
+C_SOURCES += Test/Src/test_pmic.c
+
 # SPL driver sources (add as needed per phase)
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_rcc.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_gpio.c
@@ -89,6 +92,7 @@ C_DEFS += -DHSE_VALUE=8000000U
 C_INCLUDES  = -ICore/Inc
 C_INCLUDES += -IBSP/Inc
 C_INCLUDES += -IApp/Inc
+C_INCLUDES += -ITest/Inc
 C_INCLUDES += -I$(SPL_DRV_DIR)/inc
 C_INCLUDES += -I$(CMSIS_DEV_DIR)/Include
 C_INCLUDES += -I$(CMSIS_INC_DIR)

@@ -12,6 +12,11 @@
 #include "bsp_pmic.h"
 #include "app_protocol.h"
 
+#include "test_config.h"
+#if TEST_PMIC_PID_READ
+#include "test_pmic.h"
+#endif
+
 #define HEARTBEAT_INTERVAL_MS   100U
 
 int main(void)
@@ -59,6 +64,10 @@ int main(void)
         uint32_t now = BSP_GetTick();
 
         App_Protocol_Poll();
+
+#if TEST_PMIC_PID_READ
+        Test_PMIC_PidRead_Poll(now);
+#endif
 
         /* PMIC re-init on HWEN rising edge */
         if (g_pmicHwenFlag != 0U)
