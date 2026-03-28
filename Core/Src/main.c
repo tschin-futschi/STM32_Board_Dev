@@ -8,6 +8,7 @@
 #include "bsp_led.h"
 #include "bsp_uart.h"
 #include "bsp_i2c1.h"
+#include "bsp_i2c2.h"
 #include "bsp_i2c3.h"
 #include "bsp_pmic.h"
 #include "app_protocol.h"
@@ -17,7 +18,7 @@
 #include "test_pmic.h"
 #endif
 
-#define HEARTBEAT_INTERVAL_MS   100U
+#define HEARTBEAT_INTERVAL_MS   500U
 
 int main(void)
 {
@@ -33,8 +34,14 @@ int main(void)
     /* UART */
     BSP_UART_Init();
 
-    /* I2C1 (motor IC) */
+    /* I2C1 (INA power/current measurement) */
     if (BSP_I2C1_Init() != SUCCESS)
+    {
+        while (1) { ; }   /* Bus stuck — halt for debug */
+    }
+
+    /* I2C2 (motor IC) */
+    if (BSP_I2C2_Init() != SUCCESS)
     {
         while (1) { ; }   /* Bus stuck — halt for debug */
     }

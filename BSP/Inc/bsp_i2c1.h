@@ -1,6 +1,6 @@
 /**
   * @file    bsp_i2c1.h
-  * @brief   I2C1 BSP — polling + software timeout, motor IC communication
+  * @brief   I2C1 BSP — polling + software timeout, INA power/current measurement
   *
   * Hardware: I2C1, PB6(SCL) / PB7(SDA), AF4, 400 kHz
   */
@@ -34,13 +34,6 @@
 /* Speed & timeout */
 #define BSP_I2C1_SPEED              400000U     /* 400 kHz fast mode            */
 #define BSP_I2C1_TIMEOUT            10000U      /* Software timeout loop count  */
-
-/*--------------------------------------------------------------------------*/
-/*                          Motor IC runtime config                         */
-/*--------------------------------------------------------------------------*/
-
-extern uint8_t  g_motorIcAddr;      /* 7-bit I2C address, set by protocol   */
-extern char     g_motorIcName[16];  /* Human-readable name, set by protocol  */
 
 /*--------------------------------------------------------------------------*/
 /*                               API                                        */
