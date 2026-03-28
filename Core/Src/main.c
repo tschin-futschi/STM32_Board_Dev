@@ -12,6 +12,7 @@
 #include "bsp_i2c3.h"
 #include "bsp_pmic.h"
 #include "app_protocol.h"
+#include "app_sample.h"
 
 #include "test_config.h"
 #if TEST_PMIC_PID_READ
@@ -66,6 +67,7 @@ int main(void)
 
     /* App */
     App_Protocol_Init();
+    App_Sample_Init();
 
 #if TEST_I2C_SCAN
     Test_I2C_Scan_Run();
@@ -78,6 +80,7 @@ int main(void)
         uint32_t now = BSP_GetTick();
 
         App_Protocol_Poll();
+        App_Sample_Poll();
 
 #if TEST_PMIC_PID_READ
         Test_PMIC_PidRead_Poll(now);

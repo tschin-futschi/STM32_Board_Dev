@@ -7,6 +7,7 @@
 #include "bsp_tick.h"
 #include "bsp_uart.h"
 #include "bsp_pmic.h"
+#include "bsp_tim.h"
 
 /*--------------------------------------------------------------------------*/
 /*                    Cortex-M4 Processor Exception Handlers                */
@@ -85,6 +86,15 @@ void DMA2_Stream7_IRQHandler(void)
     {
         BSP_UART_TxDmaISR_Callback();
         DMA_ClearITPendingBit(BSP_UART_DMA_STREAM, DMA_IT_TCIF7);
+    }
+}
+
+void TIM6_DAC_IRQHandler(void)
+{
+    if (TIM_GetITStatus(BSP_SAMPLE_TIM_PERIPH, TIM_IT_Update) != RESET)
+    {
+        TIM_ClearITPendingBit(BSP_SAMPLE_TIM_PERIPH, TIM_IT_Update);
+        BSP_SampleTim_ISR_Callback();
     }
 }
 

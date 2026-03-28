@@ -2,9 +2,9 @@
   * @file    app_protocol.h
   * @brief   Protocol application layer — control frame parser & dispatcher
   *
-  * Frame format (protocol.MD v1.3):
+  * Frame format (protocol.MD v1.4):
   *   Control:     [0xAA][0x55][SEQ][CMD][LEN][DATA n][CRC16_H][CRC16_L]
-  *   Data stream: [0xBB][MASK][DATA n][XOR]  — TX only, defined here for reference
+  *   Data stream: [0xBB][MASK][LEN][DATA n][XOR]  — TX only, defined here for reference
   *
   * CRC16-MODBUS: poly=0x8005, init=0xFFFF, LSB-first, result big-endian
   * CRC range: SEQ + CMD + LEN + DATA (excludes frame header)
@@ -35,8 +35,26 @@
 
 typedef enum
 {
-    PROTO_CMD_HEARTBEAT  = 0x00U,   /* Bidirectional, data empty            */
-    PROTO_CMD_ERROR_RESP = 0x01U,   /* STM32->PC, data = 1 byte error code  */
+    /* System control group (0x00~0x1F) */
+    PROTO_CMD_HEARTBEAT      = 0x00U,   /* Bidirectional, data empty                */
+    PROTO_CMD_ERROR_RESP     = 0x01U,   /* STM32->PC, data = 1 byte error code      */
+    PROTO_CMD_DEBUG_INFO     = 0x06U,   /* STM32->PC, data = ASCII string           */
+    PROTO_CMD_SET_MOTOR_ADDR = 0x02U,   /* PC->STM32, data = 1 byte 7-bit I2C addr  */
+    PROTO_CMD_SET_BAUDRATE   = 0x03U,   /* PC->STM32, data = 1 byte baudrate index  */
+    PROTO_CMD_RESET          = 0x04U,   /* PC->STM32, data empty, triggers sw reset */
+    PROTO_CMD_MOTOR_PING     = 0x05U,   /* PC->STM32, data empty, tests I2C ACK     */
+
+    /* Register read/write group (0x20~0x4F) */
+    PROTO_CMD_READ_REG       = 0x20U,   /* PC->STM32, data = 1 byte reg addr           */
+    PROTO_CMD_WRITE_REG      = 0x21U,   /* PC->STM32, data = 3 bytes [reg][H][L]       */
+    PROTO_CMD_BULK_READ      = 0x22U,   /* PC->STM32, data = 3 bytes [reg][cntH][cntL] */
+
+    /* Oscilloscope control group (0x50~0x7F) */
+    PROTO_CMD_START_SAMPLE   = 0x50U,   /* PC->STM32, data empty                       */
+    PROTO_CMD_STOP_SAMPLE    = 0x51U,   /* PC->STM32, data empty                       */
+    PROTO_CMD_SET_INTERVAL   = 0x52U,   /* PC->STM32, data = 1 byte interval index     */
+    PROTO_CMD_SET_CHANNEL    = 0x53U,   /* PC->STM32, data = 1 byte channel mask       */
+    PROTO_CMD_SET_REG_MAP    = 0x54U,   /* PC->STM32, data = 16 bytes (8 ch × 2 bytes) */
 } Proto_Cmd_t;
 
 /*--------------------------------------------------------------------------*/
