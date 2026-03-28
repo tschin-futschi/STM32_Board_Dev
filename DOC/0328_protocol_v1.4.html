@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>串口通讯协议文档 v1.4</title>
+<style>
+  body { font-family: "Microsoft YaHei", Arial, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 24px; color: #222; background: #f9f9f9; }
+  h1 { background: #1a3a5c; color: #fff; padding: 18px 24px; border-radius: 6px; margin-bottom: 8px; }
+  h2 { background: #2e6da4; color: #fff; padding: 8px 16px; border-radius: 4px; margin-top: 36px; }
+  h3 { color: #2e6da4; border-bottom: 2px solid #2e6da4; padding-bottom: 4px; margin-top: 28px; }
+  h4 { color: #1a3a5c; margin-top: 20px; margin-bottom: 6px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; background: #fff; }
+  th { background: #1a3a5c; color: #fff; padding: 8px 12px; text-align: left; }
+  td { padding: 7px 12px; border: 1px solid #ccc; }
+  tr:nth-child(even) td { background: #f0f4f8; }
+  code { background: #e8f0fe; color: #c7254e; padding: 2px 6px; border-radius: 3px; font-family: Consolas, monospace; font-size: 0.95em; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 6px; overflow-x: auto; font-family: Consolas, monospace; font-size: 0.9em; line-height: 1.5; }
+  .frame-box { background: #fff; border: 2px solid #2e6da4; border-radius: 6px; padding: 16px; margin: 12px 0; }
+  .cmd-block { background: #fff; border-left: 4px solid #2e6da4; padding: 12px 16px; margin: 16px 0; border-radius: 0 6px 6px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .cmd-block h4 { margin-top: 0; font-size: 1.05em; }
+  .tag-stm32 { background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 10px; font-size: 0.85em; font-weight: bold; }
+  .tag-pc { background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 10px; font-size: 0.85em; font-weight: bold; }
+  .tag-both { background: #fff8e1; color: #f57f17; padding: 2px 8px; border-radius: 10px; font-size: 0.85em; font-weight: bold; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+  .warn { background: #fce4ec; border-left: 4px solid #e53935; padding: 10px 14px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+  .version { color: #888; font-size: 0.9em; margin-top: 4px; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 24px 0; }
+  .toc { background: #fff; border: 1px solid #ddd; padding: 16px 24px; border-radius: 6px; margin-bottom: 24px; }
+  .toc ul { margin: 4px 0; padding-left: 20px; }
+  .toc li { margin: 4px 0; }
+  .toc a { color: #2e6da4; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<h1>串口通讯协议文档</h1>
+<p class="version">版本 v1.4 &nbsp;|&nbsp; 日期 2026-03-28 &nbsp;|&nbsp; STM32F429ZG 电机调试板</p>
+
+<div class="toc">
+  <strong>目录</strong>
+  <ul>
+    <li><a href="#s1">1. 概述</a></li>
+    <li><a href="#s2">2. 串口参数</a></li>
+    <li><a href="#s3">3. 帧格式</a>
+      <ul>
+        <li><a href="#s31">3.1 控制帧</a></li>
+        <li><a href="#s32">3.2 数据流帧</a></li>
+        <li><a href="#s33">3.3 帧类型识别</a></li>
+      </ul>
+    </li>
+    <li><a href="#s4">4. 命令码定义</a>
+      <ul>
+        <li><a href="#s41">4.1 分组规划</a></li>
+        <li><a href="#s42">4.2 系统控制组</a></li>
+        <li><a href="#s43">4.3 寄存器读写组</a></li>
+        <li><a href="#s44">4.4 示波器控制组</a></li>
+        <li><a href="#s45">4.5 错误码定义</a></li>
+      </ul>
+    </li>
+    <li><a href="#s5">5. 心跳机制</a></li>
+    <li><a href="#s6">6. 超时与重发机制</a></li>
+    <li><a href="#s7">7. CRC16 计算说明</a></li>
+    <li><a href="#s8">8. 版本记录</a></li>
+  </ul>
+</div>
+
+<!-- ===== 1 ===== -->
+<h2 id="s1">1. 概述</h2>
+<p>本协议定义了 PC 上位机与 STM32 开发板之间的串口通讯规范。STM32 通过 I2C 与电机驱动 IC 进行交互，PC 通过本协议对其进行控制与数据读取。</p>
+
+<!-- ===== 2 ===== -->
+<h2 id="s2">2. 串口参数</h2>
+<table>
+  <tr><th>参数</th><th>值</th></tr>
+  <tr><td>波特率</td><td>默认 115200，可配置（见 4.2 节 <code>0x03</code> 命令）</td></tr>
+  <tr><td>数据位</td><td>8</td></tr>
+  <tr><td>停止位</td><td>1</td></tr>
+  <tr><td>校验位</td><td>无</td></tr>
+  <tr><td>流控</td><td>无</td></tr>
+</table>
+
+<!-- ===== 3 ===== -->
+<h2 id="s3">3. 帧格式</h2>
+
+<h3 id="s31">3.1 控制帧</h3>
+<p>用于 PC 下发指令、STM32 返回响应，低频、可靠性优先。</p>
+<div class="frame-box">
+<pre>+--------+--------+----------+----------+----------+--------+----------+
+| 0xAA   | 0x55   | 帧序号   | 命令码   | 数据长度 | 数据   | CRC16    |
+| 1 字节 | 1 字节 | 1 字节   | 1 字节   | 1 字节   | n 字节 | 2 字节   |
++--------+--------+----------+----------+----------+--------+----------+</pre>
+</div>
+<table>
+  <tr><th>字段</th><th>长度</th><th>说明</th></tr>
+  <tr><td>帧头</td><td>2 字节</td><td>固定为 <code>0xAA 0x55</code></td></tr>
+  <tr><td>帧序号</td><td>1 字节</td><td>发送方递增计数，0~255 循环，响应帧回传相同序号</td></tr>
+  <tr><td>命令码</td><td>1 字节</td><td>标识指令类型，见第 4 节</td></tr>
+  <tr><td>数据长度</td><td>1 字节</td><td>数据字段的字节数，范围 0~255</td></tr>
+  <tr><td>数据</td><td>n 字节</td><td>指令参数或返回内容，由命令码决定</td></tr>
+  <tr><td>CRC16</td><td>2 字节</td><td>对帧序号、命令码、数据长度、数据计算，高字节在前</td></tr>
+</table>
+<div class="note">CRC16 校验范围：帧序号 + 命令码 + 数据长度 + 数据（不含帧头 0xAA 0x55）</div>
+
+<h3 id="s32">3.2 数据流帧</h3>
+<p>用于 STM32 向 PC 高频上报示波器采样数据，实时性优先，开销最小。</p>
+<div class="frame-box">
+<pre>+--------+------------+--------+--------+----------+
+| 0xBB   | 通道掩码   | LEN    | 数据   | XOR校验  |
+| 1 字节 | 1 字节     | 1 字节 | n 字节 | 1 字节   |
++--------+------------+--------+--------+----------+</pre>
+</div>
+<table>
+  <tr><th>字段</th><th>长度</th><th>说明</th></tr>
+  <tr><td>帧头</td><td>1 字节</td><td>固定为 <code>0xBB</code></td></tr>
+  <tr><td>通道掩码</td><td>1 字节</td><td>每个 bit 对应一个通道，bit=1 表示该通道有效</td></tr>
+  <tr><td>LEN</td><td>1 字节</td><td>数据段字节数，= 通道掩码中 bit 为 1 的数量 × 2</td></tr>
+  <tr><td>数据</td><td>n 字节</td><td>各通道采样值，按通道编号从低到高排列，每通道 2 字节（int16，大端）</td></tr>
+  <tr><td>XOR 校验</td><td>1 字节</td><td>对通道掩码、LEN 和数据所有字节逐字节异或</td></tr>
+</table>
+<p><strong>通道掩码示例：</strong></p>
+<table>
+  <tr><th>掩码值</th><th>含义</th></tr>
+  <tr><td><code>0x01</code></td><td>仅通道 0</td></tr>
+  <tr><td><code>0x03</code></td><td>通道 0、通道 1</td></tr>
+  <tr><td><code>0x0F</code></td><td>通道 0~3</td></tr>
+  <tr><td><code>0xFF</code></td><td>通道 0~7（全部）</td></tr>
+</table>
+
+<h3 id="s33">3.3 帧类型识别</h3>
+<table>
+  <tr><th>首字节</th><th>帧类型</th></tr>
+  <tr><td><code>0xAA</code></td><td>控制帧（需继续读取第二字节确认 <code>0x55</code>）</td></tr>
+  <tr><td><code>0xBB</code></td><td>数据流帧</td></tr>
+</table>
+
+<!-- ===== 4 ===== -->
+<h2 id="s4">4. 命令码定义</h2>
+
+<h3 id="s41">4.1 分组规划</h3>
+<table>
+  <tr><th>范围</th><th>类别</th></tr>
+  <tr><td><code>0x00</code></td><td>心跳</td></tr>
+  <tr><td><code>0x01 ~ 0x1F</code></td><td>系统控制类</td></tr>
+  <tr><td><code>0x20 ~ 0x4F</code></td><td>寄存器读写类</td></tr>
+  <tr><td><code>0x50 ~ 0x7F</code></td><td>示波器控制类</td></tr>
+  <tr><td><code>0x80 ~ 0xBF</code></td><td>预留扩展</td></tr>
+  <tr><td><code>0xC0 ~ 0xFE</code></td><td>用户自定义</td></tr>
+  <tr><td><code>0xFF</code></td><td>保留</td></tr>
+</table>
+
+<h3 id="s42">4.2 系统控制组（0x00~0x1F）</h3>
+
+<div class="cmd-block">
+  <h4><code>0x00</code> 心跳 &nbsp;<span class="tag-both">双向</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+    <tr><td>响应</td><td>STM32 echo 原帧</td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x01</code> 错误响应 &nbsp;<span class="tag-stm32">STM32→PC</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>1 字节错误码（见 4.5 节）</td></tr>
+    <tr><td>说明</td><td>STM32 遇到异常时主动回复</td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x02</code> 设置电机 IC 地址 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>1 字节，7-bit I2C 地址</td></tr>
+    <tr><td>成功响应</td><td>echo 原帧（地址已更新）</td></tr>
+    <tr><td>失败条件</td><td>地址为 <code>0x00</code> 或 &gt; <code>0x7F</code>；I2C 无应答</td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code></td></tr>
+    <tr><td>备注</td><td>失败时 <code>g_motorIcAddr</code> 保持原值不变</td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x03</code> 设置波特率 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>1 字节，波特率索引（0x00~0x07）</td></tr>
+    <tr><td>成功响应</td><td>用<strong>旧波特率</strong> echo 原帧，发完后切换到新波特率</td></tr>
+    <tr><td>失败条件</td><td>索引 &gt; <code>0x07</code></td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code></td></tr>
+  </table>
+  <p><strong>波特率索引表：</strong></p>
+  <table>
+    <tr><th>索引</th><th>波特率</th></tr>
+    <tr><td><code>0x00</code></td><td>9600</td></tr>
+    <tr><td><code>0x01</code></td><td>19200</td></tr>
+    <tr><td><code>0x02</code></td><td>38400</td></tr>
+    <tr><td><code>0x03</code></td><td>57600</td></tr>
+    <tr><td><code>0x04</code></td><td>115200（默认）</td></tr>
+    <tr><td><code>0x05</code></td><td>230400</td></tr>
+    <tr><td><code>0x06</code></td><td>460800</td></tr>
+    <tr><td><code>0x07</code></td><td>921600</td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x04</code> 系统复位 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+    <tr><td>成功响应</td><td>echo 原帧，发完后执行软件复位</td></tr>
+    <tr><td>复位后状态</td><td>波特率恢复默认（115200），<code>g_motorIcAddr</code> 清零</td></tr>
+  </table>
+  <div class="warn">⚠ 上位机发复位前必须先发 <code>0x03</code> 将波特率切回 115200，否则复位后通信断开。</div>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x05</code> 电机应答测试 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+    <tr><td>成功响应</td><td>echo 原帧</td></tr>
+    <tr><td>失败条件</td><td><code>g_motorIcAddr</code> 为 <code>0x00</code>；I2C 无应答</td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code></td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x06</code> 调试信息 &nbsp;<span class="tag-stm32">STM32→PC</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>ASCII 字符串，最长 255 字节</td></tr>
+    <tr><td>触发时机</td><td>STM32 主动发送，用于说明错误详情（如启动采样失败原因）</td></tr>
+  </table>
+</div>
+
+<h3 id="s43">4.3 寄存器读写组（0x20~0x4F）</h3>
+
+<div class="cmd-block">
+  <h4><code>0x20</code> 读单个寄存器 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>1 字节：<code>[寄存器地址]</code></td></tr>
+    <tr><td>成功响应</td><td>返回帧，数据段 2 字节，大端（高字节在前）</td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code></td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x21</code> 写单个寄存器 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>3 字节：<code>[寄存器地址][数据高字节][数据低字节]</code>，大端</td></tr>
+    <tr><td>成功响应</td><td>echo 原帧</td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code></td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x22</code> 批量读寄存器 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>3 字节：<code>[起始寄存器地址][读取数量高字节][读取数量低字节]</code></td></tr>
+    <tr><td>成功响应</td><td>多帧返回，每帧数据段：<code>[包序号][总包数][数据...]</code>，每包最多 252 字节（126 个寄存器），每个寄存器 2 字节大端</td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code></td></tr>
+  </table>
+  <div class="note">分包发送过程中收到的所有控制帧全部忽略。采样进行中收到此命令直接返回错误码 <code>0x03</code>。</div>
+</div>
+
+<h3 id="s44">4.4 示波器控制组（0x50~0x7F）</h3>
+
+<p><strong>采样默认值：</strong></p>
+<table>
+  <tr><th>参数</th><th>默认值</th></tr>
+  <tr><td>采样间隔</td><td>索引 <code>0x05</code>（1000 us）</td></tr>
+  <tr><td>通道掩码</td><td><code>0x01</code>（仅通道 0）</td></tr>
+  <tr><td>通道寄存器映射</td><td>全部 <code>0xFFFF</code>（未映射）</td></tr>
+</table>
+
+<div class="cmd-block">
+  <h4><code>0x50</code> 启动采样 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+    <tr><td>成功响应</td><td>echo 原帧，之后持续上报数据流帧</td></tr>
+    <tr><td>失败条件</td><td>所有通道寄存器映射均为 <code>0xFFFF</code></td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code>；同时发 <code>0x06</code> 调试信息说明原因</td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x51</code> 停止采样 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+    <tr><td>成功响应</td><td>立即停止 TIM6，清空采样缓存，echo 原帧</td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x52</code> 设置采样间隔 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>1 字节，采样间隔索引（0x00~0x07）</td></tr>
+    <tr><td>成功响应</td><td>echo 原帧</td></tr>
+    <tr><td>失败条件</td><td>索引 &gt; <code>0x07</code></td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code></td></tr>
+  </table>
+  <p><strong>采样间隔索引表：</strong></p>
+  <table>
+    <tr><th>索引</th><th>采样间隔</th><th>对应频率</th></tr>
+    <tr><td><code>0x00</code></td><td>100 us</td><td>10000 Hz</td></tr>
+    <tr><td><code>0x01</code></td><td>200 us</td><td>5000 Hz</td></tr>
+    <tr><td><code>0x02</code></td><td>300 us</td><td>3333 Hz</td></tr>
+    <tr><td><code>0x03</code></td><td>500 us</td><td>2000 Hz</td></tr>
+    <tr><td><code>0x04</code></td><td>750 us</td><td>1333 Hz</td></tr>
+    <tr><td><code>0x05</code></td><td>1000 us</td><td>1000 Hz（默认）</td></tr>
+    <tr><td><code>0x06</code></td><td>1500 us</td><td>667 Hz</td></tr>
+    <tr><td><code>0x07</code></td><td>2000 us</td><td>500 Hz</td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x53</code> 设置采样通道 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>1 字节，通道掩码（bit0~bit7 对应通道 0~7）</td></tr>
+    <tr><td>成功响应</td><td>echo 原帧</td></tr>
+    <tr><td>失败条件</td><td>掩码为 <code>0x00</code></td></tr>
+    <tr><td>失败响应</td><td>错误响应帧，错误码 <code>0x03</code></td></tr>
+  </table>
+</div>
+
+<div class="cmd-block">
+  <h4><code>0x54</code> 设置通道寄存器映射 &nbsp;<span class="tag-pc">PC→STM32</span></h4>
+  <table>
+    <tr><th>项目</th><th>内容</th></tr>
+    <tr><td>数据段</td><td>16 字节，每通道 2 字节寄存器地址，大端，共 8 个通道按顺序排列</td></tr>
+    <tr><td>成功响应</td><td>echo 原帧</td></tr>
+    <tr><td>不使用的通道</td><td>填 <code>0xFFFF</code></td></tr>
+  </table>
+  <div class="note">示例：通道 0 映射寄存器 <code>0x0010</code>，通道 1~7 不使用：<br>
+  数据段 = <code>00 10 FF FF FF FF FF FF FF FF FF FF FF FF FF FF</code></div>
+</div>
+
+<h3 id="s45">4.5 错误码定义</h3>
+<table>
+  <tr><th>错误码</th><th>名称</th><th>说明</th></tr>
+  <tr><td><code>0x01</code></td><td>CRC 校验失败</td><td>收到的控制帧 CRC 校验不通过，错误响应帧序号固定填 <code>0xFF</code></td></tr>
+  <tr><td><code>0x02</code></td><td>未知命令码</td><td>命令码未定义或不支持</td></tr>
+  <tr><td><code>0x03</code></td><td>执行失败</td><td>命令执行过程中发生错误（如 I2C 通讯失败）</td></tr>
+</table>
+
+<!-- ===== 5 ===== -->
+<h2 id="s5">5. 心跳机制</h2>
+<ul>
+  <li>PC 端每隔 <strong>1 秒</strong> 发送一次心跳控制帧（命令码 <code>0x00</code>，数据长度 <code>0x00</code>）</li>
+  <li>STM32 收到后立即回复相同格式的心跳帧</li>
+  <li>PC 端若连续 <strong>3 次</strong> 未收到心跳回复，判定连接断开，界面给出断线提示</li>
+</ul>
+
+<!-- ===== 6 ===== -->
+<h2 id="s6">6. 超时与重发机制</h2>
+<ul>
+  <li>本机制仅适用于普通控制帧，<strong>心跳帧独立处理，不走本机制</strong></li>
+  <li>PC 发出控制帧后，等待 STM32 响应超时时间为 <strong>100 ms</strong></li>
+  <li>超时后自动重发，最多重发 <strong>2 次</strong>（共发送 3 次）</li>
+  <li>3 次均无响应则判定本次指令失败，上层报错</li>
+  <li>重发时帧序号保持不变，STM32 收到重复帧序号时重新执行并回复（不做去重处理）</li>
+</ul>
+
+<!-- ===== 7 ===== -->
+<h2 id="s7">7. CRC16 计算说明</h2>
+<ul>
+  <li>算法：CRC16-MODBUS（多项式 <code>0x8005</code>，初始值 <code>0xFFFF</code>，低位先行）</li>
+  <li>校验范围：帧序号 + 命令码 + 数据长度 + 数据</li>
+  <li>结果 2 字节，<strong>高字节在前（大端）</strong> 存入帧</li>
+</ul>
+<div class="warn">⚠ 标准 MODBUS 协议中 CRC16 结果为低字节在前（小端），本协议规定为大端，实现时若使用现成库需手动交换两字节后再写入帧。</div>
+
+<!-- ===== 8 ===== -->
+<h2 id="s8">8. 版本记录</h2>
+<table>
+  <tr><th>版本</th><th>日期</th><th>说明</th></tr>
+  <tr><td>v1.0</td><td>2026-03-18</td><td>初版协议定义</td></tr>
+  <tr><td>v1.1</td><td>2026-03-26</td><td>数据流帧明确采样值为 int16 大端；控制帧新增帧序号字段</td></tr>
+  <tr><td>v1.2</td><td>2026-03-26</td><td>明确 CRC16-MODBUS 大端存放；新增错误响应命令码（0x01）及错误码定义；新增超时重发机制</td></tr>
+  <tr><td>v1.3</td><td>2026-03-26</td><td>修正章节编号重复问题；明确 CRC 校验失败时错误响应帧序号固定填 0xFF</td></tr>
+  <tr><td>v1.4</td><td>2026-03-28</td><td>完整定义所有命令码（系统控制/寄存器读写/示波器控制）；数据流帧新增 LEN 字段；新增调试信息命令（0x06）；明确批量读分包机制及采样默认值</td></tr>
+</table>
+
+</body>
+</html>
