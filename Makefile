@@ -53,6 +53,7 @@ C_SOURCES += App/Src/app_protocol.c
 
 # Test sources
 C_SOURCES += Test/Src/test_pmic.c
+C_SOURCES += Test/Src/test_i2c_scan.c
 
 # SPL driver sources (add as needed per phase)
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_rcc.c

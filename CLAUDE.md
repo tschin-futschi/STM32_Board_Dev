@@ -36,9 +36,9 @@ STM32F429ZG  ↕ I2C
 |------|----------|--------|------|
 | LED1 | PF13 | `BSP_LED_` | 高电平点亮，心跳（仅此一个 LED） |
 | UART | USART1, PA9/PA10, AF7 | `BSP_UART_` | APB2, 115200 默认 |
-| I2C（INA） | I2C1, PB6/PB7, AF4 | `BSP_I2C1_` | APB1, 400 kHz，测量板子功耗和电流，主机模式 |
-| I2C（电机） | I2C2, PB10/PB11, AF4 | `BSP_I2C2_` | APB1, 400 kHz 默认，主机模式 |
-| I2C（PMIC） | I2C3, PA8/PC9, AF4 | `BSP_I2C3_` | APB1, PMIC RT5112WSC，主机模式 |
+| I2C（INA） | I2C1, PB6/PB7, AF4 | `BSP_I2C1_` | APB1, 400 kHz，INA 功耗/电流测量，地址 0x40，主机模式 |
+| I2C（电机） | I2C2, PB10/PB11, AF4 | `BSP_I2C2_` | APB1, 400 kHz，电机 IC，主机模式 |
+| I2C（PMIC+GYRO） | I2C3, PA8/PC9, AF4 | `BSP_I2C3_` | APB1, PMIC RT5112WSC（0x20）+ GYRO（0x68，型号待确认），主机模式 |
 | 采样定时器 | TIM6 | `BSP_SAMPLE_TIM_` | APB1, **ISR 名 `TIM6_DAC_IRQHandler`** |
 
 > TIM6 时钟 = APB1 × 2 = 90 MHz。PSC=89 → 1 MHz，ARR = 1M/freq - 1

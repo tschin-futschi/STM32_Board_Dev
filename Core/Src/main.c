@@ -17,8 +17,11 @@
 #if TEST_PMIC_PID_READ
 #include "test_pmic.h"
 #endif
+#if TEST_I2C_SCAN
+#include "test_i2c_scan.h"
+#endif
 
-#define HEARTBEAT_INTERVAL_MS   500U
+#define HEARTBEAT_INTERVAL_MS   100U
 
 int main(void)
 {
@@ -63,6 +66,10 @@ int main(void)
 
     /* App */
     App_Protocol_Init();
+
+#if TEST_I2C_SCAN
+    Test_I2C_Scan_Run();
+#endif
 
     uint32_t prevTick = BSP_GetTick();
 

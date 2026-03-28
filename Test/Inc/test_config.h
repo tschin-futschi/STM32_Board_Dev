@@ -7,6 +7,9 @@
 #define TEST_CONFIG_H
 
 /* PMIC -------------------------------------------------------------------- */
-#define TEST_PMIC_PID_READ   1   /* 每 100 ms 读 Product ID，通过 UART 上报   */
+#define TEST_PMIC_PID_READ   0   /* 每 100 ms 读 Product ID，通过 UART 上报   */
+
+/* I2C --------------------------------------------------------------------- */
+#define TEST_I2C_SCAN        1   /* 上电后扫描 I2C1/I2C2/I2C3，结果通过 UART 上报 */
 
 #endif /* TEST_CONFIG_H */
