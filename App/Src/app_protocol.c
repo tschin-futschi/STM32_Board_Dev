@@ -37,9 +37,19 @@ static const uint32_t k_baudrateTable[8U] =
 #define PROTO_BAUDRATE_IDX_MAX  7U
 #define PROTO_MOTOR_ADDR_MAX    0x7FU
 
+/* Bulk read packet sizing */
+#define BULK_MAX_DATA_PER_PKT   252U                            /* Max data bytes per packet (126 regs × 2)          */
+#define BULK_PKT_HEADER_LEN     2U                              /* [packet_seq(1)][total_packets(1)]                 */
+#define BULK_REGS_PER_PKT       (BULK_MAX_DATA_PER_PKT / 2U)   /* Max registers per packet                         */
+#define BULK_MAX_TOTAL_REGS     (255U * BULK_REGS_PER_PKT)     /* Max total regs: 255 pkts × 126 regs/pkt = 32130   */
+
 /* Compile-time guard: TX frame must fit inside BSP DMA buffer */
 _Static_assert(PROTO_MAX_FRAME_LEN <= BSP_UART_TX_BUF_SIZE,
                "PROTO_MAX_FRAME_LEN exceeds BSP_UART_TX_BUF_SIZE");
+
+/* Compile-time guard: bulk packet data length must fit in uint8_t */
+_Static_assert((BULK_PKT_HEADER_LEN + BULK_MAX_DATA_PER_PKT) <= 255U,
+               "Bulk packet dataLen overflows uint8_t");
 
 /*--------------------------------------------------------------------------*/
 /*                         RX state machine                                 */
@@ -246,16 +256,19 @@ static void HandleMotorPing(const Proto_Frame_t *pFrame)
 /* 0x20 — Read single register */
 static void HandleReadReg(const Proto_Frame_t *pFrame)
 {
+    uint16_t reg;
     uint16_t val;
     uint8_t  resp[2];
 
-    if (pFrame->len != 1U)
+    if (pFrame->len != 2U)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
 
-    if (App_Motor_ReadReg(pFrame->data[0], &val) != SUCCESS)
+    reg = ((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1];
+
+    if (App_Motor_ReadReg(reg, &val) != SUCCESS)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
@@ -270,18 +283,20 @@ static void HandleReadReg(const Proto_Frame_t *pFrame)
 /* 0x21 — Write single register */
 static void HandleWriteReg(const Proto_Frame_t *pFrame)
 {
+    uint16_t reg;
     uint16_t val;
 
-    if (pFrame->len != 3U)
+    if (pFrame->len != 4U)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
 
-    /* data[0] = reg, data[1] = high byte, data[2] = low byte */
-    val = ((uint16_t)pFrame->data[1] << 8U) | (uint16_t)pFrame->data[2];
+    /* data[0..1] = reg (big-endian), data[2..3] = value (big-endian) */
+    reg = ((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1];
+    val = ((uint16_t)pFrame->data[2] << 8U) | (uint16_t)pFrame->data[3];
 
-    if (App_Motor_WriteReg(pFrame->data[0], val) != SUCCESS)
+    if (App_Motor_WriteReg(reg, val) != SUCCESS)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
@@ -293,16 +308,9 @@ static void HandleWriteReg(const Proto_Frame_t *pFrame)
 /* 0x22 — Bulk read registers (multi-packet response) */
 static void HandleBulkRead(const Proto_Frame_t *pFrame)
 {
-    /* Max data bytes per packet (252 = 126 registers × 2 bytes) */
-    #define BULK_MAX_DATA_PER_PKT   252U
-    /* Packet header: [packet_seq(1)][total_packets(1)] */
-    #define BULK_PKT_HEADER_LEN     2U
-    /* Max registers per packet */
-    #define BULK_REGS_PER_PKT       (BULK_MAX_DATA_PER_PKT / 2U)
+    static uint8_t s_pktBuf[BULK_PKT_HEADER_LEN + BULK_MAX_DATA_PER_PKT];
 
-    static uint8_t s_pktBuf[PROTO_FRAME_OVERHEAD + BULK_PKT_HEADER_LEN + BULK_MAX_DATA_PER_PKT];
-
-    uint8_t  startReg;
+    uint16_t startReg;
     uint16_t totalRegs;
     uint8_t  totalPkts;
     uint8_t  pktIdx;
@@ -313,16 +321,17 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
     uint8_t  i;
     uint32_t timeout;
 
-    if (pFrame->len != 3U)
+    if (pFrame->len != 4U)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
 
-    startReg  = pFrame->data[0];
-    totalRegs = ((uint16_t)pFrame->data[1] << 8U) | (uint16_t)pFrame->data[2];
+    /* data[0..1] = startReg (big-endian), data[2..3] = totalRegs (big-endian) */
+    startReg  = ((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1];
+    totalRegs = ((uint16_t)pFrame->data[2] << 8U) | (uint16_t)pFrame->data[3];
 
-    if (totalRegs == 0U)
+    if ((totalRegs == 0U) || (totalRegs > BULK_MAX_TOTAL_REGS))
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
@@ -352,7 +361,7 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
 
         for (i = 0U; i < regsThisPkt; i++)
         {
-            if (App_Motor_ReadReg((uint8_t)(startReg + regIdx + i), &val) != SUCCESS)
+            if (App_Motor_ReadReg((uint16_t)(startReg + regIdx + i), &val) != SUCCESS)
             {
                 SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
                 return;

@@ -47,11 +47,11 @@ extern char     g_motorIcName[16];  /* Human-readable name, set by protocol  */
 /*--------------------------------------------------------------------------*/
 
 ErrorStatus BSP_I2C2_Init(void);
-ErrorStatus BSP_I2C2_WriteReg(uint8_t devAddr, uint8_t reg,
+ErrorStatus BSP_I2C2_WriteReg(uint8_t devAddr, uint16_t reg,
                                const uint8_t *pData, uint16_t len);
-ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint8_t reg,
+ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint16_t reg,
                               uint8_t *pData, uint16_t len);
-ErrorStatus BSP_I2C2_ReadRegs(uint8_t devAddr, uint8_t startReg,
+ErrorStatus BSP_I2C2_ReadRegs(uint8_t devAddr, uint16_t startReg,
                                uint8_t *pData, uint16_t len);
 ErrorStatus BSP_I2C2_Scan(uint8_t *pAddrList, uint8_t *pCount);
 void        BSP_I2C2_RecoverBus(void);

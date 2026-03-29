@@ -14,7 +14,7 @@
   * @param  pVal  Output: register value (host byte order uint16).
   * @retval SUCCESS / ERROR
   */
-ErrorStatus App_Motor_ReadReg(uint8_t reg, uint16_t *pVal)
+ErrorStatus App_Motor_ReadReg(uint16_t reg, uint16_t *pVal)
 {
     uint8_t buf[2];
 
@@ -34,7 +34,7 @@ ErrorStatus App_Motor_ReadReg(uint8_t reg, uint16_t *pVal)
   * @param  val  Value to write (host byte order uint16).
   * @retval SUCCESS / ERROR
   */
-ErrorStatus App_Motor_WriteReg(uint8_t reg, uint16_t val)
+ErrorStatus App_Motor_WriteReg(uint16_t reg, uint16_t val)
 {
     uint8_t buf[2];
 

@@ -15,7 +15,7 @@
 /*                               API                                        */
 /*--------------------------------------------------------------------------*/
 
-ErrorStatus App_Motor_ReadReg(uint8_t reg, uint16_t *pVal);
-ErrorStatus App_Motor_WriteReg(uint8_t reg, uint16_t val);
+ErrorStatus App_Motor_ReadReg(uint16_t reg, uint16_t *pVal);
+ErrorStatus App_Motor_WriteReg(uint16_t reg, uint16_t val);
 
 #endif /* __APP_MOTOR_H */

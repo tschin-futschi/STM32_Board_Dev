@@ -150,7 +150,7 @@ void BSP_I2C2_RecoverBus(void)
   * @brief  Write phase: START → addr+W → reg address.
   *         Leaves bus in transmitter mode; caller must continue or STOP.
   */
-static ErrorStatus WritePhase(uint8_t devAddr, uint8_t reg)
+static ErrorStatus WritePhase(uint8_t devAddr, uint16_t reg)
 {
     uint32_t timeout;
 
@@ -185,8 +185,16 @@ static ErrorStatus WritePhase(uint8_t devAddr, uint8_t reg)
         if (--timeout == 0U) { return ERROR; }
     }
 
-    /* Register address */
-    I2C_SendData(BSP_I2C2_PERIPH, reg);
+    /* Register address high byte */
+    I2C_SendData(BSP_I2C2_PERIPH, (uint8_t)(reg >> 8U));
+    timeout = BSP_I2C2_TIMEOUT;
+    while (!I2C_CheckEvent(BSP_I2C2_PERIPH, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
+    {
+        if (--timeout == 0U) { return ERROR; }
+    }
+
+    /* Register address low byte */
+    I2C_SendData(BSP_I2C2_PERIPH, (uint8_t)(reg & 0xFFU));
     timeout = BSP_I2C2_TIMEOUT;
     while (!I2C_CheckEvent(BSP_I2C2_PERIPH, I2C_EVENT_MASTER_BYTE_TRANSMITTED))
     {
@@ -204,7 +212,7 @@ static ErrorStatus WritePhase(uint8_t devAddr, uint8_t reg)
   * @brief  Write len bytes from pData to register reg of device devAddr.
   * @retval SUCCESS / ERROR (timeout → RecoverBus called)
   */
-ErrorStatus BSP_I2C2_WriteReg(uint8_t devAddr, uint8_t reg,
+ErrorStatus BSP_I2C2_WriteReg(uint8_t devAddr, uint16_t reg,
                                const uint8_t *pData, uint16_t len)
 {
     uint32_t timeout;
@@ -243,7 +251,7 @@ error:
   *
   * @retval SUCCESS / ERROR (timeout → RecoverBus called)
   */
-ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint8_t reg,
+ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint16_t reg,
                               uint8_t *pData, uint16_t len)
 {
     uint32_t timeout;
@@ -331,7 +339,7 @@ error:
   * @brief  Read len bytes from consecutive registers starting at startReg.
   *         Identical to BSP_I2C2_ReadReg — provided for API symmetry.
   */
-ErrorStatus BSP_I2C2_ReadRegs(uint8_t devAddr, uint8_t startReg,
+ErrorStatus BSP_I2C2_ReadRegs(uint8_t devAddr, uint16_t startReg,
                                uint8_t *pData, uint16_t len)
 {
     return BSP_I2C2_ReadReg(devAddr, startReg, pData, len);

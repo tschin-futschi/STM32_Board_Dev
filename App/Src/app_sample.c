@@ -58,7 +58,7 @@ static void SendStreamFrame(uint8_t effectiveMask)
     {
         if ((effectiveMask & (uint8_t)(1U << ch)) != 0U)
         {
-            if (App_Motor_ReadReg((uint8_t)s_channelRegMap[ch], &val) != SUCCESS)
+            if (App_Motor_ReadReg(s_channelRegMap[ch], &val) != SUCCESS)
             {
                 val = 0U;   /* Send 0 on read failure, keep stream alive */
             }
@@ -67,7 +67,7 @@ static void SendStreamFrame(uint8_t effectiveMask)
         }
     }
 
-    /* XOR: effectiveMask XOR LEN XOR all data bytes */
+    /* XOR: effectiveMask XOR LEN XOR all data bytes (protocol.MD v1.4) */
     xor = effectiveMask ^ len;
     for (i = dataStart; i < idx; i++)
     {
