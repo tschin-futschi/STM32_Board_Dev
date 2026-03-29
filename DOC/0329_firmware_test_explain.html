@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STM32 固件测试脚本讲解 — firmware_test_i2C_command_0329.py</title>
+<style>
+  :root {
+    --bg: #1a1d23;
+    --surface: #22262e;
+    --surface2: #2a2f3a;
+    --border: #3a3f4b;
+    --text: #d4d8e2;
+    --text-muted: #7a8196;
+    --accent: #5b9cf6;
+    --pass: #3fb950;
+    --fail: #f85149;
+    --skip: #e3b341;
+    --warn: #d29922;
+    --code-bg: #161b22;
+    --code-text: #e6edf3;
+    --tag-sys: #388bfd;
+    --tag-t2: #58a6ff;
+    --tag-t4: #bc8cff;
+    --tag-t5: #56d364;
+    --tag-t6: #ff9a3c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  a { color: var(--accent); text-decoration: none; }
+
+  /* ── Layout ── */
+  .page-wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  /* ── Header ── */
+  .page-header {
+    border-left: 4px solid var(--accent);
+    padding: 12px 20px;
+    background: var(--surface);
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 36px;
+  }
+  .page-header h1 { font-size: 20px; color: #fff; margin-bottom: 4px; }
+  .page-header .meta { font-size: 12px; color: var(--text-muted); }
+  .page-header .meta span { margin-right: 18px; }
+
+  /* ── Section ── */
+  .section { margin-bottom: 40px; }
+  .section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .num {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    width: 22px; height: 22px;
+    font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* ── Architecture Diagram ── */
+  .arch-box {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    color: var(--code-text);
+    line-height: 1.9;
+  }
+  .arch-box .hi { color: var(--accent); }
+  .arch-box .pass-c { color: var(--pass); }
+  .arch-box .warn-c { color: var(--warn); }
+
+  /* ── Frame Format ── */
+  .frame-row {
+    display: flex;
+    gap: 2px;
+    margin: 16px 0;
+    flex-wrap: wrap;
+  }
+  .frame-cell {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    background: var(--surface2);
+    text-align: center;
+    min-width: 60px;
+  }
+  .frame-cell .label { font-size: 10px; color: var(--text-muted); display: block; }
+  .frame-cell .val { font-size: 13px; font-family: monospace; color: var(--accent); }
+  .frame-cell.sof .val { color: var(--pass); }
+  .frame-cell.crc .val { color: var(--warn); }
+
+  /* ── Test Table ── */
+  .test-table { width: 100%; border-collapse: collapse; }
+  .test-table th {
+    background: var(--surface2);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .test-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .test-table tr:last-child td { border-bottom: none; }
+  .test-table tr:hover td { background: var(--surface2); }
+
+  /* ── Tags ── */
+  .tag {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 4px;
+    white-space: nowrap;
+  }
+  .tag-t2  { background: #0d2a4a; color: var(--tag-t2); }
+  .tag-t4  { background: #2a1f4a; color: var(--tag-t4); }
+  .tag-t5  { background: #0d3320; color: var(--tag-t5); }
+  .tag-t6  { background: #3d2200; color: var(--tag-t6); }
+  .tag-sys { background: #0d2040; color: var(--tag-sys); }
+
+  /* ── Code Block ── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: var(--code-text);
+    line-height: 1.6;
+    margin: 10px 0;
+  }
+  .kw   { color: #ff7b72; }
+  .fn   { color: #d2a8ff; }
+  .str  { color: #a5d6ff; }
+  .num  { color: #79c0ff; }
+  .cmt  { color: #8b949e; font-style: italic; }
+  .const { color: var(--pass); }
+
+  /* ── Status badges ── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 20px;
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-pass  { background: #0d3320; color: var(--pass); }
+  .badge-fail  { background: #3d0d0d; color: var(--fail); }
+  .badge-skip  { background: #2a2200; color: var(--skip); }
+
+  /* ── Info Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Flow Steps ── */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 8px;
+  }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .flow-step .arrow {
+    color: var(--accent);
+    font-family: monospace;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .flow-step .step-txt { flex: 1; }
+
+  /* ── Two-col grid ── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+
+  /* ── Inline code ── */
+  code {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: 'Consolas', monospace;
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  /* ── Note ── */
+  .note {
+    background: #1a2a1a;
+    border-left: 3px solid var(--pass);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    margin: 10px 0;
+    color: #b3d9b3;
+  }
+  .warn-note {
+    background: #2a2200;
+    border-left: 3px solid var(--warn);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    margin: 10px 0;
+    color: #d9c47a;
+  }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+
+<!-- ══ HEADER ══════════════════════════════════════════════════════════════ -->
+<div class="page-header">
+  <h1>STM32 固件测试脚本讲解</h1>
+  <div class="meta">
+    <span>文件：<code style="background:none;border:none;color:#a0c4ff">firmware_test_i2C_command_0329.py</code></span>
+    <span>协议版本：v1.4</span>
+    <span>日期：2026-03-29</span>
+    <span>MCU：STM32F429ZGT6</span>
+  </div>
+</div>
+
+<!-- ══ 1. 概述 ══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><span class="num">1</span>测试脚本概述</div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--accent)"></span>测试目的</div>
+    <p>通过 Python pyserial 与 STM32 建立 UART 连接，按照协议 v1.4 发送控制帧并验证响应，覆盖 UART 基础通信、系统控制命令、寄存器读写、采样功能四大模块的行为正确性。</p>
+  </div>
+
+  <div class="arch-box">
+<span class="pass-c">PC（Python 脚本）</span>
+    │  UART 串口（COM3, 115200 bps 默认）
+    │  控制帧：AA 55 SEQ CMD LEN DATA CRC_H CRC_L
+    │  流帧  ：BB MASK LEN DATA... XOR
+    ▼
+<span class="hi">STM32F429ZGT6</span>  ← 被测固件
+    │  USART1 PA9/PA10  DMA TX + RX 中断
+    │
+    ├─ I2C2 → 电机 IC（地址由上位机设置，7-bit）
+    ├─ I2C1 → INA 功耗测量
+    └─ I2C3 → PMIC RT5112WSC / GYRO
+  </div>
+
+  <div style="margin-top:16px">
+    <strong>运行方式：</strong>
+    <pre><span class="cmt"># 仅 UART 基础测试（不需要电机）</span>
+python firmware_test_i2C_command_0329.py --port COM3
+
+<span class="cmt"># 完整测试（含电机 I2C + 采样）</span>
+python firmware_test_i2C_command_0329.py --port COM3 --motor 0x20 --reg 0x0000</pre>
+
+    <table class="test-table" style="margin-top:12px">
+      <thead><tr><th>参数</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>--port</code></td><td>COM3</td><td>串口端口</td></tr>
+        <tr><td><code>--baud</code></td><td>115200</td><td>初始波特率</td></tr>
+        <tr><td><code>--motor</code></td><td>0x00</td><td>电机 IC 7-bit 地址；0x00 = 跳过电机/采样相关测试</td></tr>
+        <tr><td><code>--reg</code></td><td>0x0000</td><td>寄存器读写测试的目标寄存器地址（16-bit）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ 2. 协议帧格式 ══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><span class="num">2</span>协议帧格式</div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--tag-t2)"></span>控制帧（双向）</div>
+    <div class="frame-row">
+      <div class="frame-cell sof"><span class="label">SOF1</span><span class="val">0xAA</span></div>
+      <div class="frame-cell sof"><span class="label">SOF2</span><span class="val">0x55</span></div>
+      <div class="frame-cell"><span class="label">SEQ</span><span class="val">0x01…</span></div>
+      <div class="frame-cell"><span class="label">CMD</span><span class="val">0xXX</span></div>
+      <div class="frame-cell"><span class="label">LEN</span><span class="val">N</span></div>
+      <div class="frame-cell"><span class="label">DATA</span><span class="val">N bytes</span></div>
+      <div class="frame-cell crc"><span class="label">CRC_H</span><span class="val">0xXX</span></div>
+      <div class="frame-cell crc"><span class="label">CRC_L</span><span class="val">0xXX</span></div>
+    </div>
+    <p style="font-size:12.5px;color:var(--text-muted)">CRC16-MODBUS（poly=0x8005, init=0xFFFF, LSB-first），校验范围：SEQ+CMD+LEN+DATA，结果<strong>大端</strong>存放（高字节在前）。</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--tag-t6)"></span>数据流帧（STM32→PC，采样输出）</div>
+    <div class="frame-row">
+      <div class="frame-cell sof"><span class="label">SOF</span><span class="val">0xBB</span></div>
+      <div class="frame-cell"><span class="label">MASK</span><span class="val">0xXX</span></div>
+      <div class="frame-cell"><span class="label">LEN</span><span class="val">N</span></div>
+      <div class="frame-cell"><span class="label">DATA</span><span class="val">N bytes</span></div>
+      <div class="frame-cell crc"><span class="label">XOR</span><span class="val">0xXX</span></div>
+    </div>
+    <p style="font-size:12.5px;color:var(--text-muted)">每通道 2 字节 int16 大端，XOR = MASK ^ LEN ^ 所有 DATA 字节逐字节异或。</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--warn)"></span>已定义命令码</div>
+    <table class="test-table">
+      <thead><tr><th>命令码</th><th>名称</th><th>方向</th><th>数据段</th></tr></thead>
+      <tbody>
+        <tr><td><code>0x00</code></td><td>心跳</td><td>双向</td><td>空（LEN=0）</td></tr>
+        <tr><td><code>0x01</code></td><td>错误响应</td><td>STM32→PC</td><td>1 字节错误码（0x01=CRC失败, 0x02=未知CMD, 0x03=执行失败）</td></tr>
+        <tr><td><code>0x02</code></td><td>设置电机地址</td><td>PC→STM32</td><td>1 字节（7-bit 地址）</td></tr>
+        <tr><td><code>0x03</code></td><td>设置波特率</td><td>PC→STM32</td><td>1 字节（波特率索引 0~7）</td></tr>
+        <tr><td><code>0x04</code></td><td>系统复位</td><td>PC→STM32</td><td>空</td></tr>
+        <tr><td><code>0x05</code></td><td>电机 Ping</td><td>PC→STM32</td><td>空（测试 I2C ACK）</td></tr>
+        <tr><td><code>0x20</code></td><td>读寄存器</td><td>双向</td><td>TX: 2B 地址; RX: 2B 值</td></tr>
+        <tr><td><code>0x21</code></td><td>写寄存器</td><td>双向</td><td>4B（地址高低 + 值高低）</td></tr>
+        <tr><td><code>0x22</code></td><td>批量读</td><td>双向</td><td>TX: 4B（起始地址+数量）; RX: 多包</td></tr>
+        <tr><td><code>0x50</code></td><td>启动采样</td><td>双向</td><td>空</td></tr>
+        <tr><td><code>0x51</code></td><td>停止采样</td><td>双向</td><td>空</td></tr>
+        <tr><td><code>0x52</code></td><td>设置采样间隔</td><td>双向</td><td>1 字节（idx 0~7）</td></tr>
+        <tr><td><code>0x53</code></td><td>设置通道掩码</td><td>双向</td><td>1 字节（bit0=ch0…bit7=ch7）</td></tr>
+        <tr><td><code>0x54</code></td><td>设置寄存器映射</td><td>双向</td><td>16 字节（8 通道×2B 地址，0xFFFF=未映射）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ 3. 辅助函数 ══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><span class="num">3</span>核心工具函数</div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--tag-t2)"></span><code>crc16_modbus(data)</code></div>
+      <p style="font-size:12.5px;margin-bottom:8px">计算 CRC16-MODBUS，LSB-first，结果为 uint16。</p>
+      <pre><span class="kw">def</span> <span class="fn">crc16_modbus</span>(data):
+    crc = <span class="num">0xFFFF</span>
+    <span class="kw">for</span> byte <span class="kw">in</span> data:
+        crc ^= byte
+        <span class="kw">for</span> _ <span class="kw">in</span> range(<span class="num">8</span>):
+            crc = (crc >> <span class="num">1</span>) ^ <span class="num">0x8005</span> \
+                  <span class="kw">if</span> (crc & <span class="num">1</span>) <span class="kw">else</span> crc >> <span class="num">1</span>
+    <span class="kw">return</span> crc</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--tag-t2)"></span><code>build_frame(seq, cmd, data)</code></div>
+      <p style="font-size:12.5px;margin-bottom:8px">构造完整控制帧 bytes，自动附加 CRC。</p>
+      <pre><span class="kw">def</span> <span class="fn">build_frame</span>(seq, cmd, data=<span class="str">b''</span>):
+    payload = bytes([seq, cmd, len(data)]) + data
+    crc = <span class="fn">crc16_modbus</span>(payload)
+    <span class="kw">return</span> <span class="str">b'\xAA\x55'</span> + payload \
+           + bytes([crc >> <span class="num">8</span>, crc & <span class="num">0xFF</span>])</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--tag-t4)"></span><code>recv_control_frame(ser, timeout)</code></div>
+      <p style="font-size:12.5px;margin-bottom:8px">逐字节状态机接收一个控制帧，自动跳过混入的 0xBB 流帧字节，超时返回 <code>None</code>。</p>
+      <div class="flow">
+        <div class="flow-step"><span class="arrow">→</span><span class="step-txt">等待首字节 = <code>0xAA</code>，否则跳过</span></div>
+        <div class="flow-step"><span class="arrow">→</span><span class="step-txt">读第二字节；若 <code>0xBB</code> 则跳过流帧；若 <code>0xAA</code> 则继续等 <code>0x55</code></span></div>
+        <div class="flow-step"><span class="arrow">→</span><span class="step-txt">读 SEQ+CMD+LEN，再读 DATA+CRC_H+CRC_L</span></div>
+        <div class="flow-step"><span class="arrow">→</span><span class="step-txt">调用 <code>parse_frame()</code> 返回字典 <code>{seq, cmd, data, crc_ok}</code></span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--tag-t6)"></span><code>recv_stream_frames(ser, count, timeout)</code></div>
+      <p style="font-size:12.5px;margin-bottom:8px">收集 N 个完整的 <code>0xBB</code> 流帧，返回字典列表，每项含 <code>{mask, len, data, xor_ok}</code>。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--tag-t5)"></span><code>recv_bulk_packets(ser, total_pkts, timeout)</code></div>
+      <p style="font-size:12.5px;margin-bottom:8px">连续接收 total_pkts 个 CMD=0x22 的批量读响应包，每包含 <code>[pktIdx][totalPkts][data…]</code>。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--tag-t6)"></span><code>_start_sampling / _stop_sampling</code></div>
+      <p style="font-size:12.5px;margin-bottom:8px"><strong>_start_sampling：</strong>依次发送 0x54（reg map）→ 0x53（mask）→ 0x52（interval）→ 0x50（start），每步均断言 ACK。<br>
+      <strong>_stop_sampling：</strong>发送 0x51，等待响应，然后 flush RX 清空残余流帧。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 4. 测试项详解 ════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><span class="num">4</span>测试项详解</div>
+
+  <!-- T2 -->
+  <div class="card">
+    <div class="card-title" style="font-size:14px">
+      <span class="dot" style="background:var(--tag-t2)"></span>
+      <span class="tag tag-t2">T2</span> UART 通信基础
+    </div>
+    <table class="test-table">
+      <thead><tr><th style="width:22%">测试项</th><th style="width:30%">测试条件 / 操作</th><th>预期结果</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>T2.2 正常心跳</strong></td>
+          <td>发送 CMD=0x00，LEN=0，CRC 正确</td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到响应不为 None</li>
+              <li>响应 CMD = 0x00</li>
+              <li>响应 SEQ = 发送 SEQ（原样回显）</li>
+              <li>响应 DATA 为空（LEN=0）</li>
+              <li>响应 CRC 校验通过</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T2.3 CRC 错误响应</strong></td>
+          <td>故意发送 CRC=0xFFFF 的错误帧（正确 CRC ≠ 0xFFFF）</td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到错误响应帧（CMD=0x01）</li>
+              <li>响应 SEQ = 0xFF（原帧不可信）</li>
+              <li>DATA = 0x01（错误码：CRC 校验失败）</li>
+              <li>响应帧自身 CRC 通过</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T2.4 未知命令码</strong></td>
+          <td>发送 CMD=0x7F（协议未定义）</td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到错误响应帧（CMD=0x01）</li>
+              <li>响应 SEQ = 原帧 SEQ（命令可识别）</li>
+              <li>DATA = 0x02（错误码：未知命令码）</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T2.x 连续 3 帧</strong></td>
+          <td>连续发送 3 帧心跳，不等待前帧响应直接发送下一帧</td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>每帧均能收到正确响应</li>
+              <li>每帧响应 SEQ 与发送 SEQ 一致</li>
+              <li>验证状态机在帧结束后正确复位，不影响下一帧解析</li>
+            </ul>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- T4 -->
+  <div class="card">
+    <div class="card-title" style="font-size:14px">
+      <span class="dot" style="background:var(--tag-t4)"></span>
+      <span class="tag tag-t4">T4</span> 系统控制命令
+    </div>
+    <table class="test-table">
+      <thead><tr><th style="width:22%">测试项</th><th style="width:30%">测试条件 / 操作</th><th>预期结果</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>T4.2 非法电机地址</strong></td>
+          <td>
+            依次发送 CMD=0x02 + DATA=[0x00]、[0x80]、[0xFF]<br>
+            <span style="font-size:11.5px;color:var(--text-muted)">（0x00=未设置, 0x80/0xFF=超出7-bit有效范围）</span>
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>每个地址均收到 CMD=0x01 错误响应</li>
+              <li>DATA = 0x03（执行失败）</li>
+              <li>不应修改固件内的电机地址变量</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T4.1 设置合法电机地址</strong><br><span style="font-size:11px;color:var(--skip)">需要 --motor</span></td>
+          <td>发送 CMD=0x02 + DATA=[motor_addr]（如 0x20）</td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到 CMD=0x02 ACK 响应</li>
+              <li>后续 I2C 操作使用该地址</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T4.3 电机 Ping</strong><br><span style="font-size:11px;color:var(--skip)">需要 --motor</span></td>
+          <td>发送 CMD=0x05，LEN=0；固件对 g_motorIcAddr 发起 I2C 起始 + 地址帧</td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>I2C 总线有设备在线 → CMD=0x05 ACK</li>
+              <li>设备离线 → CMD=0x01，DATA=0x03</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T4.4 波特率切换</strong></td>
+          <td>
+            ① 发 CMD=0x03 + DATA=[0x03]（→57600）<br>
+            ② 收到 ACK 后关闭串口，以 57600 重新打开<br>
+            ③ 发心跳验证 57600 通信<br>
+            ④ 发 CMD=0x03 + DATA=[0x04]（→115200）<br>
+            ⑤ 收到 ACK 后关闭串口，以 115200 重新打开<br>
+            ⑥ 再次发心跳验证 115200 通信
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>步骤 ①②③：57600 下心跳响应正常</li>
+              <li>步骤 ④⑤⑥：切回 115200 后心跳响应正常</li>
+              <li>使用 try/finally 保证无论失败都恢复 115200</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T4.5 系统复位</strong></td>
+          <td>
+            ① 发 CMD=0x04<br>
+            ② 收到 ACK<br>
+            ③ 等待 1.5 s（含 PMIC 上电序列 4×10ms）<br>
+            ④ 发心跳验证 STM32 已重启
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>步骤 ②：收到 CMD=0x04 ACK（ACK 必须在 NVIC_SystemReset() 前发完）</li>
+              <li>步骤 ④：1.5 s 后心跳响应正常（CMD=0x00），表明固件已重新完成初始化</li>
+            </ul>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="warn-note" style="margin-top:12px">
+      T4.5 复位后固件内的运行时状态（g_motorIcAddr 等）被清零，测试框架会在复位后重新执行 T4.1 设置电机地址。
+    </div>
+  </div>
+
+  <!-- T5 -->
+  <div class="card">
+    <div class="card-title" style="font-size:14px">
+      <span class="dot" style="background:var(--tag-t5)"></span>
+      <span class="tag tag-t5">T5</span> 寄存器读写命令
+      <span style="font-size:11px;color:var(--skip);font-weight:normal;margin-left:6px">需要 --motor</span>
+    </div>
+    <table class="test-table">
+      <thead><tr><th style="width:22%">测试项</th><th style="width:30%">测试条件 / 操作</th><th>预期结果</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>T5.1 读单寄存器</strong></td>
+          <td>发 CMD=0x20 + DATA=[reg_H, reg_L]（16-bit 大端地址）</td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>CMD=0x20 响应</li>
+              <li>DATA 长度 = 2 字节（寄存器值，大端）</li>
+              <li>CRC 校验通过</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T5.2 写寄存器 + 读回验证</strong></td>
+          <td>
+            ① 发 CMD=0x21 + DATA=[reg_H, reg_L, 0x12, 0x34]<br>
+            ② 发 CMD=0x20 + DATA=[reg_H, reg_L]
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>步骤 ①：CMD=0x21 ACK</li>
+              <li>步骤 ②：读回值 = 0x1234（与写入值一致）</li>
+              <li>验证寄存器可写入且值保持</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T5.3 批量读（1 个）</strong></td>
+          <td>发 CMD=0x22 + DATA=[reg_H, reg_L, 0x00, 0x01]（读 1 个寄存器）</td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到 1 个 CMD=0x22 响应包</li>
+              <li>DATA[0]=0（pktIdx），DATA[1]=1（totalPkts）</li>
+              <li>DATA 总长度 = 4 字节（2B 包头 + 2B 寄存器值）</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T5.4 批量读（130 个，跨包）</strong></td>
+          <td>发 CMD=0x22 + DATA=[reg_H, reg_L, 0x00, 0x82]（读 130 个寄存器）<br>
+          <span style="font-size:11.5px;color:var(--text-muted)">每包最多携带 126 个寄存器（252 B），130 > 126 需分 2 包</span></td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到 2 个 CMD=0x22 响应包</li>
+              <li>包 0：pktIdx=0，totalPkts=2，寄存器数=126</li>
+              <li>包 1：pktIdx=1，totalPkts=2，寄存器数=4</li>
+              <li>每包 CRC 校验通过</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T5.5 采样中拒绝批量读</strong></td>
+          <td>
+            ① 启动采样（_start_sampling）<br>
+            ② 等待 0.1 s<br>
+            ③ 发 CMD=0x22 批量读请求<br>
+            ④ 最多重试 3 次接收响应（容忍 UART TX 忙）<br>
+            ⑤ 停止采样
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到 CMD=0x01 错误响应，DATA=0x03</li>
+              <li>固件在采样运行期间应拒绝执行批量读</li>
+              <li>重试逻辑容忍固件 UART TX 忙导致的短暂延迟</li>
+            </ul>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- T6 -->
+  <div class="card">
+    <div class="card-title" style="font-size:14px">
+      <span class="dot" style="background:var(--tag-t6)"></span>
+      <span class="tag tag-t6">T6</span> 采样功能
+      <span style="font-size:11px;color:var(--skip);font-weight:normal;margin-left:6px">需要 --motor</span>
+    </div>
+    <table class="test-table">
+      <thead><tr><th style="width:22%">测试项</th><th style="width:30%">测试条件 / 操作</th><th>预期结果</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>T6.6 无映射时启动被拒绝</strong></td>
+          <td>
+            ① 发 CMD=0x54 + 全 0xFFFF reg map（16 字节），断言 ACK<br>
+            ② 发 CMD=0x50 启动采样
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>步骤 ①：CMD=0x54 ACK（固件确认接受 reg map）</li>
+              <li>步骤 ②：CMD=0x01 错误响应，DATA=0x03</li>
+              <li>所有通道均为 0xFFFF（未映射），启动应被拒绝</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T6.4/7 启动 / 停止采样</strong></td>
+          <td>
+            ① _start_sampling（ch0, interval_idx=5 即 1ms, 1kHz）<br>
+            ② 接收最多 10 个流帧（超时 3 s）<br>
+            ③ _stop_sampling<br>
+            ④ 等待 0.2 s 后检查是否还有流帧（超时 0.4 s）
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>步骤 ②：收到 ≥5 帧</li>
+              <li>每帧 mask=0x01，len=2（单通道 2 字节）</li>
+              <li>步骤 ④：不再收到流帧（leftover = 0）</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T6.8 流帧 XOR 校验</strong></td>
+          <td>
+            启动采样（ch0，1ms），接收 20 个流帧，停止采样
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到 ≥10 帧</li>
+              <li>每一帧的 xor_ok = True</li>
+              <li>验证固件 XOR 计算与协议定义一致</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T6.5 双通道采样</strong></td>
+          <td>
+            ① CMD=0x54：ch0=reg, ch1=reg, ch2~7=0xFFFF，断言 ACK<br>
+            ② CMD=0x53：mask=0x03（ch0+ch1），断言 ACK<br>
+            ③ CMD=0x52：interval_idx=5，断言 ACK<br>
+            ④ CMD=0x50 启动，接收 10 帧，停止
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>收到 ≥5 帧</li>
+              <li>每帧 mask=0x03，len=4（2 通道×2 字节）</li>
+              <li>每帧 XOR 校验通过</li>
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>T6.3 采样间隔频率验证</strong></td>
+          <td>
+            依次测试 idx=0（100µs, 10kHz）/ idx=5（1ms, 1kHz）/ idx=7（2ms, 500Hz），每次接收 30 帧并计算实际帧率
+          </td>
+          <td>
+            <ul style="padding-left:16px;font-size:12.5px">
+              <li>高频（idx=0）实际帧率 > 低频（idx=7）实际帧率</li>
+              <li>若某区间收帧不足（帧率为 0），打印警告并跳过比较，不计为 FAIL</li>
+            </ul>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ 5. 测试执行流程 ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><span class="num">5</span>测试执行流程 & 依赖关系</div>
+
+  <div class="card">
+    <pre style="font-size:12px">
+<span class="pass-c">START</span>
+  │
+  ├─ T2.2  心跳帧（无依赖，最基础验证）
+  ├─ T2.3  CRC 错误响应
+  ├─ T2.4  未知命令响应
+  ├─ T2.x  连续 3 帧状态机复位
+  │
+  ├─ T4.2  非法电机地址拒绝（无需 --motor）
+  ├─ T4.1  设置电机地址 ←── 需要 --motor
+  ├─ T4.3  电机 Ping ←────── 需要 --motor（依赖 T4.1 成功）
+  ├─ T4.4  波特率切换（无需 --motor，会临时改变 ser.baudrate）
+  ├─ T4.5  系统复位（会清零固件状态）
+  ├─ T4.1  复位后重设电机地址 ←── 需要 --motor（复位后必须重设）
+  │
+  ├─ T5.1  读单寄存器 ←─────────────── 需要 --motor
+  ├─ T5.2  写 + 读回验证 ←──────────── 需要 --motor
+  ├─ T5.3  批量读 1 个 ←──────────────  需要 --motor
+  ├─ T5.4  批量读 130 个（跨包）←──── 需要 --motor
+  ├─ T5.5  采样中拒绝批量读 ←──────── 需要 --motor
+  │
+  ├─ T6.6  无映射启动被拒绝 ←────────  需要 --motor
+  ├─ T6.4/7  启动/停止采样 ←────────── 需要 --motor
+  ├─ T6.8  流帧 XOR 校验 ←────────────  需要 --motor
+  ├─ T6.5  双通道采样 ←───────────────  需要 --motor
+  └─ T6.3  采样间隔频率验证 ←──────── 需要 --motor
+
+<span class="pass-c">END → 汇总 PASS / FAIL / SKIP 计数，exit(0) 或 exit(1)</span>
+    </pre>
+    <div class="note" style="margin-top:0">
+      每个测试项由 <code>run_test(name, fn, *args)</code> 包装，捕获 AssertionError 和 Exception，不影响后续测试执行。<code>skip_test()</code> 仅记录跳过原因，不影响最终 exit code。
+    </div>
+  </div>
+</div>
+
+<!-- ══ 6. 已知限制 ════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><span class="num">6</span>已知限制与注意事项</div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--warn)"></span>T5.5 采样中批量读（固件设计限制）</div>
+      <p style="font-size:12.5px">固件在发送采样流帧期间 UART TX DMA 处于 BUSY 状态，错误响应可能短暂延迟。脚本已加入最多 3 次 50ms 间隔重试以容忍此情况，但在极低波特率下仍有极小概率超时。</p>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--warn)"></span>T6.3 高速采样帧率（CPU 限制）</div>
+      <p style="font-size:12.5px">idx=0 对应 100µs/帧（理论 10kHz）。PC 端接收/解析能力有限，实际收到的帧率可能低于固件发送帧率。若两端收帧不足 30 帧，比较逻辑会打印警告并跳过断言（不记为 FAIL）。</p>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--warn)"></span>T4.4 波特率切换</div>
+      <p style="font-size:12.5px">切换后固件 ACK 必须在 UART_Cmd(DISABLE) 前完全发出（固件层已有 BSP_UART_TxWait() 保障）。脚本在收到 ACK 后等待 150ms 再重连，给固件留出切换时间。</p>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--warn)"></span>T5.2 写寄存器破坏性</div>
+      <p style="font-size:12.5px">写入 0x1234 到测试寄存器后不会自动恢复原值。若测试寄存器为功能性寄存器（如 PMIC 控制寄存器），建议使用安全的只读寄存器地址进行测试，或在运行后手动复位板子。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 7. 依赖安装 ════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><span class="num">7</span>环境依赖</div>
+  <div class="card">
+    <pre><span class="cmt"># 安装依赖</span>
+pip install pyserial
+
+<span class="cmt"># Python 版本要求：3.10+（使用了 dict | None 类型注解语法）</span>
+python --version  <span class="cmt"># 应 >= 3.10</span>
+
+<span class="cmt"># 检查串口（Windows）</span>
+python -c <span class="str">"import serial.tools.list_ports; [print(p) for p in serial.tools.list_ports.comports()]"</span></pre>
+  </div>
+</div>
+
+</div><!-- /page-wrap -->
+</body>
+</html>
