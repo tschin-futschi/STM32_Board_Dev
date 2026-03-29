@@ -105,6 +105,7 @@ BSP/Inc/     bsp_uart.h, bsp_i2c.h, bsp_tim.h, bsp_led.h, bsp_tick.h
 BSP/Src/     bsp_uart.c, bsp_i2c.c, bsp_tim.c, bsp_led.c, bsp_tick.c
 App/Inc/     app_protocol.h, app_motor.h, app_sample.h
 App/Src/     app_protocol.c, app_motor.c, app_sample.c
+PcTest/      PC 端 Python 测试脚本（pyserial，通过 UART 与固件交互）
 STM32F4xx_DSP_StdPeriph_Lib_V1.9.0/Libraries/  ← 只读，Makefile 中用 SPL_DIR 变量指向
 Linker/            STM32F429ZGTX_FLASH.ld
 ```
@@ -392,6 +393,28 @@ Test/
 # Test sources
 C_SOURCES += Test/Src/test_pmic.c
 ```
+
+---
+
+## 10. PC 测试脚本规范
+
+所有 PC 端 Python 测试脚本统一存放在 `PcTest/` 目录下，不得散放于项目根目录。
+
+### 文件命名
+
+```
+PcTest/firmware_test_<内容简述>_MMDD.py
+```
+
+示例：`PcTest/firmware_test_i2c_command_0329.py`
+
+### 规范要求
+
+- 依赖库：仅允许 `pyserial` + Python 标准库，不引入其他第三方包
+- 脚本顶部必须有 docstring，说明覆盖的测试范围和运行方式
+- 所有测试项通过 `run_test(name, fn, *args)` 统一包装，结果汇总后以 exit code 体现（0 = 全部通过，1 = 有失败项）
+- 需要电机在线的测试项通过 `--motor` 参数控制，`0x00` 表示跳过，使用 `skip_test()` 记录原因
+- 脚本末尾打印 PASS / FAIL / SKIP 汇总
 
 ---
 
