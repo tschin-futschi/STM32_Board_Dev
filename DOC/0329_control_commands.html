@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>控制指令实现细节 — STM32F429ZG 电机调试板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 14px; background: #f5f6fa; color: #2c3e50; line-height: 1.7; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  h1 { font-size: 26px; border-left: 5px solid #3498db; padding-left: 14px; margin-bottom: 8px; }
+  h2 { font-size: 18px; margin: 40px 0 12px; padding: 6px 12px; background: #3498db; color: #fff; border-radius: 4px; }
+  h3 { font-size: 15px; margin: 24px 0 8px; color: #2980b9; border-bottom: 1px solid #dce3ea; padding-bottom: 4px; }
+  .subtitle { color: #7f8c8d; margin-bottom: 32px; font-size: 13px; }
+
+  /* Cards */
+  .cmd-card { background: #fff; border: 1px solid #dce3ea; border-radius: 6px; margin-bottom: 20px; overflow: hidden; }
+  .cmd-card-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f0f4f8; border-bottom: 1px solid #dce3ea; }
+  .cmd-badge { font-size: 13px; font-weight: bold; font-family: monospace; padding: 3px 10px; border-radius: 12px; white-space: nowrap; }
+  .badge-sys   { background: #d5eaf7; color: #1a5276; }
+  .badge-reg   { background: #d5f5e3; color: #1e6134; }
+  .badge-osc   { background: #fdebd0; color: #784212; }
+  .badge-event { background: #f9ebea; color: #7b241c; }
+  .cmd-title { font-size: 15px; font-weight: 600; }
+  .cmd-dir { font-size: 12px; color: #7f8c8d; margin-left: auto; white-space: nowrap; }
+  .cmd-body { padding: 14px 16px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+  th { background: #f0f4f8; text-align: left; padding: 7px 10px; border: 1px solid #dce3ea; font-weight: 600; }
+  td { padding: 6px 10px; border: 1px solid #dce3ea; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafbfc; }
+
+  /* Code */
+  pre { background: #1e2a38; color: #abb2bf; border-radius: 5px; padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; margin: 10px 0; font-family: "Consolas", "Courier New", monospace; }
+  code { font-family: "Consolas", "Courier New", monospace; font-size: 12.5px; }
+  .inline-code { background: #eaf0f6; color: #c0392b; padding: 1px 5px; border-radius: 3px; }
+
+  /* Syntax highlight */
+  .kw  { color: #c678dd; }
+  .ty  { color: #e5c07b; }
+  .cm  { color: #5c6370; font-style: italic; }
+  .str { color: #98c379; }
+  .num { color: #d19a66; }
+  .fn  { color: #61afef; }
+  .mac { color: #56b6c2; }
+
+  /* Flow diagram */
+  .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 10px 0; }
+  .flow-box { background: #eaf0f6; border: 1px solid #aec6cf; border-radius: 4px; padding: 4px 10px; font-size: 12px; font-family: monospace; }
+  .flow-arrow { color: #7f8c8d; font-size: 16px; }
+  .flow-box.green  { background: #d5f5e3; border-color: #82c896; }
+  .flow-box.red    { background: #fdeaea; border-color: #e08080; }
+  .flow-box.yellow { background: #fef9e7; border-color: #f0c060; }
+  .flow-box.blue   { background: #d6eaf8; border-color: #7fb3d3; }
+
+  /* Notes */
+  .note { background: #fef9e7; border-left: 4px solid #f1c40f; padding: 8px 12px; border-radius: 0 4px 4px 0; margin: 10px 0; font-size: 13px; }
+  .warn { background: #fdeaea; border-left: 4px solid #e74c3c; padding: 8px 12px; border-radius: 0 4px 4px 0; margin: 10px 0; font-size: 13px; }
+
+  /* Frame bytes */
+  .frame { display: flex; flex-wrap: wrap; gap: 3px; margin: 10px 0; font-family: monospace; font-size: 12px; }
+  .fb { border: 1px solid #aec6cf; border-radius: 3px; padding: 4px 8px; text-align: center; }
+  .fb-sof  { background: #d6eaf8; }
+  .fb-ctrl { background: #d5f5e3; }
+  .fb-data { background: #fdebd0; }
+  .fb-crc  { background: #f9ebea; }
+  .fb-label { font-size: 10px; color: #7f8c8d; display: block; }
+
+  .toc { background: #fff; border: 1px solid #dce3ea; border-radius: 6px; padding: 16px 20px; margin-bottom: 32px; }
+  .toc ul { list-style: none; columns: 2; }
+  .toc li { margin: 4px 0; }
+  .toc a { color: #2980b9; text-decoration: none; font-size: 13px; }
+  .toc a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>控制指令实现细节</h1>
+<p class="subtitle">STM32F429ZG 电机调试板 · app_protocol.c · protocol.MD v1.4 · 生成于 2026-03-29</p>
+
+<!-- TOC -->
+<div class="toc">
+  <strong>目录</strong>
+  <ul>
+    <li><a href="#frame">帧格式与解析流程</a></li>
+    <li><a href="#crc">CRC16-MODBUS 算法</a></li>
+    <li><a href="#cmd00">0x00 心跳</a></li>
+    <li><a href="#cmd01">0x01 错误响应</a></li>
+    <li><a href="#cmd02">0x02 设置电机 IC 地址</a></li>
+    <li><a href="#cmd03">0x03 设置波特率</a></li>
+    <li><a href="#cmd04">0x04 系统复位</a></li>
+    <li><a href="#cmd05">0x05 电机 IC Ping</a></li>
+    <li><a href="#cmd06">0x06 调试信息</a></li>
+    <li><a href="#cmd20">0x20 读单个寄存器</a></li>
+    <li><a href="#cmd21">0x21 写单个寄存器</a></li>
+    <li><a href="#cmd22">0x22 批量读寄存器</a></li>
+    <li><a href="#cmd50">0x50 启动采样</a></li>
+    <li><a href="#cmd51">0x51 停止采样</a></li>
+    <li><a href="#cmd52">0x52 设置采样间隔</a></li>
+    <li><a href="#cmd53">0x53 设置通道掩码</a></li>
+    <li><a href="#cmd54">0x54 设置通道寄存器映射</a></li>
+    <li><a href="#stream">数据流帧</a></li>
+  </ul>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="frame">帧格式与解析流程</h2>
+
+<h3>控制帧结构</h3>
+<div class="frame">
+  <div class="fb fb-sof"><span class="fb-label">byte 0</span>0xAA</div>
+  <div class="fb fb-sof"><span class="fb-label">byte 1</span>0x55</div>
+  <div class="fb fb-ctrl"><span class="fb-label">byte 2</span>SEQ</div>
+  <div class="fb fb-ctrl"><span class="fb-label">byte 3</span>CMD</div>
+  <div class="fb fb-ctrl"><span class="fb-label">byte 4</span>LEN</div>
+  <div class="fb fb-data"><span class="fb-label">byte 5..5+LEN-1</span>DATA [n 字节]</div>
+  <div class="fb fb-crc"><span class="fb-label">byte 5+LEN</span>CRC_H</div>
+  <div class="fb fb-crc"><span class="fb-label">byte 6+LEN</span>CRC_L</div>
+</div>
+<p style="font-size:13px;color:#7f8c8d;margin-top:4px;">CRC 校验范围：SEQ + CMD + LEN + DATA（不含帧头 0xAA 0x55），结果大端存放。</p>
+
+<h3>接收状态机（ProcessByte）</h3>
+<div class="flow">
+  <div class="flow-box">WAIT_SOF1<br><small>等 0xAA</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">WAIT_SOF2<br><small>等 0x55</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">WAIT_SEQ<br><small>记 seq，开始 CRC</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">WAIT_CMD<br><small>记 cmd，累积 CRC</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">WAIT_LEN<br><small>记 len，累积 CRC</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">WAIT_DATA<br><small>收 len 字节，累积 CRC</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">WAIT_CRC_H<br><small>记 CRC 高字节</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box blue">WAIT_CRC_L<br><small>校验 → 派发</small></div>
+</div>
+<div class="note">LEN=0 时跳过 WAIT_DATA 直接进入 WAIT_CRC_H。SOF2 不匹配时退回 WAIT_SOF1。</div>
+
+<pre><span class="cm">/* CRC 校验通过后派发，不通过回复错误帧 SEQ=0xFF */</span>
+<span class="kw">case</span> STATE_WAIT_CRC_L:
+{
+    <span class="ty">uint16_t</span> rxCrc = ((<span class="ty">uint16_t</span>)s_rxCrcHigh &lt;&lt; <span class="num">8U</span>) | (<span class="ty">uint16_t</span>)byte;
+    <span class="kw">if</span> (rxCrc != s_rxCrcAccum)
+        <span class="fn">SendErrorResp</span>(PROTO_CRC_ERR_SEQ, PROTO_ERR_CRC_FAIL);
+    <span class="kw">else</span>
+        <span class="fn">DispatchFrame</span>(&amp;s_rxFrame);
+    s_state = STATE_WAIT_SOF1;
+    <span class="kw">break</span>;
+}</pre>
+
+<!-- ================================================================ -->
+<h2 id="crc">CRC16-MODBUS 算法</h2>
+
+<table>
+  <tr><th>参数</th><th>值</th></tr>
+  <tr><td>多项式</td><td><span class="inline-code">0x8005</span></td></tr>
+  <tr><td>初值</td><td><span class="inline-code">0xFFFF</span></td></tr>
+  <tr><td>位序</td><td>低位先行（LSB-first）</td></tr>
+  <tr><td>结果存放</td><td>大端（高字节在前）</td></tr>
+  <tr><td>校验范围</td><td>SEQ + CMD + LEN + DATA</td></tr>
+</table>
+
+<pre><span class="kw">static</span> <span class="ty">uint16_t</span> <span class="fn">CRC16_Update</span>(<span class="ty">uint16_t</span> crc, <span class="ty">uint8_t</span> byte)
+{
+    <span class="ty">uint8_t</span> bit;
+    crc ^= (<span class="ty">uint16_t</span>)byte;
+    <span class="kw">for</span> (bit = <span class="num">0U</span>; bit &lt; <span class="num">8U</span>; bit++)
+    {
+        <span class="kw">if</span> ((crc &amp; <span class="num">0x0001U</span>) != <span class="num">0U</span>)
+            crc = (crc &gt;&gt; <span class="num">1U</span>) ^ <span class="num">0x8005U</span>;   <span class="cm">/* LSB-first 反射多项式 */</span>
+        <span class="kw">else</span>
+            crc &gt;&gt;= <span class="num">1U</span>;
+    }
+    <span class="kw">return</span> crc;
+}</pre>
+
+<!-- ================================================================ -->
+<h2>系统控制组（0x00 ~ 0x1F）</h2>
+
+<!-- 0x00 -->
+<div class="cmd-card" id="cmd00">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-sys">0x00</span>
+    <span class="cmd-title">心跳（HEARTBEAT）</span>
+    <span class="cmd-dir">双向</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>PC → STM32 数据段</td><td>空（LEN=0）</td></tr>
+      <tr><td>STM32 响应</td><td>原样回复，CMD=0x00，数据段空</td></tr>
+      <tr><td>PC 发送周期</td><td>每 1 s 一次</td></tr>
+      <tr><td>连接判断</td><td>PC 连续 3 次无回复 → 判定断开</td></tr>
+    </table>
+    <pre><span class="kw">static void</span> <span class="fn">HandleHeartbeat</span>(<span class="kw">const</span> <span class="ty">Proto_Frame_t</span> *pFrame)
+{
+    (<span class="ty">void</span>)<span class="fn">SendFrame</span>(pFrame-&gt;seq, (<span class="ty">uint8_t</span>)PROTO_CMD_HEARTBEAT, NULL, <span class="num">0U</span>);
+}</pre>
+  </div>
+</div>
+
+<!-- 0x01 -->
+<div class="cmd-card" id="cmd01">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-event">0x01</span>
+    <span class="cmd-title">错误响应（ERROR_RESP）</span>
+    <span class="cmd-dir">STM32 → PC</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>错误码</th><th>含义</th><th>SEQ 填写规则</th></tr>
+      <tr><td><span class="inline-code">0x01</span></td><td>CRC 校验失败</td><td>固定填 <span class="inline-code">0xFF</span>（原帧 SEQ 不可信）</td></tr>
+      <tr><td><span class="inline-code">0x02</span></td><td>未知命令码</td><td>回传原帧 SEQ</td></tr>
+      <tr><td><span class="inline-code">0x03</span></td><td>执行失败（如 I2C 无应答）</td><td>回传原帧 SEQ</td></tr>
+    </table>
+    <pre><span class="kw">static void</span> <span class="fn">SendErrorResp</span>(<span class="ty">uint8_t</span> seq, <span class="ty">Proto_ErrCode_t</span> err)
+{
+    <span class="ty">uint8_t</span> errByte = (<span class="ty">uint8_t</span>)err;
+    (<span class="ty">void</span>)<span class="fn">SendFrame</span>(seq, (<span class="ty">uint8_t</span>)PROTO_CMD_ERROR_RESP, &amp;errByte, <span class="num">1U</span>);
+}</pre>
+  </div>
+</div>
+
+<!-- 0x02 -->
+<div class="cmd-card" id="cmd02">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-sys">0x02</span>
+    <span class="cmd-title">设置电机 IC I2C 地址（SET_MOTOR_ADDR）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>数据段</td><td>1 字节：7-bit I2C 地址（<span class="inline-code">0x01</span> ~ <span class="inline-code">0x7F</span>）</td></tr>
+      <tr><td>成功响应</td><td>echo 原帧，数据段空</td></tr>
+      <tr><td>失败条件</td><td>地址为 0x00 / 超出 7-bit 范围 / I2C 探测无应答</td></tr>
+      <tr><td>失败响应</td><td>错误码 0x03</td></tr>
+    </table>
+    <div class="flow">
+      <div class="flow-box">校验 addr 范围<br><small>0x01~0x7F</small></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box yellow">ProbeMotorIc(addr)<br><small>I2C ReadReg(reg=0x0000, 1字节)</small></div>
+      <div class="flow-arrow">→ ACK ✓</div>
+      <div class="flow-box green">g_motorIcAddr = addr<br>回复 ACK</div>
+    </div>
+    <div class="note">设置前会向目标地址发起 I2C 探测读（寄存器 0x0000，1 字节），确认设备存在后才更新 <span class="inline-code">g_motorIcAddr</span>。地址掉电不保存。</div>
+  </div>
+</div>
+
+<!-- 0x03 -->
+<div class="cmd-card" id="cmd03">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-sys">0x03</span>
+    <span class="cmd-title">设置 UART 波特率（SET_BAUDRATE）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>索引</th><th>波特率</th><th>索引</th><th>波特率</th></tr>
+      <tr><td>0x00</td><td>9600</td><td>0x04</td><td>115200（默认）</td></tr>
+      <tr><td>0x01</td><td>19200</td><td>0x05</td><td>230400</td></tr>
+      <tr><td>0x02</td><td>38400</td><td>0x06</td><td>460800</td></tr>
+      <tr><td>0x03</td><td>57600</td><td>0x07</td><td>921600</td></tr>
+    </table>
+    <div class="note"><strong>顺序关键</strong>：STM32 先用当前（旧）波特率回复 ACK，再切换波特率。PC 需在收到 ACK 后同步切换。</div>
+    <pre><span class="cm">/* 先回复，再切换 — PC 在收到 ACK 后切换 */</span>
+(<span class="ty">void</span>)<span class="fn">SendFrame</span>(pFrame-&gt;seq, (<span class="ty">uint8_t</span>)PROTO_CMD_SET_BAUDRATE, NULL, <span class="num">0U</span>);
+<span class="fn">BSP_UART_SetBaudrate</span>(k_baudrateTable[idx]);</pre>
+  </div>
+</div>
+
+<!-- 0x04 -->
+<div class="cmd-card" id="cmd04">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-sys">0x04</span>
+    <span class="cmd-title">系统复位（RESET）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+      <tr><td>执行顺序</td><td>先回复 ACK，再调用 <span class="inline-code">NVIC_SystemReset()</span></td></tr>
+      <tr><td>复位后状态</td><td>波特率恢复 115200，<span class="inline-code">g_motorIcAddr</span> 清零，采样停止</td></tr>
+    </table>
+    <div class="warn"><strong>注意</strong>：复位前必须确保波特率已切回 115200，否则复位后 STM32 与 PC 波特率不匹配。</div>
+  </div>
+</div>
+
+<!-- 0x05 -->
+<div class="cmd-card" id="cmd05">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-sys">0x05</span>
+    <span class="cmd-title">电机 IC Ping（MOTOR_PING）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+      <tr><td>成功响应</td><td>echo 原帧</td></tr>
+      <tr><td>失败条件</td><td><span class="inline-code">g_motorIcAddr == 0x00</span>（未设置）或 I2C 无应答</td></tr>
+    </table>
+    <div class="note">复用 <span class="inline-code">ProbeMotorIc(g_motorIcAddr)</span>，向当前电机地址发送 I2C 探测读。可用于定期检查连接状态。</div>
+  </div>
+</div>
+
+<!-- 0x06 -->
+<div class="cmd-card" id="cmd06">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-event">0x06</span>
+    <span class="cmd-title">调试信息（DEBUG_INFO）</span>
+    <span class="cmd-dir">STM32 → PC（主动上报）</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>数据段</td><td>ASCII 字符串，最长 255 字节</td></tr>
+      <tr><td>SEQ</td><td>固定为 <span class="inline-code">0x00</span>（非请求响应，不对应任何 PC 帧）</td></tr>
+      <tr><td>触发时机</td><td>目前仅在启动采样失败时发送</td></tr>
+    </table>
+    <pre><span class="cm">/* 启动采样失败时同时发送调试信息 */</span>
+<span class="fn">SendErrorResp</span>(pFrame-&gt;seq, PROTO_ERR_EXEC_FAIL);
+<span class="fn">SendDebugInfo</span>(<span class="str">"Start failed: all channel reg maps are 0xFFFF"</span>);</pre>
+    <div class="note">调试信息为尽力发送，若 UART TX DMA 忙则丢弃，不影响主流程。</div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2>寄存器读写组（0x20 ~ 0x4F）</h2>
+<div class="note">电机 IC 寄存器地址为 <strong>16-bit</strong>，所有命令中寄存器地址均以大端 2 字节传输。</div>
+
+<!-- 0x20 -->
+<div class="cmd-card" id="cmd20">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-reg">0x20</span>
+    <span class="cmd-title">读单个寄存器（READ_REG）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>内容</th></tr>
+      <tr><td>请求数据段（LEN=2）</td><td><span class="inline-code">[regH][regL]</span> — 寄存器地址，大端</td></tr>
+      <tr><td>成功响应数据段（LEN=2）</td><td><span class="inline-code">[valH][valL]</span> — 寄存器值，大端</td></tr>
+      <tr><td>失败响应</td><td>错误码 0x03</td></tr>
+    </table>
+    <pre>reg = ((<span class="ty">uint16_t</span>)pFrame-&gt;data[<span class="num">0</span>] &lt;&lt; <span class="num">8U</span>) | (<span class="ty">uint16_t</span>)pFrame-&gt;data[<span class="num">1</span>];
+<span class="fn">App_Motor_ReadReg</span>(reg, &amp;val);   <span class="cm">/* BSP_I2C2_ReadReg → 2 字节大端 */</span>
+resp[<span class="num">0</span>] = (<span class="ty">uint8_t</span>)(val &gt;&gt; <span class="num">8U</span>);
+resp[<span class="num">1</span>] = (<span class="ty">uint8_t</span>)(val &amp; <span class="num">0xFFU</span>);</pre>
+  </div>
+</div>
+
+<!-- 0x21 -->
+<div class="cmd-card" id="cmd21">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-reg">0x21</span>
+    <span class="cmd-title">写单个寄存器（WRITE_REG）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>内容</th></tr>
+      <tr><td>请求数据段（LEN=4）</td><td><span class="inline-code">[regH][regL][valH][valL]</span> — 地址 + 数据，均大端</td></tr>
+      <tr><td>成功响应</td><td>echo 原帧，数据段空</td></tr>
+      <tr><td>失败响应</td><td>错误码 0x03</td></tr>
+    </table>
+    <pre>reg = ((<span class="ty">uint16_t</span>)pFrame-&gt;data[<span class="num">0</span>] &lt;&lt; <span class="num">8U</span>) | (<span class="ty">uint16_t</span>)pFrame-&gt;data[<span class="num">1</span>];
+val = ((<span class="ty">uint16_t</span>)pFrame-&gt;data[<span class="num">2</span>] &lt;&lt; <span class="num">8U</span>) | (<span class="ty">uint16_t</span>)pFrame-&gt;data[<span class="num">3</span>];
+<span class="fn">App_Motor_WriteReg</span>(reg, val);   <span class="cm">/* BSP_I2C2_WriteReg → 2字节地址 + 2字节数据 */</span></pre>
+  </div>
+</div>
+
+<!-- 0x22 -->
+<div class="cmd-card" id="cmd22">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-reg">0x22</span>
+    <span class="cmd-title">批量读寄存器（BULK_READ）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>内容</th></tr>
+      <tr><td>请求数据段（LEN=4）</td><td><span class="inline-code">[startRegH][startRegL][cntH][cntL]</span> — 起始地址 + 数量，均大端</td></tr>
+      <tr><td>数量范围</td><td>1 ~ 32,130（超出返回错误码 0x03）</td></tr>
+      <tr><td>成功响应</td><td>STM32 自动分包，每包最多 126 个寄存器，最多 255 包</td></tr>
+      <tr><td>失败条件</td><td>数量为 0 或 &gt; 32,130 / 采样进行中</td></tr>
+    </table>
+
+    <h3>响应包结构</h3>
+    <div class="frame">
+      <div class="fb fb-sof"><span class="fb-label">SOF</span>0xAA 0x55</div>
+      <div class="fb fb-ctrl"><span class="fb-label">SEQ</span>原帧 SEQ</div>
+      <div class="fb fb-ctrl"><span class="fb-label">CMD</span>0x22</div>
+      <div class="fb fb-ctrl"><span class="fb-label">LEN</span>2+regs×2</div>
+      <div class="fb fb-data"><span class="fb-label">DATA[0]</span>pktIdx</div>
+      <div class="fb fb-data"><span class="fb-label">DATA[1]</span>totalPkts</div>
+      <div class="fb fb-data"><span class="fb-label">DATA[2..N]</span>寄存器数据（大端）</div>
+      <div class="fb fb-crc"><span class="fb-label">校验</span>CRC16</div>
+    </div>
+
+    <h3>分包逻辑</h3>
+    <pre>totalPkts = ceil(totalRegs / <span class="num">126</span>);   <span class="cm">/* uint8_t，最大 255 */</span>
+
+<span class="kw">for</span> (pktIdx = <span class="num">0</span>; pktIdx &lt; totalPkts; pktIdx++)
+{
+    regsThisPkt = min(totalRegs - regIdx, <span class="num">126</span>);
+    <span class="cm">/* 读取 regsThisPkt 个寄存器，起始地址 = startReg + regIdx */</span>
+    <span class="cm">/* 打包发送，等待 TX DMA 空闲后发送下一包 */</span>
+    regIdx += regsThisPkt;
+}</pre>
+    <div class="warn">批量读期间主循环阻塞（在 Poll 函数内忙等 TX）。采样进行中禁止批量读。</div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2>示波器控制组（0x50 ~ 0x7F）</h2>
+
+<!-- 0x50 -->
+<div class="cmd-card" id="cmd50">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-osc">0x50</span>
+    <span class="cmd-title">启动采样（START_SAMPLE）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+      <tr><td>成功响应</td><td>echo 原帧，之后持续上报 0xBB 数据流帧</td></tr>
+      <tr><td>失败条件</td><td>所有通道寄存器映射均为 0xFFFF（未配置）</td></tr>
+      <tr><td>失败响应</td><td>错误码 0x03 + 0x06 调试信息说明原因</td></tr>
+    </table>
+    <div class="flow">
+      <div class="flow-box">App_Sample_GetEffectiveMask()<br><small>检查有效通道</small></div>
+      <div class="flow-arrow">≠ 0 →</div>
+      <div class="flow-box green">s_sampling = 1<br>BSP_SampleTim_Start()</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box blue">TIM6 开始计时<br>ISR 置 s_sampleFlag</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">主循环 App_Sample_Poll()<br>检测 flag → 发 0xBB 帧</div>
+    </div>
+  </div>
+</div>
+
+<!-- 0x51 -->
+<div class="cmd-card" id="cmd51">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-osc">0x51</span>
+    <span class="cmd-title">停止采样（STOP_SAMPLE）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>数据段</td><td>空（LEN=0）</td></tr>
+      <tr><td>执行</td><td><span class="inline-code">BSP_SampleTim_Stop()</span> → 禁用 TIM6 计数器和中断，清除 s_sampleFlag</td></tr>
+      <tr><td>成功响应</td><td>echo 原帧</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- 0x52 -->
+<div class="cmd-card" id="cmd52">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-osc">0x52</span>
+    <span class="cmd-title">设置采样间隔（SET_INTERVAL）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>索引</th><th>间隔</th><th>频率</th><th>索引</th><th>间隔</th><th>频率</th></tr>
+      <tr><td>0x00</td><td>100 µs</td><td>10000 Hz</td><td>0x04</td><td>750 µs</td><td>1333 Hz</td></tr>
+      <tr><td>0x01</td><td>200 µs</td><td>5000 Hz</td><td>0x05</td><td>1000 µs</td><td>1000 Hz（默认）</td></tr>
+      <tr><td>0x02</td><td>300 µs</td><td>3333 Hz</td><td>0x06</td><td>1500 µs</td><td>667 Hz</td></tr>
+      <tr><td>0x03</td><td>500 µs</td><td>2000 Hz</td><td>0x07</td><td>2000 µs</td><td>500 Hz</td></tr>
+    </table>
+    <div class="note">通过修改 TIM6 ARR 寄存器实现，采样进行中可动态切换，立即生效。</div>
+  </div>
+</div>
+
+<!-- 0x53 -->
+<div class="cmd-card" id="cmd53">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-osc">0x53</span>
+    <span class="cmd-title">设置通道掩码（SET_CHANNEL）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>数据段（LEN=1）</td><td>1 字节掩码，bit0~bit7 对应通道 0~7，1=启用</td></tr>
+      <tr><td>失败条件</td><td>掩码为 0x00</td></tr>
+      <tr><td>默认值</td><td><span class="inline-code">0x01</span>（仅通道 0）</td></tr>
+    </table>
+    <div class="note">掩码与寄存器映射共同决定有效通道（<span class="inline-code">effectiveMask = channelMask &amp; validRegMask</span>）。</div>
+  </div>
+</div>
+
+<!-- 0x54 -->
+<div class="cmd-card" id="cmd54">
+  <div class="cmd-card-header">
+    <span class="cmd-badge badge-osc">0x54</span>
+    <span class="cmd-title">设置通道寄存器映射（SET_REG_MAP）</span>
+    <span class="cmd-dir">PC → STM32</span>
+  </div>
+  <div class="cmd-body">
+    <table>
+      <tr><th>字段</th><th>值</th></tr>
+      <tr><td>数据段（LEN=16）</td><td>8 通道 × 2 字节寄存器地址，大端，通道 0 在最前</td></tr>
+      <tr><td>未映射哨兵值</td><td><span class="inline-code">0xFFFF</span> — 该通道不采样（注意：寄存器地址 0xFFFF 无法被映射）</td></tr>
+      <tr><td>默认值</td><td>全部 <span class="inline-code">0xFFFF</span>（全部未映射）</td></tr>
+    </table>
+    <pre><span class="cm">/* 数据格式：[ch0_H][ch0_L][ch1_H][ch1_L]...[ch7_H][ch7_L] */</span>
+<span class="kw">for</span> (i = <span class="num">0U</span>; i &lt; APP_SAMPLE_NUM_CHANNELS; i++)
+{
+    s_channelRegMap[i] = ((<span class="ty">uint16_t</span>)pData[i*<span class="num">2U</span>] &lt;&lt; <span class="num">8U</span>)
+                       | (<span class="ty">uint16_t</span>)pData[i*<span class="num">2U</span> + <span class="num">1U</span>];
+}</pre>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="stream">数据流帧（0xBB）</h2>
+
+<div class="frame">
+  <div class="fb fb-sof"><span class="fb-label">byte 0</span>0xBB</div>
+  <div class="fb fb-ctrl"><span class="fb-label">byte 1</span>effectiveMask</div>
+  <div class="fb fb-ctrl"><span class="fb-label">byte 2</span>LEN</div>
+  <div class="fb fb-data"><span class="fb-label">byte 3..3+LEN-1</span>各通道数据（int16 大端）</div>
+  <div class="fb fb-crc"><span class="fb-label">byte 3+LEN</span>XOR 校验</div>
+</div>
+
+<table>
+  <tr><th>字段</th><th>说明</th></tr>
+  <tr><td>effectiveMask</td><td>已启用且已映射的通道掩码（= channelMask &amp; validRegMask）</td></tr>
+  <tr><td>LEN</td><td>有效通道数 × 2（字节数）</td></tr>
+  <tr><td>通道数据</td><td>每通道 2 字节 int16 大端，按通道编号从低到高排列</td></tr>
+  <tr><td>XOR 校验</td><td>effectiveMask XOR LEN XOR 所有数据字节逐字节异或</td></tr>
+  <tr><td>触发源</td><td>TIM6 UPDATE 中断 → ISR 置 s_sampleFlag → 主循环 App_Sample_Poll() 发帧</td></tr>
+</table>
+
+<pre><span class="cm">/* XOR 计算（app_sample.c）*/</span>
+xor = effectiveMask ^ len;          <span class="cm">/* 初值：掩码 XOR LEN */</span>
+<span class="kw">for</span> (i = dataStart; i &lt; idx; i++)
+    xor ^= s_streamBuf[i];          <span class="cm">/* XOR 所有数据字节 */</span>
+s_streamBuf[idx++] = xor;</pre>
+
+</div><!-- /container -->
+</body>
+</html>
