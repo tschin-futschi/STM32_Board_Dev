@@ -4,6 +4,7 @@
   */
 
 #include "bsp_uart.h"
+#include "bsp_tick.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -156,6 +157,19 @@ ErrorStatus BSP_UART_SetBaudrate(uint32_t baudrate)
     USART_Cmd(BSP_UART_PERIPH, DISABLE);
     uart_periph_init(baudrate);
     return SUCCESS;
+}
+
+void BSP_UART_TxWait(void)
+{
+    uint32_t start = BSP_GetTick();
+
+    while (s_txDone == 0U)
+    {
+        if ((BSP_GetTick() - start) >= BSP_UART_TX_WAIT_TIMEOUT_MS)
+        {
+            break;  /* Safety timeout — do not block forever */
+        }
+    }
 }
 
 /*--------------------------------------------------------------------------*/

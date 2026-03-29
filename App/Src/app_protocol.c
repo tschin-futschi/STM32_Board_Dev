@@ -115,7 +115,7 @@ static ErrorStatus SendFrame(uint8_t seq, uint8_t cmd,
 {
     static uint8_t s_txBuf[PROTO_MAX_FRAME_LEN];
     uint16_t crc = k_crc16Init;
-    uint8_t  idx = 0U;
+    uint16_t idx = 0U;
     uint8_t  i;
 
     s_txBuf[idx++] = PROTO_SOF1;
@@ -222,16 +222,18 @@ static void HandleSetBaudrate(const Proto_Frame_t *pFrame)
         return;
     }
 
-    /* Echo with current (old) baudrate first, then switch */
+    /* Echo with current (old) baudrate first, then wait for DMA to finish */
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_SET_BAUDRATE, NULL, 0U);
+    BSP_UART_TxWait();
     BSP_UART_SetBaudrate(k_baudrateTable[idx]);
 }
 
 /* 0x04 — System reset */
 static void HandleReset(const Proto_Frame_t *pFrame)
 {
-    /* Echo before reset so PC knows the command was received */
+    /* Echo before reset, wait for DMA to finish so PC receives the ACK */
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_RESET, NULL, 0U);
+    BSP_UART_TxWait();
     NVIC_SystemReset();
 }
 
@@ -319,7 +321,6 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
     uint8_t  dataLen;
     uint8_t  regsThisPkt;
     uint8_t  i;
-    uint32_t timeout;
 
     if (pFrame->len != 4U)
     {
@@ -370,14 +371,10 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
             s_pktBuf[BULK_PKT_HEADER_LEN + (i * 2U) + 1U] = (uint8_t)(val & 0xFFU);
         }
 
-        /* Wait for TX ready before sending each packet */
-        timeout = 50000U;
-        while (SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_BULK_READ,
-                         s_pktBuf, dataLen) != SUCCESS)
-        {
-            if (timeout == 0U) { return; }
-            timeout--;
-        }
+        /* Wait for previous TX to complete, then send this packet */
+        BSP_UART_TxWait();
+        (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_BULK_READ,
+                        s_pktBuf, dataLen);
 
         regIdx += regsThisPkt;
     }
@@ -514,6 +511,11 @@ static void ProcessByte(uint8_t byte)
             if (byte == PROTO_SOF2)
             {
                 s_state = STATE_WAIT_SEQ;
+            }
+            else if (byte == PROTO_SOF1)
+            {
+                /* 0xAA may be the start of a new frame — stay in SOF2 */
+                s_state = STATE_WAIT_SOF2;
             }
             else
             {

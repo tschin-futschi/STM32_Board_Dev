@@ -15,7 +15,6 @@
 static uint8_t  s_sampling;
 static uint8_t  s_channelMask;
 static uint16_t s_channelRegMap[APP_SAMPLE_NUM_CHANNELS];
-static uint8_t  s_intervalIdx;
 
 /* Stream frame TX buffer: [0xBB][mask][LEN][data up to 16 bytes][XOR] */
 #define STREAM_FRAME_MAX_LEN    (1U + 1U + 1U + (APP_SAMPLE_NUM_CHANNELS * 2U) + 1U)
@@ -91,7 +90,6 @@ void App_Sample_Init(void)
 
     s_sampling      = 0U;
     s_channelMask   = 0x01U;                    /* Default: channel 0 only  */
-    s_intervalIdx   = BSP_SAMPLE_TIM_DEFAULT_IDX;
 
     for (i = 0U; i < APP_SAMPLE_NUM_CHANNELS; i++)
     {
@@ -156,12 +154,7 @@ void App_Sample_Stop(void)
   */
 ErrorStatus App_Sample_SetInterval(uint8_t idx)
 {
-    if (BSP_SampleTim_SetFreq(idx) != SUCCESS)
-    {
-        return ERROR;
-    }
-    s_intervalIdx = idx;
-    return SUCCESS;
+    return BSP_SampleTim_SetFreq(idx);
 }
 
 /**

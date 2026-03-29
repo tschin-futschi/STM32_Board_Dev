@@ -45,9 +45,9 @@ typedef enum
     PROTO_CMD_MOTOR_PING     = 0x05U,   /* PC->STM32, data empty, tests I2C ACK     */
 
     /* Register read/write group (0x20~0x4F) */
-    PROTO_CMD_READ_REG       = 0x20U,   /* PC->STM32, data = 1 byte reg addr           */
-    PROTO_CMD_WRITE_REG      = 0x21U,   /* PC->STM32, data = 3 bytes [reg][H][L]       */
-    PROTO_CMD_BULK_READ      = 0x22U,   /* PC->STM32, data = 3 bytes [reg][cntH][cntL] */
+    PROTO_CMD_READ_REG       = 0x20U,   /* PC->STM32, data = 2 bytes [regH][regL]                   */
+    PROTO_CMD_WRITE_REG      = 0x21U,   /* PC->STM32, data = 4 bytes [regH][regL][valH][valL]        */
+    PROTO_CMD_BULK_READ      = 0x22U,   /* PC->STM32, data = 4 bytes [regH][regL][cntH][cntL]        */
 
     /* Oscilloscope control group (0x50~0x7F) */
     PROTO_CMD_START_SAMPLE   = 0x50U,   /* PC->STM32, data empty                       */

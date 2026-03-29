@@ -46,6 +46,9 @@
 #define BSP_UART_RX_BUF_SIZE        256U
 #define BSP_UART_TX_BUF_SIZE        264U    /* >= PROTO_MAX_FRAME_LEN (262) */
 
+/* TxWait timeout: covers longest frame (262 B) at lowest baudrate (9600 bps) */
+#define BSP_UART_TX_WAIT_TIMEOUT_MS 500U
+
 /*--------------------------------------------------------------------------*/
 /*                               API                                        */
 /*--------------------------------------------------------------------------*/
@@ -53,6 +56,7 @@
 ErrorStatus BSP_UART_Init(void);
 ErrorStatus BSP_UART_Transmit(const uint8_t *pData, uint16_t len);
 ErrorStatus BSP_UART_SetBaudrate(uint32_t baudrate);
+void        BSP_UART_TxWait(void);      /* Block until DMA TX done or timeout */
 
 /* Called from ISR — not for application use */
 void BSP_UART_RxISR_Callback(void);

@@ -10,7 +10,7 @@
 
 /**
   * @brief  Read a 16-bit register from the motor IC.
-  * @param  reg   Register address (8-bit).
+  * @param  reg   Register address (16-bit).
   * @param  pVal  Output: register value (host byte order uint16).
   * @retval SUCCESS / ERROR
   */
@@ -30,7 +30,7 @@ ErrorStatus App_Motor_ReadReg(uint16_t reg, uint16_t *pVal)
 
 /**
   * @brief  Write a 16-bit register to the motor IC.
-  * @param  reg  Register address (8-bit).
+  * @param  reg  Register address (16-bit).
   * @param  val  Value to write (host byte order uint16).
   * @retval SUCCESS / ERROR
   */
