@@ -136,6 +136,7 @@ static ErrorStatus SendFrame(uint8_t seq, uint8_t cmd,
     s_txBuf[idx++] = (uint8_t)(crc >> 8U);
     s_txBuf[idx++] = (uint8_t)(crc & 0xFFU);
 
+    BSP_UART_TxWait();
     return BSP_UART_Transmit(s_txBuf, idx);
 }
 
@@ -591,6 +592,7 @@ void App_Protocol_Poll(void)
     uint16_t i;
 
     len = BSP_UART_RxRead(s_rxBuf, BSP_UART_RX_BUF_SIZE);
+
     for (i = 0U; i < len; i++)
     {
         ProcessByte(s_rxBuf[i]);

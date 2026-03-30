@@ -70,6 +70,11 @@ int main(void)
     App_Sample_Init();
 
 #if TEST_I2C_SCAN
+    /* 等待 USB-UART 桥就绪，避免上电时输出丢失 */
+    {
+        uint32_t t0 = BSP_GetTick();
+        while (BSP_GetTick() - t0 < 1000U) {}
+    }
     Test_I2C_Scan_Run();
 #endif
 

@@ -144,9 +144,16 @@ ErrorStatus BSP_UART_Transmit(const uint8_t *pData, uint16_t len)
 
     memcpy(s_txBuf, pData, len);
 
-    /* Reconfigure DMA transfer size and start */
+    /* Step 1: disable stream */
     DMA_Cmd(BSP_UART_DMA_STREAM, DISABLE);
+    /* Step 2: wait for EN to clear (RM0090 §10.3.17) */
+    while ((BSP_UART_DMA_STREAM->CR & 0x1U) != 0U) {}
+    /* Step 3: clear all DMA2 Stream7 flags (FEIF7/DMEIF7/TEIF7/HTIF7/TCIF7) */
+    DMA2->HIFCR = (1U << 22) | (1U << 24) | (1U << 25) | (1U << 26) | (1U << 27);
+    /* Step 4: reset memory address and transfer size */
+    BSP_UART_DMA_STREAM->M0AR = (uint32_t)s_txBuf;
     BSP_UART_DMA_STREAM->NDTR = len;
+    /* Step 5: enable stream */
     DMA_Cmd(BSP_UART_DMA_STREAM, ENABLE);
 
     return SUCCESS;
