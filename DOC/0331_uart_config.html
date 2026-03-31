@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>串口参数说明 — BSP UART</title>
+<style>
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f6fa; color: #2c3e50; margin: 0; padding: 24px; }
+  h1 { font-size: 1.6em; border-bottom: 3px solid #2980b9; padding-bottom: 8px; margin-bottom: 24px; }
+  h2 { font-size: 1.15em; color: #2980b9; margin-top: 32px; border-left: 4px solid #2980b9; padding-left: 10px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 24px; }
+  th { background: #2980b9; color: #fff; padding: 8px 14px; text-align: left; font-weight: 600; }
+  td { padding: 7px 14px; border-bottom: 1px solid #dce3ec; }
+  tr:nth-child(even) td { background: #eaf2fb; }
+  .tag-fixed   { background: #27ae60; color: #fff; border-radius: 4px; padding: 2px 8px; font-size: 0.82em; }
+  .tag-config  { background: #e67e22; color: #fff; border-radius: 4px; padding: 2px 8px; font-size: 0.82em; }
+  .tag-hw      { background: #8e44ad; color: #fff; border-radius: 4px; padding: 2px 8px; font-size: 0.82em; }
+  pre { background: #1e2732; color: #a8d8a8; padding: 16px 20px; border-radius: 6px; font-size: 0.88em; line-height: 1.6; overflow-x: auto; }
+  .kw  { color: #79b8ff; }
+  .val { color: #f8c555; }
+  .cmt { color: #6a9955; }
+  .note { background: #fff8e1; border-left: 4px solid #f39c12; padding: 10px 16px; border-radius: 4px; margin: 12px 0; font-size: 0.93em; }
+  .section-box { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); padding: 20px 24px; margin-bottom: 24px; }
+  .flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; margin: 16px 0; }
+  .flow-box { background: #2980b9; color: #fff; padding: 8px 16px; border-radius: 4px; font-size: 0.9em; text-align: center; min-width: 80px; }
+  .flow-arrow { color: #7f8c8d; font-size: 1.4em; padding: 0 6px; }
+  .flow-box.rx { background: #27ae60; }
+  .flow-box.proc { background: #8e44ad; }
+  .flow-box.dma { background: #e67e22; }
+</style>
+</head>
+<body>
+
+<h1>串口参数说明 — BSP UART（USART1）</h1>
+
+<!-- 1. 基本通信参数 -->
+<div class="section-box">
+<h2>1. 基本通信参数</h2>
+<p>源自 <code>BSP/Inc/bsp_uart.h</code> 宏定义 + <code>BSP/Src/bsp_uart.c</code> 初始化代码。</p>
+<table>
+  <tr><th>参数</th><th>值</th><th>类型</th><th>来源</th></tr>
+  <tr><td>外设</td><td>USART1</td><td><span class="tag-hw">硬件固定</span></td><td><code>BSP_UART_PERIPH</code></td></tr>
+  <tr><td>波特率（默认）</td><td>115200 bps</td><td><span class="tag-config">运行时可改</span></td><td><code>BSP_UART_BAUDRATE_DEFAULT</code></td></tr>
+  <tr><td>数据位</td><td>8 bit</td><td><span class="tag-fixed">固定</span></td><td><code>USART_WordLength_8b</code></td></tr>
+  <tr><td>停止位</td><td>1 bit</td><td><span class="tag-fixed">固定</span></td><td><code>USART_StopBits_1</code></td></tr>
+  <tr><td>校验位</td><td>无（None）</td><td><span class="tag-fixed">固定</span></td><td><code>USART_Parity_No</code></td></tr>
+  <tr><td>硬件流控</td><td>无</td><td><span class="tag-fixed">固定</span></td><td><code>USART_HardwareFlowControl_None</code></td></tr>
+</table>
+
+<pre><span class="cmt">/* bsp_uart.c — uart_periph_init() */</span>
+usart.<span class="kw">USART_BaudRate</span>            = baudrate;              <span class="cmt">// 默认 115200</span>
+usart.<span class="kw">USART_WordLength</span>          = <span class="val">USART_WordLength_8b</span>;
+usart.<span class="kw">USART_StopBits</span>            = <span class="val">USART_StopBits_1</span>;
+usart.<span class="kw">USART_Parity</span>              = <span class="val">USART_Parity_No</span>;
+usart.<span class="kw">USART_HardwareFlowControl</span> = <span class="val">USART_HardwareFlowControl_None</span>;</pre>
+</div>
+
+<!-- 2. 硬件引脚 -->
+<div class="section-box">
+<h2>2. 硬件引脚</h2>
+<table>
+  <tr><th>方向</th><th>引脚</th><th>AF</th><th>宏</th></tr>
+  <tr><td>TX</td><td>PA9</td><td>AF7 (USART1)</td><td><code>BSP_UART_TX_PIN</code></td></tr>
+  <tr><td>RX</td><td>PA10</td><td>AF7 (USART1)</td><td><code>BSP_UART_RX_PIN</code></td></tr>
+</table>
+<div class="note">USART1 挂在 APB2 总线，时钟频率 90 MHz，波特率误差极小。</div>
+</div>
+
+<!-- 3. 收发机制 -->
+<div class="section-box">
+<h2>3. 收发机制</h2>
+
+<h2 style="font-size:1em;color:#27ae60;border-left-color:#27ae60;">接收路径（中断 → 环形缓冲区）</h2>
+<div class="flow">
+  <div class="flow-box rx">RXNE 中断<br><small>优先级 2</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box proc">环形缓冲区<br><small>256 B，溢出丢弃</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box proc">主循环 Poll<br><small>状态机解析帧</small></div>
+</div>
+<table>
+  <tr><th>参数</th><th>值</th></tr>
+  <tr><td>RX 中断优先级</td><td>2（<code>BSP_UART_IRQ_PRIORITY</code>）</td></tr>
+  <tr><td>环形缓冲区大小</td><td>256 B（<code>BSP_UART_RX_BUF_SIZE</code>）</td></tr>
+  <tr><td>溢出策略</td><td>丢弃新数据</td></tr>
+</table>
+
+<h2 style="font-size:1em;color:#e67e22;border-left-color:#e67e22;">发送路径（DMA）</h2>
+<div class="flow">
+  <div class="flow-box dma">SendFrame()<br><small>填静态 TX 缓冲区</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box dma">DMA2 Stream7<br><small>Channel 4</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box dma">USART1 TX<br><small>硬件自动发送</small></div>
+</div>
+<table>
+  <tr><th>参数</th><th>值</th></tr>
+  <tr><td>DMA 通道</td><td>DMA2 Stream7 Channel4（<code>BSP_UART_DMA_STREAM/CHANNEL</code>）</td></tr>
+  <tr><td>TX 缓冲区大小</td><td>264 B（<code>BSP_UART_TX_BUF_SIZE</code>，≥ 最大帧长 262 B）</td></tr>
+  <tr><td>DMA 完成中断优先级</td><td>10（<code>BSP_UART_DMA_IRQ_PRIORITY</code>）</td></tr>
+  <tr><td>发送忙检测</td><td><code>BSP_UART_IsTxBusy()</code>（非阻塞）/ <code>BSP_UART_TxWait()</code>（阻塞，超时 500 ms）</td></tr>
+</table>
+</div>
+
+<!-- 4. 可配置波特率 -->
+<div class="section-box">
+<h2>4. 可配置波特率（CMD 0x03）</h2>
+<p>上位机通过协议命令 <code>0x03</code> 在运行时切换，STM32 用旧波特率发完响应后再切换。</p>
+<table>
+  <tr><th>索引</th><th>波特率</th><th>备注</th></tr>
+  <tr><td>0x00</td><td>9600</td><td></td></tr>
+  <tr><td>0x01</td><td>19200</td><td></td></tr>
+  <tr><td>0x02</td><td>38400</td><td></td></tr>
+  <tr><td>0x03</td><td>57600</td><td></td></tr>
+  <tr><td>0x04</td><td>115200</td><td>默认值</td></tr>
+  <tr><td>0x05</td><td>230400</td><td></td></tr>
+  <tr><td>0x06</td><td>460800</td><td></td></tr>
+  <tr><td>0x07</td><td>921600</td><td></td></tr>
+</table>
+<div class="note">系统复位（CMD 0x04）后波特率恢复 115200。切换波特率后 STM32 会执行 <code>BSP_UART_RxFlush()</code> 丢弃切换期间的乱码字节。</div>
+</div>
+
+<!-- 5. printf 重定向 -->
+<div class="section-box">
+<h2>5. printf 重定向（仅 DEBUG 编译）</h2>
+<p><code>Core/Src/retarget.c</code>：<code>printf</code> 重定向为 USART1 <strong>轮询发送</strong>，不经过 DMA，避免与协议数据流冲突。仅在 <code>make DEBUG=1</code> 编译时生效。</p>
+<pre><span class="cmt">#ifdef DEBUG</span>
+<span class="cmt">// fputc → USART_SendData(USART1, ch) → 等待 TXE</span>
+<span class="cmt">#endif</span></pre>
+</div>
+
+<p style="color:#7f8c8d;font-size:0.85em;margin-top:32px;">源文件：BSP/Inc/bsp_uart.h · BSP/Src/bsp_uart.c &nbsp;|&nbsp; 协议文档：protocol.MD v1.5 §2</p>
+</body>
+</html>
