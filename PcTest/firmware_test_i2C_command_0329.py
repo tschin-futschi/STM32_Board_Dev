@@ -99,8 +99,9 @@ def fmt(f: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def flush_rx(ser: serial.Serial):
+    ser.reset_input_buffer()          # 直接清除 OS 驱动层缓冲区（更可靠）
     ser.timeout = 0.05
-    while ser.read(256):
+    while ser.read(256):              # 再读空应用层残留
         pass
 
 
@@ -344,27 +345,26 @@ def test_baudrate_switch(ser: serial.Serial):
     """
     T4.4 波特率切换：115200 → 57600 → 115200
     切换过程中保持通信正常。
+    注意：不使用 close/open，而是直接修改 ser.baudrate，
+    避免 close 触发 DTR 电平变化复位 STM32（CH340/CP2102 桥接芯片常见行为）。
     """
-    port = ser.port
-
     # Step 1: 请求切换到 57600 (idx=3)
     ser.write(build_frame(next_seq(), 0x03, b'\x03'))
     resp = recv_control_frame(ser, timeout=1.0)
     assert resp is not None,      '切换波特率无 ACK'
     assert resp['cmd'] == 0x03,   f'CMD 期望 0x03，实际 {resp["cmd"]:#04x}'
 
-    # Step 2: 以 57600 重连
-    ser.close()
-    time.sleep(0.15)
+    # Step 2: Python 端切换到 57600（保持端口开启，避免 DTR 变化）
+    time.sleep(0.1)
     ser.baudrate = 57600
-    ser.open()
-    print('  以 57600 重连，发送心跳...')
+    flush_rx(ser)
+    print('  切换至 57600，发送心跳...')
 
     try:
         ser.write(build_frame(next_seq(), 0x00))
         resp2 = recv_control_frame(ser, timeout=1.0)
         assert resp2 is not None, '57600 bps 心跳无响应'
-        assert resp2['cmd'] == 0x00, '57600 bps 心跳 CMD 错误'
+        assert resp2['cmd'] == 0x00, f'57600 bps 心跳 CMD 错误，实际收到: {fmt(resp2)}'
         print(f'  57600 bps 通信正常: {fmt(resp2)}')
 
         # Step 3: 请求切回 115200 (idx=4)
@@ -374,11 +374,10 @@ def test_baudrate_switch(ser: serial.Serial):
         assert resp3['cmd'] == 0x03
 
     finally:
-        # 无论成功失败都尝试恢复 115200
-        ser.close()
-        time.sleep(0.15)
+        # 无论成功失败都恢复 Python 端到 115200
+        time.sleep(0.1)
         ser.baudrate = 115200
-        ser.open()
+        flush_rx(ser)
 
     # Step 4: 115200 验证
     ser.write(build_frame(next_seq(), 0x00))
@@ -394,9 +393,9 @@ def test_system_reset(ser: serial.Serial):
     resp = recv_control_frame(ser, timeout=1.0)
     assert resp is not None,      '复位命令无 ACK'
     assert resp['cmd'] == 0x04,   f'CMD 期望 0x04，实际 {resp["cmd"]:#04x}'
-    print(f'  ACK: {fmt(resp)}，等待复位完成 (1.5s)...')
+    print(f'  ACK: {fmt(resp)}，等待复位完成 (2.0s)...')
 
-    time.sleep(1.5)   # PMIC 上电序列 4×10ms + 启动余量
+    time.sleep(2.0)   # PMIC 上电序列 4×10ms + 1s USB-UART 桥延迟 + 余量
     flush_rx(ser)
 
     ser.write(build_frame(next_seq(), 0x00))
@@ -683,6 +682,30 @@ def main():
 
     time.sleep(0.1)
     flush_rx(ser)
+
+    # ── 自动波特率恢复（防止上次测试失败后 STM32 停留在非默认波特率）──────
+    ser.write(build_frame(next_seq(), 0x00))
+    if recv_control_frame(ser, timeout=0.8) is None:
+        print('[warn] 115200 无响应，尝试从 57600 恢复...')
+        ser.baudrate = 57600
+        flush_rx(ser)
+        ser.write(build_frame(next_seq(), 0x00))
+        at_57600 = recv_control_frame(ser, timeout=0.8) is not None
+        if at_57600:
+            # 发送切回命令
+            ser.write(build_frame(next_seq(), 0x03, b'\x04'))  # idx=4 → 115200
+            recv_control_frame(ser, timeout=0.8)
+        time.sleep(0.1)
+        ser.baudrate = 115200
+        flush_rx(ser)
+        ser.write(build_frame(next_seq(), 0x00))
+        if recv_control_frame(ser, timeout=1.0) is None:
+            print('错误：自动恢复失败，请手动复位 STM32 后重试')
+            ser.close()
+            sys.exit(1)
+        print('[info] 波特率已恢复至 115200\n')
+    else:
+        flush_rx(ser)   # 消耗恢复探测的心跳响应尾部残留
 
     reg   = CFG['test_reg']
     motor = CFG['motor_addr']

@@ -418,4 +418,26 @@ PcTest/firmware_test_<内容简述>_MMDD.py
 
 ---
 
+## 11. C File Reading Policy
+- NEVER read entire .c or .h files over 200 lines at once
+- Always grep for function names and line numbers first
+- Read target function ± 20 lines for context
+- For register-level code, grep for peripheral names (I2C3, PE4, etc.) to locate relevant sections
+- Use `grep -n "^void\|^int\|^static" file.c` to get function map before reading
+
+---
+
+## 13. Thinking Policy
+- Do NOT use extended thinking
+- Make changes directly without deep reasoning
+
+---
+
+## 12. Python File Reading Policy
+- Run `python outline.py <file>` first to get structure
+- Never read entire .py files over 200 lines
+- Read specific classes/functions by line range only
+
+---
+
 *MCU: STM32F429ZG | SPL V1.9.0 | GNU Make + MSYS2 | 通用电机调试板（无闭环）*

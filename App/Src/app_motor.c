@@ -18,6 +18,7 @@ ErrorStatus App_Motor_ReadReg(uint16_t reg, uint16_t *pVal)
 {
     uint8_t buf[2];
 
+    if (g_motorIcAddr == 0x00U)          { return ERROR; }
     if (BSP_I2C2_ReadReg(g_motorIcAddr, reg, buf, 2U) != SUCCESS)
     {
         return ERROR;
@@ -38,6 +39,7 @@ ErrorStatus App_Motor_WriteReg(uint16_t reg, uint16_t val)
 {
     uint8_t buf[2];
 
+    if (g_motorIcAddr == 0x00U)          { return ERROR; }
     /* Big-endian: high byte first */
     buf[0] = (uint8_t)(val >> 8U);
     buf[1] = (uint8_t)(val & 0xFFU);

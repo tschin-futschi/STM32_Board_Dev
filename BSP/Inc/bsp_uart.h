@@ -37,6 +37,10 @@
 #define BSP_UART_DMA_CHANNEL        DMA_Channel_4
 #define BSP_UART_DMA_IRQn           DMA2_Stream7_IRQn
 #define BSP_UART_DMA_IRQ_PRIORITY   10U
+/* All status flags for DMA2 Stream7 (used when clearing after disable) */
+#define BSP_UART_TX_DMA_FLAGS       (DMA_FLAG_TCIF7 | DMA_FLAG_HTIF7 | \
+                                     DMA_FLAG_TEIF7 | DMA_FLAG_DMEIF7 | \
+                                     DMA_FLAG_FEIF7)
 
 /* USART1 RX interrupt priority */
 #define BSP_UART_IRQn               USART1_IRQn
@@ -57,6 +61,7 @@ ErrorStatus BSP_UART_Init(void);
 ErrorStatus BSP_UART_Transmit(const uint8_t *pData, uint16_t len);
 ErrorStatus BSP_UART_SetBaudrate(uint32_t baudrate);
 void        BSP_UART_TxWait(void);      /* Block until DMA TX done or timeout */
+uint8_t     BSP_UART_IsTxBusy(void);   /* Non-blocking: 1 = TX in progress   */
 
 /* Called from ISR — not for application use */
 void BSP_UART_RxISR_Callback(void);
@@ -64,5 +69,8 @@ void BSP_UART_TxDmaISR_Callback(void);
 
 /* Called by App layer to read received bytes */
 uint16_t BSP_UART_RxRead(uint8_t *pBuf, uint16_t maxLen);
+
+/* Discard all bytes currently in RX ring buffer */
+void BSP_UART_RxFlush(void);
 
 #endif /* __BSP_UART_H */

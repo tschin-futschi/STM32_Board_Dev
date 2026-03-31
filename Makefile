@@ -167,7 +167,7 @@ reset:
 	openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
 		-c "init; reset halt; reset run; exit"
 
-flash: all reset
+flash: all
 	openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
 		-c "program $(BUILD_DIR)/$(TARGET).elf verify reset exit"
 

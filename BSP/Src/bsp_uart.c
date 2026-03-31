@@ -161,9 +161,41 @@ ErrorStatus BSP_UART_Transmit(const uint8_t *pData, uint16_t len)
 
 ErrorStatus BSP_UART_SetBaudrate(uint32_t baudrate)
 {
+    /* 1. Disable RXNE interrupt to prevent stale bytes entering ring buffer */
+    USART_ITConfig(BSP_UART_PERIPH, USART_IT_RXNE, DISABLE);
+
+    /* 2. Disable USART DMA TX request */
+    USART_DMACmd(BSP_UART_PERIPH, USART_DMAReq_Tx, DISABLE);
+
+    /* 3. Disable DMA TX stream and wait for it to become idle */
+    DMA_Cmd(BSP_UART_DMA_STREAM, DISABLE);
+    while (DMA_GetCmdStatus(BSP_UART_DMA_STREAM) != DISABLE) {}
+
+    /* 4. Clear DMA stream status flags */
+    DMA_ClearFlag(BSP_UART_DMA_STREAM, BSP_UART_TX_DMA_FLAGS);
+
+    /* 5. Force TX done flag so TxWait() does not stall */
+    s_txDone = 1U;
+
+    /* 6. Wait for USART shift register to drain */
+    while (USART_GetFlagStatus(BSP_UART_PERIPH, USART_FLAG_TC) == RESET) {}
+
+    /* 7. Full peripheral reset */
     USART_Cmd(BSP_UART_PERIPH, DISABLE);
+    USART_DeInit(BSP_UART_PERIPH);
+
+    /* 8. Clear any stale RX status (read SR then DR) */
+    (void)BSP_UART_PERIPH->SR;
+    (void)BSP_UART_PERIPH->DR;
+
+    /* 9. Re-initialize with new baudrate */
     uart_periph_init(baudrate);
     return SUCCESS;
+}
+
+uint8_t BSP_UART_IsTxBusy(void)
+{
+    return (s_txDone == 0U) ? 1U : 0U;
 }
 
 void BSP_UART_TxWait(void)
@@ -174,9 +206,14 @@ void BSP_UART_TxWait(void)
     {
         if ((BSP_GetTick() - start) >= BSP_UART_TX_WAIT_TIMEOUT_MS)
         {
-            break;  /* Safety timeout — do not block forever */
+            s_txDone = 1U;  /* Force-recover: DMA TC ISR missed, allow next TX */
+            break;
         }
     }
+    /* Wait for USART shift register to drain: DMA TC fires when last byte
+     * enters DR; USART TC fires when the last bit is actually on the wire.
+     * Required before baudrate switch or system reset. */
+    while (USART_GetFlagStatus(BSP_UART_PERIPH, USART_FLAG_TC) == RESET) {}
 }
 
 /*--------------------------------------------------------------------------*/
@@ -203,6 +240,13 @@ void BSP_UART_TxDmaISR_Callback(void)
 /*--------------------------------------------------------------------------*/
 /*                          RX read (App layer)                             */
 /*--------------------------------------------------------------------------*/
+
+void BSP_UART_RxFlush(void)
+{
+    __disable_irq();
+    s_rxHead = s_rxTail;
+    __enable_irq();
+}
 
 uint16_t BSP_UART_RxRead(uint8_t *pBuf, uint16_t maxLen)
 {

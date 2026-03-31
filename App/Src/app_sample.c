@@ -32,7 +32,7 @@ static void SendStreamFrame(uint8_t effectiveMask)
 {
     uint8_t  idx = 0U;
     uint8_t  ch;
-    uint8_t  xor = 0U;
+    uint8_t  xorVal = 0U;
     uint8_t  len = 0U;
     uint16_t val;
     uint8_t  dataStart;
@@ -67,12 +67,12 @@ static void SendStreamFrame(uint8_t effectiveMask)
     }
 
     /* XOR: effectiveMask XOR LEN XOR all data bytes (protocol.MD v1.4) */
-    xor = effectiveMask ^ len;
+    xorVal = effectiveMask ^ len;
     for (i = dataStart; i < idx; i++)
     {
-        xor ^= s_streamBuf[i];
+        xorVal ^= s_streamBuf[i];
     }
-    s_streamBuf[idx++] = xor;
+    s_streamBuf[idx++] = xorVal;
 
     (void)BSP_UART_Transmit(s_streamBuf, idx);
 }
@@ -111,6 +111,9 @@ void App_Sample_Poll(void)
     if (BSP_SampleTim_GetFlag() == 0U)  { return; }
 
     BSP_SampleTim_ClearFlag();
+
+    /* Skip frame if TX is still busy — keeps main loop responsive to commands */
+    if (BSP_UART_IsTxBusy() != 0U)      { return; }
 
     effectiveMask = App_Sample_GetEffectiveMask();
     if (effectiveMask == 0U)

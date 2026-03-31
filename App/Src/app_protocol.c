@@ -227,6 +227,9 @@ static void HandleSetBaudrate(const Proto_Frame_t *pFrame)
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_SET_BAUDRATE, NULL, 0U);
     BSP_UART_TxWait();
     BSP_UART_SetBaudrate(k_baudrateTable[idx]);
+    /* Discard any garbage bytes received during baudrate transition */
+    BSP_UART_RxFlush();
+    s_state = STATE_WAIT_SOF1;
 }
 
 /* 0x04 — System reset */
@@ -363,7 +366,7 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
 
         for (i = 0U; i < regsThisPkt; i++)
         {
-            if (App_Motor_ReadReg((uint16_t)(startReg + regIdx + i), &val) != SUCCESS)
+            if (App_Motor_ReadReg((uint16_t)(startReg + (regIdx + i) * 2U), &val) != SUCCESS)
             {
                 SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
                 return;
