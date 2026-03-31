@@ -11,7 +11,9 @@
 
 #include "app_protocol.h"
 #include "bsp_uart.h"
+#include "bsp_i2c1.h"
 #include "bsp_i2c2.h"
+#include "bsp_i2c3.h"
 #include "app_motor.h"
 #include "app_sample.h"
 #include <stddef.h>
@@ -259,6 +261,46 @@ static void HandleMotorPing(const Proto_Frame_t *pFrame)
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_MOTOR_PING, NULL, 0U);
 }
 
+/* 0x07 — Scan I2C bus and return device address list */
+static void HandleI2CScan(const Proto_Frame_t *pFrame)
+{
+    uint8_t      addrList[127U];
+    uint8_t      count = 0U;
+    uint8_t      respBuf[1U + 127U];   /* [count][addr0]...[addrN-1] */
+    uint8_t      i;
+    ErrorStatus  result;
+
+    if (pFrame->len != 1U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    switch (pFrame->data[0])
+    {
+        case 1U: result = BSP_I2C1_Scan(addrList, &count); break;
+        case 2U: result = BSP_I2C2_Scan(addrList, &count); break;
+        case 3U: result = BSP_I2C3_Scan(addrList, &count); break;
+        default:
+            SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+            return;
+    }
+
+    if (result != SUCCESS)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    respBuf[0] = count;
+    for (i = 0U; i < count; i++)
+    {
+        respBuf[1U + i] = addrList[i];
+    }
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_SCAN, respBuf, 1U + count);
+}
+
 /* 0x20 — Read single register */
 static void HandleReadReg(const Proto_Frame_t *pFrame)
 {
@@ -465,6 +507,9 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
             break;
         case PROTO_CMD_MOTOR_PING:
             HandleMotorPing(pFrame);
+            break;
+        case PROTO_CMD_I2C_SCAN:
+            HandleI2CScan(pFrame);
             break;
         case PROTO_CMD_READ_REG:
             HandleReadReg(pFrame);

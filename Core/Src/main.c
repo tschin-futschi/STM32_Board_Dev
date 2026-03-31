@@ -22,7 +22,7 @@
 #include "test_i2c_scan.h"
 #endif
 
-#define HEARTBEAT_INTERVAL_MS   100U
+#define HEARTBEAT_INTERVAL_MS   500U
 
 int main(void)
 {

@@ -43,6 +43,7 @@ typedef enum
     PROTO_CMD_SET_BAUDRATE   = 0x03U,   /* PC->STM32, data = 1 byte baudrate index  */
     PROTO_CMD_RESET          = 0x04U,   /* PC->STM32, data empty, triggers sw reset */
     PROTO_CMD_MOTOR_PING     = 0x05U,   /* PC->STM32, data empty, tests I2C ACK     */
+    PROTO_CMD_I2C_SCAN       = 0x07U,   /* PC->STM32, data = 1 byte bus index (1/2/3); resp = [count][addr...] */
 
     /* Register read/write group (0x20~0x4F) */
     PROTO_CMD_READ_REG       = 0x20U,   /* PC->STM32, data = 2 bytes [regH][regL]                   */
