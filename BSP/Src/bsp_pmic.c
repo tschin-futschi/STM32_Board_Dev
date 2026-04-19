@@ -2,11 +2,11 @@
   * @file    bsp_pmic.c
   * @brief   PMIC BSP — RT5112WSC power sequencing via I2C3
   *
-  * Power-on sequence: LDO2 → LDO1 → LDO3 → LDO4
-  * All voltages are pre-set before any channel is enabled.
+  * Power-on sequence: LDO2(DRVVDD) → LDO1(IOVDD) → LDO3(VCMVDD)
+  * LDO4 permanently disabled.
+  * Init only pre-sets voltages; EnableSequence/DisableSequence control LDO on/off.
   *
-  * HWEN (PE4 / EXTI4): rising edge triggers re-init from main loop.
-  * ISR only sets g_pmicHwenFlag; all blocking work done in BSP_PMIC_Init().
+  * HWEN (PE4 / EXTI4): rising edge triggers re-init + enable from main loop.
   */
 
 #include "bsp_pmic.h"
@@ -18,6 +18,12 @@
 /*--------------------------------------------------------------------------*/
 
 volatile uint8_t g_pmicHwenFlag = 0U;
+
+PMIC_Voltage_t g_pmicVoltage = {
+    .drvVdd  = BSP_PMIC_DEFAULT_DRVVDD,    /* LDO2, 1.80V */
+    .ioVdd   = BSP_PMIC_DEFAULT_IOVDD,     /* LDO1, 2.80V */
+    .vcmVdd  = BSP_PMIC_DEFAULT_VCMVDD,    /* LDO3, 3.20V */
+};
 
 /*--------------------------------------------------------------------------*/
 /*                          Static helpers                                  */
@@ -53,57 +59,86 @@ static ErrorStatus ReadReg(uint8_t reg, uint8_t *pVal)
 /*--------------------------------------------------------------------------*/
 
 /**
-  * @brief  Full PMIC software initialisation.
-  *
-  *         Steps:
-  *           1. Pre-set output voltages (channels still disabled).
-  *           2. Enable LDOs in sequence: LDO2 → LDO1 → LDO3 → LDO4,
-  *              with BSP_PMIC_SEQ_DELAY_MS between each step.
-  *           3. Read-back control registers to verify writes.
-  *
+  * @brief  PMIC initialisation — pre-set voltages only, LDOs remain disabled.
+  *         Call BSP_PMIC_EnableSequence() separately to enable LDOs.
   * @retval SUCCESS / ERROR (I2C communication failure)
   */
 ErrorStatus BSP_PMIC_Init(void)
 {
+    float drvV  = (float)g_pmicVoltage.drvVdd  / 100.0f;
+    float ioV   = (float)g_pmicVoltage.ioVdd   / 100.0f;
+    float vcmV  = (float)g_pmicVoltage.vcmVdd  / 100.0f;
+
+    /* Pre-set output voltages (LDO2=DRVVDD, LDO1=IOVDD, LDO3=VCMVDD) */
+    if (BSP_PMIC_SetVout(BSP_PMIC_CH_LDO2, drvV) != SUCCESS) { return ERROR; }
+    if (BSP_PMIC_SetVout(BSP_PMIC_CH_LDO1, ioV)  != SUCCESS) { return ERROR; }
+    if (BSP_PMIC_SetVout(BSP_PMIC_CH_LDO3, vcmV) != SUCCESS) { return ERROR; }
+
+    return SUCCESS;
+}
+
+/**
+  * @brief  Enable LDOs in fixed sequence: LDO2 → 10ms → LDO1 → 10ms → LDO3.
+  *         Pre-sets voltages from g_pmicVoltage before enabling.
+  *         Read-back verifies Bit7 is set for each channel.
+  * @retval SUCCESS / ERROR
+  */
+ErrorStatus BSP_PMIC_EnableSequence(void)
+{
     uint8_t tmp;
-    ErrorStatus ret = SUCCESS;
 
-    /* Step 1: Pre-set output voltages */
-    if (BSP_PMIC_SetVout(BSP_PMIC_CH_LDO2, BSP_PMIC_DEFAULT_LDO2_V) != SUCCESS)
-        { ret = ERROR; }
-    if (BSP_PMIC_SetVout(BSP_PMIC_CH_LDO1, BSP_PMIC_DEFAULT_LDO1_V) != SUCCESS)
-        { ret = ERROR; }
-    if (BSP_PMIC_SetVout(BSP_PMIC_CH_LDO3, BSP_PMIC_DEFAULT_LDO3_V) != SUCCESS)
-        { ret = ERROR; }
-    if (BSP_PMIC_SetVout(BSP_PMIC_CH_LDO4, BSP_PMIC_DEFAULT_LDO4_V) != SUCCESS)
-        { ret = ERROR; }
+    /* Pre-set voltages first */
+    if (BSP_PMIC_Init() != SUCCESS) { return ERROR; }
 
-    if (ret != SUCCESS) { return ERROR; }
-
-    /* Step 2: Enable LDOs in sequence */
-    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO2, ENABLE) != SUCCESS)  { return ERROR; }
+    /* Enable in sequence: LDO2(DRVVDD) → LDO1(IOVDD) → LDO3(VCMVDD) */
+    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO2, ENABLE) != SUCCESS) { return ERROR; }
     WaitMs(BSP_PMIC_SEQ_DELAY_MS);
 
-    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO1, ENABLE) != SUCCESS)  { return ERROR; }
+    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO1, ENABLE) != SUCCESS) { return ERROR; }
     WaitMs(BSP_PMIC_SEQ_DELAY_MS);
 
-    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO3, ENABLE) != SUCCESS)  { return ERROR; }
-    WaitMs(BSP_PMIC_SEQ_DELAY_MS);
+    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO3, ENABLE) != SUCCESS) { return ERROR; }
 
-    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO4, ENABLE) != SUCCESS)  { return ERROR; }
-
-    /* Step 3: Read-back to verify Bit7 (enable bit) is set */
-    if (ReadReg(BSP_PMIC_REG_LDO1_CTRL, &tmp) != SUCCESS) { return ERROR; }
-    if ((tmp & 0x80U) == 0U) { return ERROR; }
-
+    /* Read-back to verify Bit7 (enable bit) is set */
     if (ReadReg(BSP_PMIC_REG_LDO2_CTRL, &tmp) != SUCCESS) { return ERROR; }
-    if ((tmp & 0x80U) == 0U) { return ERROR; }
+    if ((tmp & BSP_PMIC_CTRL_EN_BIT) == 0U) { return ERROR; }
+
+    if (ReadReg(BSP_PMIC_REG_LDO1_CTRL, &tmp) != SUCCESS) { return ERROR; }
+    if ((tmp & BSP_PMIC_CTRL_EN_BIT) == 0U) { return ERROR; }
 
     if (ReadReg(BSP_PMIC_REG_LDO3_CTRL, &tmp) != SUCCESS) { return ERROR; }
-    if ((tmp & 0x80U) == 0U) { return ERROR; }
+    if ((tmp & BSP_PMIC_CTRL_EN_BIT) == 0U) { return ERROR; }
 
-    if (ReadReg(BSP_PMIC_REG_LDO4_CTRL, &tmp) != SUCCESS) { return ERROR; }
-    if ((tmp & 0x80U) == 0U) { return ERROR; }
+    return SUCCESS;
+}
+
+/**
+  * @brief  Disable LDOs in reverse sequence: LDO3 → 10ms → LDO1 → 10ms → LDO2.
+  *         Read-back verifies Bit7 is cleared for each channel.
+  * @retval SUCCESS / ERROR
+  */
+ErrorStatus BSP_PMIC_DisableSequence(void)
+{
+    uint8_t tmp;
+
+    /* Disable in reverse: LDO3(VCMVDD) → LDO1(IOVDD) → LDO2(DRVVDD) */
+    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO3, DISABLE) != SUCCESS) { return ERROR; }
+    WaitMs(BSP_PMIC_SEQ_DELAY_MS);
+
+    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO1, DISABLE) != SUCCESS) { return ERROR; }
+    WaitMs(BSP_PMIC_SEQ_DELAY_MS);
+
+    if (BSP_PMIC_SetEnable(BSP_PMIC_CH_LDO2, DISABLE) != SUCCESS) { return ERROR; }
+
+    /* Read-back to verify Bit7 (enable bit) is cleared */
+    if (ReadReg(BSP_PMIC_REG_LDO3_CTRL, &tmp) != SUCCESS) { return ERROR; }
+    if ((tmp & BSP_PMIC_CTRL_EN_BIT) != 0U) { return ERROR; }
+
+    if (ReadReg(BSP_PMIC_REG_LDO1_CTRL, &tmp) != SUCCESS) { return ERROR; }
+    if ((tmp & BSP_PMIC_CTRL_EN_BIT) != 0U) { return ERROR; }
+
+    if (ReadReg(BSP_PMIC_REG_LDO2_CTRL, &tmp) != SUCCESS) { return ERROR; }
+    if ((tmp & BSP_PMIC_CTRL_EN_BIT) != 0U) { return ERROR; }
 
     return SUCCESS;
 }

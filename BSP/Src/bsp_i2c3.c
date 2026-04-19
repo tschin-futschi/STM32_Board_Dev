@@ -312,7 +312,7 @@ ErrorStatus BSP_I2C3_Scan(uint8_t *pAddrList, uint8_t *pCount)
 
     *pCount = 0U;
 
-    for (addr = 1U; addr <= 127U; addr++)
+    for (addr = 1U; addr <= 126U; addr++)
     {
         timeout = BSP_I2C3_TIMEOUT;
         while (I2C_GetFlagStatus(BSP_I2C3_PERIPH, I2C_FLAG_BUSY) != RESET)

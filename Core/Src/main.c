@@ -91,11 +91,11 @@ int main(void)
         Test_PMIC_PidRead_Poll(now);
 #endif
 
-        /* PMIC re-init on HWEN rising edge */
+        /* PMIC re-init + enable on HWEN rising edge */
         if (g_pmicHwenFlag != 0U)
         {
             g_pmicHwenFlag = 0U;
-            (void)BSP_PMIC_Init();
+            (void)BSP_PMIC_EnableSequence();
         }
 
         /* Heartbeat LED1: toggle every HEARTBEAT_INTERVAL_MS */

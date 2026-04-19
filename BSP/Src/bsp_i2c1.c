@@ -348,7 +348,7 @@ ErrorStatus BSP_I2C1_Scan(uint8_t *pAddrList, uint8_t *pCount)
 
     *pCount = 0U;
 
-    for (addr = 1U; addr <= 127U; addr++)
+    for (addr = 1U; addr <= 126U; addr++)
     {
         /* Wait for bus free */
         timeout = BSP_I2C1_TIMEOUT;

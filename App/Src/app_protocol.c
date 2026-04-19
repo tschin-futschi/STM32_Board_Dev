@@ -14,6 +14,7 @@
 #include "bsp_i2c1.h"
 #include "bsp_i2c2.h"
 #include "bsp_i2c3.h"
+#include "bsp_pmic.h"
 #include "app_motor.h"
 #include "app_sample.h"
 #include <stddef.h>
@@ -301,6 +302,61 @@ static void HandleI2CScan(const Proto_Frame_t *pFrame)
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_SCAN, respBuf, 1U + count);
 }
 
+/* 0x08 — PMIC LDO enable sequence */
+static void HandlePmicEnable(const Proto_Frame_t *pFrame)
+{
+    if (BSP_PMIC_EnableSequence() != SUCCESS)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_ENABLE, NULL, 0U);
+}
+
+/* 0x09 — Set PMIC voltages (DRVVDD / IOVDD / VCMVDD) */
+static void HandlePmicSetVolt(const Proto_Frame_t *pFrame)
+{
+    uint16_t drvVdd;
+    uint16_t ioVdd;
+    uint16_t vcmVdd;
+
+    if (pFrame->len != 6U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    drvVdd = ((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1];
+    ioVdd  = ((uint16_t)pFrame->data[2] << 8U) | (uint16_t)pFrame->data[3];
+    vcmVdd = ((uint16_t)pFrame->data[4] << 8U) | (uint16_t)pFrame->data[5];
+
+    /* Range check: 60~377 (0.60V ~ 3.77V) */
+    if ((drvVdd < BSP_PMIC_VOLT_MIN_X100) || (drvVdd > BSP_PMIC_VOLT_MAX_X100) ||
+        (ioVdd  < BSP_PMIC_VOLT_MIN_X100) || (ioVdd  > BSP_PMIC_VOLT_MAX_X100) ||
+        (vcmVdd < BSP_PMIC_VOLT_MIN_X100) || (vcmVdd > BSP_PMIC_VOLT_MAX_X100))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    g_pmicVoltage.drvVdd = drvVdd;
+    g_pmicVoltage.ioVdd  = ioVdd;
+    g_pmicVoltage.vcmVdd = vcmVdd;
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_SET_VOLT, NULL, 0U);
+}
+
+/* 0x0A — PMIC LDO disable sequence */
+static void HandlePmicDisable(const Proto_Frame_t *pFrame)
+{
+    if (BSP_PMIC_DisableSequence() != SUCCESS)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_DISABLE, NULL, 0U);
+}
+
 /* 0x20 — Read single register */
 static void HandleReadReg(const Proto_Frame_t *pFrame)
 {
@@ -510,6 +566,15 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
             break;
         case PROTO_CMD_I2C_SCAN:
             HandleI2CScan(pFrame);
+            break;
+        case PROTO_CMD_PMIC_ENABLE:
+            HandlePmicEnable(pFrame);
+            break;
+        case PROTO_CMD_PMIC_SET_VOLT:
+            HandlePmicSetVolt(pFrame);
+            break;
+        case PROTO_CMD_PMIC_DISABLE:
+            HandlePmicDisable(pFrame);
             break;
         case PROTO_CMD_READ_REG:
             HandleReadReg(pFrame);

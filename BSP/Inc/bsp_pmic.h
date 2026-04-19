@@ -2,7 +2,8 @@
   * @file    bsp_pmic.h
   * @brief   PMIC BSP — RT5112WSC, I2C3 (0x20), power sequencing
   *
-  * Power-on sequence: LDO2 → LDO1 → LDO3 → LDO4
+  * Power-on sequence: LDO2(DRVVDD) → LDO1(IOVDD) → LDO3(VCMVDD)
+  * LDO4 permanently disabled.
   * Voltage formula:   reg = (volt_V - 0.6) × 80  (step 12.5 mV, range 0.6~3.775 V)
   */
 
@@ -58,6 +59,7 @@
 /*--------------------------------------------------------------------------*/
 
 /* Bit7=1: output enabled; Bit7=0: disabled; Bits[3:2]=mode (keep 0x0C) */
+#define BSP_PMIC_CTRL_EN_BIT        0x80U   /* Bit7 mask for enable readback */
 #define BSP_PMIC_CTRL_ENABLE        0x8CU
 #define BSP_PMIC_CTRL_DISABLE       0x0CU
 
@@ -70,13 +72,26 @@
 #define BSP_PMIC_VOLT_SCALE         80.0f
 
 /*--------------------------------------------------------------------------*/
-/*                     Default output voltages (volts)                      */
+/*                   Voltage config structure & defaults                    */
 /*--------------------------------------------------------------------------*/
 
-#define BSP_PMIC_DEFAULT_LDO1_V     2.8f
-#define BSP_PMIC_DEFAULT_LDO2_V     1.8f
-#define BSP_PMIC_DEFAULT_LDO3_V     3.2f
-#define BSP_PMIC_DEFAULT_LDO4_V     2.8f
+/* Values are actual voltage (V) × 100, uint16_t.  E.g. 1.80V → 180 */
+#define BSP_PMIC_DEFAULT_DRVVDD     180U    /* LDO2, 1.80V */
+#define BSP_PMIC_DEFAULT_IOVDD      280U    /* LDO1, 2.80V */
+#define BSP_PMIC_DEFAULT_VCMVDD     320U    /* LDO3, 3.20V */
+
+/* Valid range: 0.60V~3.77V → 60~377 */
+#define BSP_PMIC_VOLT_MIN_X100      60U
+#define BSP_PMIC_VOLT_MAX_X100      377U
+
+typedef struct
+{
+    uint16_t drvVdd;    /* LDO2 voltage, V × 100 */
+    uint16_t ioVdd;     /* LDO1 voltage, V × 100 */
+    uint16_t vcmVdd;    /* LDO3 voltage, V × 100 */
+} PMIC_Voltage_t;
+
+extern PMIC_Voltage_t g_pmicVoltage;
 
 /*--------------------------------------------------------------------------*/
 /*                  Power-on inter-step delays (ms)                         */
@@ -113,5 +128,7 @@ void        BSP_PMIC_HwenInit(void);
 ErrorStatus BSP_PMIC_ReadPid(uint8_t *pPid);
 ErrorStatus BSP_PMIC_SetVout(uint8_t ch, float voltV);
 ErrorStatus BSP_PMIC_SetEnable(uint8_t ch, FunctionalState state);
+ErrorStatus BSP_PMIC_EnableSequence(void);
+ErrorStatus BSP_PMIC_DisableSequence(void);
 
 #endif /* __BSP_PMIC_H */

@@ -147,9 +147,9 @@ ErrorStatus BSP_UART_Transmit(const uint8_t *pData, uint16_t len)
     /* Step 1: disable stream */
     DMA_Cmd(BSP_UART_DMA_STREAM, DISABLE);
     /* Step 2: wait for EN to clear (RM0090 §10.3.17) */
-    while ((BSP_UART_DMA_STREAM->CR & 0x1U) != 0U) {}
+    while (DMA_GetCmdStatus(BSP_UART_DMA_STREAM) != DISABLE) {}
     /* Step 3: clear all DMA2 Stream7 flags (FEIF7/DMEIF7/TEIF7/HTIF7/TCIF7) */
-    DMA2->HIFCR = (1U << 22) | (1U << 24) | (1U << 25) | (1U << 26) | (1U << 27);
+    DMA_ClearFlag(BSP_UART_DMA_STREAM, BSP_UART_TX_DMA_FLAGS);
     /* Step 4: reset memory address and transfer size */
     BSP_UART_DMA_STREAM->M0AR = (uint32_t)s_txBuf;
     BSP_UART_DMA_STREAM->NDTR = len;
@@ -178,7 +178,16 @@ ErrorStatus BSP_UART_SetBaudrate(uint32_t baudrate)
     s_txDone = 1U;
 
     /* 6. Wait for USART shift register to drain */
-    while (USART_GetFlagStatus(BSP_UART_PERIPH, USART_FLAG_TC) == RESET) {}
+    {
+        uint32_t t0 = BSP_GetTick();
+        while (USART_GetFlagStatus(BSP_UART_PERIPH, USART_FLAG_TC) == RESET)
+        {
+            if ((BSP_GetTick() - t0) >= BSP_UART_TX_WAIT_TIMEOUT_MS)
+            {
+                break;
+            }
+        }
+    }
 
     /* 7. Full peripheral reset */
     USART_Cmd(BSP_UART_PERIPH, DISABLE);
@@ -213,7 +222,14 @@ void BSP_UART_TxWait(void)
     /* Wait for USART shift register to drain: DMA TC fires when last byte
      * enters DR; USART TC fires when the last bit is actually on the wire.
      * Required before baudrate switch or system reset. */
-    while (USART_GetFlagStatus(BSP_UART_PERIPH, USART_FLAG_TC) == RESET) {}
+    start = BSP_GetTick();
+    while (USART_GetFlagStatus(BSP_UART_PERIPH, USART_FLAG_TC) == RESET)
+    {
+        if ((BSP_GetTick() - start) >= BSP_UART_TX_WAIT_TIMEOUT_MS)
+        {
+            break;
+        }
+    }
 }
 
 /*--------------------------------------------------------------------------*/
