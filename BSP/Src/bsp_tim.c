@@ -16,14 +16,13 @@
 /* ARR = interval_us - 1 */
 static const uint16_t k_arrTable[BSP_SAMPLE_TIM_IDX_MAX + 1U] =
 {
-     99U,   /* idx 0:  100 us, 10000 Hz */
-    199U,   /* idx 1:  200 us,  5000 Hz */
-    299U,   /* idx 2:  300 us,  3333 Hz */
-    499U,   /* idx 3:  500 us,  2000 Hz */
-    749U,   /* idx 4:  750 us,  1333 Hz */
-    999U,   /* idx 5: 1000 us,  1000 Hz (default) */
-   1499U,   /* idx 6: 1500 us,   667 Hz */
-   1999U,   /* idx 7: 2000 us,   500 Hz */
+    199U,   /* idx 0:  200 us,  5000 Hz */
+    299U,   /* idx 1:  300 us,  3333 Hz */
+    499U,   /* idx 2:  500 us,  2000 Hz */
+    749U,   /* idx 3:  750 us,  1333 Hz */
+    999U,   /* idx 4: 1000 us,  1000 Hz (default) */
+   1499U,   /* idx 5: 1500 us,   667 Hz */
+   1999U,   /* idx 6: 2000 us,   500 Hz */
 };
 
 /*--------------------------------------------------------------------------*/
@@ -31,13 +30,14 @@ static const uint16_t k_arrTable[BSP_SAMPLE_TIM_IDX_MAX + 1U] =
 /*--------------------------------------------------------------------------*/
 
 static volatile uint8_t s_sampleFlag;
+static uint8_t s_currentIdx = BSP_SAMPLE_TIM_DEFAULT_IDX;
 
 /*--------------------------------------------------------------------------*/
 /*                          Public API                                      */
 /*--------------------------------------------------------------------------*/
 
 /**
-  * @brief  Initialize TIM6 with default sampling interval (index 5 = 1000 us).
+  * @brief  Initialize TIM6 with default sampling interval (index 4 = 1000 us).
   *         Timer is NOT started — call BSP_SampleTim_Start() explicitly.
   */
 ErrorStatus BSP_SampleTim_Init(void)
@@ -73,7 +73,7 @@ ErrorStatus BSP_SampleTim_Init(void)
 
 /**
   * @brief  Set sampling interval by index.
-  * @param  idx  Interval index, 0~7.
+  * @param  idx  Interval index, 0~6.
   * @retval SUCCESS / ERROR (invalid index)
   */
 ErrorStatus BSP_SampleTim_SetFreq(uint8_t idx)
@@ -83,7 +83,16 @@ ErrorStatus BSP_SampleTim_SetFreq(uint8_t idx)
         return ERROR;
     }
     TIM_SetAutoreload(BSP_SAMPLE_TIM_PERIPH, k_arrTable[idx]);
+    s_currentIdx = idx;
     return SUCCESS;
+}
+
+/**
+  * @brief  Return current tick period in microseconds.
+  */
+uint16_t BSP_SampleTim_GetPeriodUs(void)
+{
+    return k_arrTable[s_currentIdx] + 1U;
 }
 
 /**

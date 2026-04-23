@@ -9,7 +9,7 @@
   *   XOR: effective_mask XOR LEN XOR all data bytes
   *
   * Defaults:
-  *   Interval index : 5  (1000 us, 1 kHz)
+  *   Interval index : 4  (1000 us, 1 kHz)
   *   Channel mask   : 0x01 (channel 0 only)
   *   Reg map        : all 0xFFFF (unmapped)
   */
@@ -43,5 +43,19 @@ void        App_Sample_SetRegMap(const uint8_t *pData);
 
 uint8_t     App_Sample_IsActive(void);
 uint8_t     App_Sample_GetEffectiveMask(void);
+
+/*--------------------------------------------------------------------------*/
+/*                        Generator API                                    */
+/*--------------------------------------------------------------------------*/
+
+#define APP_GEN_COS_MAX_CH      3U      /* Max cosine channels              */
+
+ErrorStatus App_Generator_StartLinear(uint16_t addr, int16_t min, int16_t max,
+                                      int16_t step, uint16_t intervalMs);
+ErrorStatus App_Generator_StartCosine(int16_t amplitude, int16_t offset,
+                                      uint16_t freqX100, uint8_t channelCount,
+                                      const uint16_t *addrs, const int16_t *phaseX10);
+void        App_Generator_Stop(void);
+uint8_t     App_Generator_IsRunning(void);
 
 #endif /* __APP_SAMPLE_H */

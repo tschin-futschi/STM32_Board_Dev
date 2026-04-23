@@ -6,7 +6,8 @@
   *   Control:     [0xAA][0x55][SEQ][CMD][LEN][DATA n][CRC16_H][CRC16_L]
   *   Data stream: [0xBB][MASK][LEN][DATA n][XOR]  — TX only, defined here for reference
   *
-  * CRC16-MODBUS: poly=0x8005, init=0xFFFF, LSB-first, result big-endian
+  * CRC16: poly=0x8005, init=0xFFFF, right-shift/LSB-first, result big-endian
+ * NOTE: NOT standard CRC16-MODBUS (which uses reflected poly 0xA001)
   * CRC range: SEQ + CMD + LEN + DATA (excludes frame header)
   */
 
@@ -53,12 +54,15 @@ typedef enum
     PROTO_CMD_WRITE_REG      = 0x21U,   /* PC->STM32, data = 4 bytes [regH][regL][valH][valL]        */
     PROTO_CMD_BULK_READ      = 0x22U,   /* PC->STM32, data = 4 bytes [regH][regL][cntH][cntL]        */
 
-    /* Oscilloscope control group (0x50~0x7F) */
-    PROTO_CMD_START_SAMPLE   = 0x50U,   /* PC->STM32, data empty                       */
-    PROTO_CMD_STOP_SAMPLE    = 0x51U,   /* PC->STM32, data empty                       */
-    PROTO_CMD_SET_INTERVAL   = 0x52U,   /* PC->STM32, data = 1 byte interval index     */
-    PROTO_CMD_SET_CHANNEL    = 0x53U,   /* PC->STM32, data = 1 byte channel mask       */
-    PROTO_CMD_SET_REG_MAP    = 0x54U,   /* PC->STM32, data = 16 bytes (8 ch × 2 bytes) */
+    /* Oscilloscope & generator control group (0x50~0x7F) */
+    PROTO_CMD_START_SAMPLE     = 0x50U, /* PC->STM32, data empty                            */
+    PROTO_CMD_STOP_SAMPLE      = 0x51U, /* PC->STM32, data empty                            */
+    PROTO_CMD_SET_INTERVAL     = 0x52U, /* PC->STM32, data = 1 byte interval index (0~6)    */
+    PROTO_CMD_SET_CHANNEL      = 0x53U, /* PC->STM32, data = 1 byte channel mask             */
+    PROTO_CMD_SET_REG_MAP      = 0x54U, /* PC->STM32, data = 16 bytes (8 ch × 2 bytes)      */
+    PROTO_CMD_START_LINEAR_GEN = 0x55U, /* PC->STM32, 10 bytes: addr+min+max+step+interval  */
+    PROTO_CMD_START_COSINE_GEN = 0x56U, /* PC->STM32, 7+N*4 bytes: amp+off+freq+N+channels  */
+    PROTO_CMD_STOP_GENERATOR   = 0x57U, /* PC->STM32, data empty                            */
 } Proto_Cmd_t;
 
 /*--------------------------------------------------------------------------*/

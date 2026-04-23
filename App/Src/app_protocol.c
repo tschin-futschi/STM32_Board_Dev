@@ -77,10 +77,10 @@ static uint8_t       s_rxCrcHigh;
 static uint16_t      s_rxCrcAccum;          /* Running CRC16 over SEQ+CMD+LEN+DATA */
 static uint8_t       s_rxBuf[BSP_UART_RX_BUF_SIZE];
 
-static const uint16_t k_crc16Init = 0xFFFFU; /* CRC16-MODBUS initial value  */
+static const uint16_t k_crc16Init = 0xFFFFU; /* CRC16 initial value         */
 
 /*--------------------------------------------------------------------------*/
-/*                      CRC16-MODBUS (poly 0x8005)                          */
+/*                   CRC16 (poly 0x8005, right-shift)                       */
 /*--------------------------------------------------------------------------*/
 
 static uint16_t CRC16_Update(uint16_t crc, uint8_t byte)
@@ -545,6 +545,100 @@ static void HandleSetRegMap(const Proto_Frame_t *pFrame)
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_SET_REG_MAP, NULL, 0U);
 }
 
+/* 0x55 — Start linear generator */
+static void HandleStartLinearGen(const Proto_Frame_t *pFrame)
+{
+    uint16_t addr;
+    int16_t  min, max, step;
+    uint16_t intervalMs;
+
+    if (pFrame->len != 10U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    addr       = ((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1];
+    min        = (int16_t)(((uint16_t)pFrame->data[2] << 8U) | (uint16_t)pFrame->data[3]);
+    max        = (int16_t)(((uint16_t)pFrame->data[4] << 8U) | (uint16_t)pFrame->data[5]);
+    step       = (int16_t)(((uint16_t)pFrame->data[6] << 8U) | (uint16_t)pFrame->data[7]);
+    intervalMs = ((uint16_t)pFrame->data[8] << 8U) | (uint16_t)pFrame->data[9];
+
+    if ((min >= max) || (step <= 0) || (intervalMs == 0U))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    if (App_Generator_StartLinear(addr, min, max, step, intervalMs) != SUCCESS)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_LINEAR_GEN, NULL, 0U);
+}
+
+/* 0x56 — Start cosine generator */
+static void HandleStartCosineGen(const Proto_Frame_t *pFrame)
+{
+    int16_t  amplitude, offset;
+    uint16_t freqX100;
+    uint8_t  channelCount;
+    uint16_t addrs[APP_GEN_COS_MAX_CH];
+    int16_t  phaseX10[APP_GEN_COS_MAX_CH];
+    uint8_t  i;
+
+    if (pFrame->len < 11U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    amplitude    = (int16_t)(((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1]);
+    offset       = (int16_t)(((uint16_t)pFrame->data[2] << 8U) | (uint16_t)pFrame->data[3]);
+    freqX100     = ((uint16_t)pFrame->data[4] << 8U) | (uint16_t)pFrame->data[5];
+    channelCount = pFrame->data[6];
+
+    if ((amplitude <= 0) || (freqX100 == 0U) ||
+        (channelCount == 0U) || (channelCount > APP_GEN_COS_MAX_CH))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    if (pFrame->len != (uint8_t)(7U + channelCount * 4U))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    for (i = 0U; i < channelCount; i++)
+    {
+        uint8_t base = 7U + i * 4U;
+        addrs[i]    = ((uint16_t)pFrame->data[base] << 8U) |
+                       (uint16_t)pFrame->data[base + 1U];
+        phaseX10[i] = (int16_t)(((uint16_t)pFrame->data[base + 2U] << 8U) |
+                                 (uint16_t)pFrame->data[base + 3U]);
+    }
+
+    if (App_Generator_StartCosine(amplitude, offset, freqX100,
+                                   channelCount, addrs, phaseX10) != SUCCESS)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_COSINE_GEN, NULL, 0U);
+}
+
+/* 0x57 — Stop generator */
+static void HandleStopGenerator(const Proto_Frame_t *pFrame)
+{
+    App_Generator_Stop();
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_STOP_GENERATOR, NULL, 0U);
+}
+
 static void DispatchFrame(const Proto_Frame_t *pFrame)
 {
     switch (pFrame->cmd)
@@ -599,6 +693,15 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
             break;
         case PROTO_CMD_SET_REG_MAP:
             HandleSetRegMap(pFrame);
+            break;
+        case PROTO_CMD_START_LINEAR_GEN:
+            HandleStartLinearGen(pFrame);
+            break;
+        case PROTO_CMD_START_COSINE_GEN:
+            HandleStartCosineGen(pFrame);
+            break;
+        case PROTO_CMD_STOP_GENERATOR:
+            HandleStopGenerator(pFrame);
             break;
         default:
             SendErrorResp(pFrame->seq, PROTO_ERR_UNKNOWN_CMD);

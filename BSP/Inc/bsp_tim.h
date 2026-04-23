@@ -25,10 +25,10 @@
 #define BSP_SAMPLE_TIM_PSC              89U
 
 /* Default sampling interval index (1000 us = 1 kHz) */
-#define BSP_SAMPLE_TIM_DEFAULT_IDX      5U
+#define BSP_SAMPLE_TIM_DEFAULT_IDX      4U
 
-/* Number of sampling interval options */
-#define BSP_SAMPLE_TIM_IDX_MAX          7U
+/* Maximum sampling interval index (7 options: 0~6) */
+#define BSP_SAMPLE_TIM_IDX_MAX          6U
 
 /*--------------------------------------------------------------------------*/
 /*                       Sampling interval table                            */
@@ -36,14 +36,13 @@
 
 /*
  * ARR values for each index (ARR = interval_us - 1):
- *   idx 0: 100  us → ARR =   99
- *   idx 1: 200  us → ARR =  199
- *   idx 2: 300  us → ARR =  299
- *   idx 3: 500  us → ARR =  499
- *   idx 4: 750  us → ARR =  749
- *   idx 5: 1000 us → ARR =  999  (default)
- *   idx 6: 1500 us → ARR = 1499
- *   idx 7: 2000 us → ARR = 1999
+ *   idx 0:  200 us → ARR =  199,  5000 Hz
+ *   idx 1:  300 us → ARR =  299,  3333 Hz
+ *   idx 2:  500 us → ARR =  499,  2000 Hz
+ *   idx 3:  750 us → ARR =  749,  1333 Hz
+ *   idx 4: 1000 us → ARR =  999,  1000 Hz (default)
+ *   idx 5: 1500 us → ARR = 1499,   667 Hz
+ *   idx 6: 2000 us → ARR = 1999,   500 Hz
  */
 
 /*--------------------------------------------------------------------------*/
@@ -57,6 +56,7 @@ void        BSP_SampleTim_Stop(void);
 
 uint8_t     BSP_SampleTim_GetFlag(void);
 void        BSP_SampleTim_ClearFlag(void);
+uint16_t    BSP_SampleTim_GetPeriodUs(void);
 
 /* Called from ISR only */
 void        BSP_SampleTim_ISR_Callback(void);
