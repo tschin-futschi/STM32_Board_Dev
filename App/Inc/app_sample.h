@@ -57,5 +57,6 @@ ErrorStatus App_Generator_StartCosine(int16_t amplitude, int16_t offset,
                                       const uint16_t *addrs, const int16_t *phaseX10);
 void        App_Generator_Stop(void);
 uint8_t     App_Generator_IsRunning(void);
+uint8_t     App_Generator_GetWriteChannelCount(void);
 
 #endif /* __APP_SAMPLE_H */

@@ -55,5 +55,6 @@ ErrorStatus BSP_I2C2_ReadRegs(uint8_t devAddr, uint16_t startReg,
                                uint8_t *pData, uint16_t len);
 ErrorStatus BSP_I2C2_Scan(uint8_t *pAddrList, uint8_t *pCount);
 void        BSP_I2C2_RecoverBus(void);
+uint8_t     BSP_I2C2_GetAndClearRecoveryFlag(void);
 
 #endif /* __BSP_I2C2_H */

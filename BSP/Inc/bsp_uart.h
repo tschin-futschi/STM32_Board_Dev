@@ -47,11 +47,11 @@
 #define BSP_UART_IRQ_PRIORITY       2U
 
 /* Buffer sizes */
-#define BSP_UART_RX_BUF_SIZE        256U
+#define BSP_UART_RX_BUF_SIZE        512U
 #define BSP_UART_TX_BUF_SIZE        264U    /* >= PROTO_MAX_FRAME_LEN (262) */
 
-/* TxWait timeout: covers longest frame (262 B) at lowest baudrate (9600 bps) */
-#define BSP_UART_TX_WAIT_TIMEOUT_MS 500U
+/* TxWait timeout: 50ms is sufficient at all supported baudrates */
+#define BSP_UART_TX_WAIT_TIMEOUT_MS 50U
 
 /*--------------------------------------------------------------------------*/
 /*                               API                                        */
@@ -72,5 +72,8 @@ uint16_t BSP_UART_RxRead(uint8_t *pBuf, uint16_t maxLen);
 
 /* Discard all bytes currently in RX ring buffer */
 void BSP_UART_RxFlush(void);
+
+/* Get and clear RX overflow count (bytes lost when buffer was full) */
+uint32_t BSP_UART_GetAndClearOverflowCount(void);
 
 #endif /* __BSP_UART_H */

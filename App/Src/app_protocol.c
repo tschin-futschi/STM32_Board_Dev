@@ -11,6 +11,7 @@
 
 #include "app_protocol.h"
 #include "bsp_uart.h"
+#include "bsp_tim.h"
 #include "bsp_i2c1.h"
 #include "bsp_i2c2.h"
 #include "bsp_i2c3.h"
@@ -18,6 +19,7 @@
 #include "app_motor.h"
 #include "app_sample.h"
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 /*--------------------------------------------------------------------------*/
@@ -76,6 +78,7 @@ static uint8_t       s_dataIdx;
 static uint8_t       s_rxCrcHigh;
 static uint16_t      s_rxCrcAccum;          /* Running CRC16 over SEQ+CMD+LEN+DATA */
 static uint8_t       s_rxBuf[BSP_UART_RX_BUF_SIZE];
+static uint8_t       s_bulkReadActive;         /* 1 = inside HandleBulkRead  */
 
 static const uint16_t k_crc16Init = 0xFFFFU; /* CRC16 initial value         */
 
@@ -143,14 +146,20 @@ static ErrorStatus SendFrame(uint8_t seq, uint8_t cmd,
     return BSP_UART_Transmit(s_txBuf, idx);
 }
 
-static void SendErrorResp(uint8_t seq, Proto_ErrCode_t err)
+void App_Protocol_SendErrorResp(uint8_t seq, Proto_ErrCode_t err)
 {
     uint8_t errByte = (uint8_t)err;
     (void)SendFrame(seq, (uint8_t)PROTO_CMD_ERROR_RESP, &errByte, 1U);
 }
 
+/* Internal shorthand kept for existing callers within this file */
+static void SendErrorResp(uint8_t seq, Proto_ErrCode_t err)
+{
+    App_Protocol_SendErrorResp(seq, err);
+}
+
 /* Send a 0x06 debug info frame (ASCII string, max PROTO_MAX_DATA_LEN bytes) */
-static void SendDebugInfo(const char *msg)
+void App_Protocol_SendDebugInfo(const char *msg)
 {
     uint8_t len = (uint8_t)strlen(msg);
     (void)SendFrame(0x00U, (uint8_t)PROTO_CMD_DEBUG_INFO,
@@ -451,6 +460,7 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
     }
 
     regIdx = 0U;
+    s_bulkReadActive = 1U;
     for (pktIdx = 0U; pktIdx < totalPkts; pktIdx++)
     {
         regsThisPkt = (uint8_t)(((totalRegs - regIdx) > (uint16_t)BULK_REGS_PER_PKT)
@@ -466,6 +476,7 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
         {
             if (App_Motor_ReadReg((uint16_t)(startReg + (regIdx + i) * 2U), &val) != SUCCESS)
             {
+                s_bulkReadActive = 0U;
                 SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
                 return;
             }
@@ -475,20 +486,80 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
 
         /* Wait for previous TX to complete, then send this packet */
         BSP_UART_TxWait();
+
+        /* Process pending RX — heartbeat frames are answered, others ignored */
+        App_Protocol_Poll();
+
         (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_BULK_READ,
                         s_pktBuf, dataLen);
 
         regIdx += regsThisPkt;
     }
+    s_bulkReadActive = 0U;
+}
+
+/*--------------------------------------------------------------------------*/
+/*                    Tick overrun check (PROTO-03)                         */
+/*--------------------------------------------------------------------------*/
+
+#define I2C_WRITE_US    115U    /* typical I2C write latency at 400 kHz */
+#define I2C_READ_US     142U    /* typical I2C read  latency at 400 kHz */
+
+/**
+  * @brief  Check if the expected I2C workload fits within 80% of the tick period.
+  * @param  readChannels   Number of sampling read channels
+  * @param  writeChannels  Number of generator write channels
+  * @return 1 = OK, 0 = overrun (caller should reject)
+  */
+static uint8_t CheckTickOverrun(uint8_t readChannels, uint8_t writeChannels)
+{
+    uint32_t periodUs   = (uint32_t)BSP_SampleTim_GetPeriodUs();
+    uint32_t estimateUs = (uint32_t)readChannels  * I2C_READ_US
+                        + (uint32_t)writeChannels * I2C_WRITE_US;
+    uint32_t limitUs    = (periodUs * 80U) / 100U;
+
+    if (estimateUs > limitUs)
+    {
+        char msg[64];
+        (void)snprintf(msg, sizeof(msg),
+                       "Tick overrun: estimated %luus > limit %luus",
+                       (unsigned long)estimateUs, (unsigned long)limitUs);
+        App_Protocol_SendDebugInfo(msg);
+        return 0U;
+    }
+    return 1U;
+}
+
+static uint8_t CountBits(uint8_t mask)
+{
+    uint8_t count = 0U;
+    while (mask != 0U) { count += (mask & 1U); mask >>= 1U; }
+    return count;
 }
 
 /* 0x50 — Start sampling */
 static void HandleStartSample(const Proto_Frame_t *pFrame)
 {
+    uint8_t effMask   = App_Sample_GetEffectiveMask();
+    uint8_t readCh    = CountBits(effMask);
+    uint8_t writeCh   = App_Generator_GetWriteChannelCount();
+
+    if (readCh == 0U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        App_Protocol_SendDebugInfo("No valid channel mapping");
+        return;
+    }
+
+    if (CheckTickOverrun(readCh, writeCh) == 0U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
     if (App_Sample_Start() != SUCCESS)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
-        SendDebugInfo("Start failed: all channel reg maps are 0xFFFF");
         return;
     }
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_SAMPLE, NULL, 0U);
@@ -570,6 +641,17 @@ static void HandleStartLinearGen(const Proto_Frame_t *pFrame)
         return;
     }
 
+    {
+        uint8_t readCh  = App_Sample_IsActive()
+                          ? CountBits(App_Sample_GetEffectiveMask()) : 0U;
+        uint8_t writeCh = 1U;   /* linear generator = 1 write channel */
+        if (CheckTickOverrun(readCh, writeCh) == 0U)
+        {
+            SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+            return;
+        }
+    }
+
     if (App_Generator_StartLinear(addr, min, max, step, intervalMs) != SUCCESS)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
@@ -622,6 +704,16 @@ static void HandleStartCosineGen(const Proto_Frame_t *pFrame)
                                  (uint16_t)pFrame->data[base + 3U]);
     }
 
+    {
+        uint8_t readCh  = App_Sample_IsActive()
+                          ? CountBits(App_Sample_GetEffectiveMask()) : 0U;
+        if (CheckTickOverrun(readCh, channelCount) == 0U)
+        {
+            SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+            return;
+        }
+    }
+
     if (App_Generator_StartCosine(amplitude, offset, freqX100,
                                    channelCount, addrs, phaseX10) != SUCCESS)
     {
@@ -641,6 +733,12 @@ static void HandleStopGenerator(const Proto_Frame_t *pFrame)
 
 static void DispatchFrame(const Proto_Frame_t *pFrame)
 {
+    /* During bulk read, only respond to heartbeat — ignore all other commands */
+    if (s_bulkReadActive && (pFrame->cmd != PROTO_CMD_HEARTBEAT))
+    {
+        return;
+    }
+
     switch (pFrame->cmd)
     {
         case PROTO_CMD_HEARTBEAT:
@@ -796,16 +894,36 @@ static void ProcessByte(uint8_t byte)
 
 void App_Protocol_Init(void)
 {
-    s_state      = STATE_WAIT_SOF1;
-    s_dataIdx    = 0U;
-    s_rxCrcHigh  = 0U;
-    s_rxCrcAccum = 0U;
+    s_state          = STATE_WAIT_SOF1;
+    s_dataIdx        = 0U;
+    s_rxCrcHigh      = 0U;
+    s_rxCrcAccum     = 0U;
+    s_bulkReadActive = 0U;
 }
 
 void App_Protocol_Poll(void)
 {
     uint16_t len;
     uint16_t i;
+
+    /* Check I2C bus recovery flag */
+    if (BSP_I2C2_GetAndClearRecoveryFlag() != 0U)
+    {
+        App_Protocol_SendDebugInfo("I2C bus recovered");
+    }
+
+    /* Check RX buffer overflow */
+    {
+        uint32_t overflow = BSP_UART_GetAndClearOverflowCount();
+        if (overflow > 0U)
+        {
+            char msg[48];
+            (void)snprintf(msg, sizeof(msg),
+                           "UART RX overflow: %lu bytes lost",
+                           (unsigned long)overflow);
+            App_Protocol_SendDebugInfo(msg);
+        }
+    }
 
     len = BSP_UART_RxRead(s_rxBuf, BSP_UART_RX_BUF_SIZE);
 

@@ -94,5 +94,7 @@ typedef struct
 
 void App_Protocol_Init(void);
 void App_Protocol_Poll(void);
+void App_Protocol_SendDebugInfo(const char *msg);
+void App_Protocol_SendErrorResp(uint8_t seq, Proto_ErrCode_t err);
 
 #endif /* __APP_PROTOCOL_H */

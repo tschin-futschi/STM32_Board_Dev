@@ -9,8 +9,8 @@
 
 #include "app_sample.h"
 #include "app_motor.h"
+#include "app_protocol.h"
 #include "bsp_tim.h"
-#include "bsp_tick.h"
 #include "bsp_uart.h"
 
 #include <math.h>
@@ -19,9 +19,14 @@
 /*                       Sampling internal state                           */
 /*--------------------------------------------------------------------------*/
 
+#define I2C_FAIL_WARN_THRESHOLD   10U   /* consecutive all-fail ticks → 0x06 warning  */
+#define I2C_FAIL_STOP_THRESHOLD   50U   /* consecutive all-fail ticks → auto-stop      */
+
 static uint8_t  s_sampling;
 static uint8_t  s_channelMask;
 static uint16_t s_channelRegMap[APP_SAMPLE_NUM_CHANNELS];
+static uint16_t s_i2cFailCount;            /* consecutive all-channel I2C failure count */
+static uint8_t  s_i2cWarnSent;             /* 1 = warning 0x06 already sent            */
 
 /* Stream frame TX buffer: [0xBB][mask][LEN][data up to 16 bytes][XOR] */
 #define STREAM_FRAME_MAX_LEN    (1U + 1U + 1U + (APP_SAMPLE_NUM_CHANNELS * 2U) + 1U)
@@ -53,7 +58,7 @@ static uint16_t s_cosFreqX100;
 static uint8_t  s_cosChCount;
 static uint16_t s_cosAddr[APP_GEN_COS_MAX_CH];
 static int16_t  s_cosPhaseX10[APP_GEN_COS_MAX_CH];
-static uint32_t s_cosStartTick;     /* ms time base from BSP_GetTick()         */
+static uint32_t s_cosTickCount;     /* tick counter for μs-precision phase      */
 
 /*--------------------------------------------------------------------------*/
 /*                   Shared TIM6 start / stop                              */
@@ -132,10 +137,12 @@ static void Generator_DoLinearWrite(void)
 
 static void Generator_DoCosineWrite(void)
 {
-    uint32_t elapsedMs = BSP_GetTick() - s_cosStartTick;
-    float    tSec      = (float)elapsedMs * 0.001f;
+    uint32_t periodUs  = (uint32_t)BSP_SampleTim_GetPeriodUs();
+    float    tSec      = (float)(s_cosTickCount * periodUs) * 0.000001f;
     float    freqHz    = (float)s_cosFreqX100 * 0.01f;
     uint8_t  i;
+
+    s_cosTickCount++;
 
     for (i = 0U; i < s_cosChCount; i++)
     {
@@ -183,6 +190,8 @@ static void SendStreamFrame(uint8_t effectiveMask)
     uint16_t val;
     uint8_t  dataStart;
     uint8_t  i;
+    uint8_t  failCount = 0U;
+    uint8_t  totalCount = 0U;
 
     /* Count active channels for LEN field */
     for (ch = 0U; ch < APP_SAMPLE_NUM_CHANNELS; ch++)
@@ -203,13 +212,38 @@ static void SendStreamFrame(uint8_t effectiveMask)
     {
         if ((effectiveMask & (uint8_t)(1U << ch)) != 0U)
         {
+            totalCount++;
             if (App_Motor_ReadReg(s_channelRegMap[ch], &val) != SUCCESS)
             {
                 val = 0U;   /* Send 0 on read failure, keep stream alive */
+                failCount++;
             }
             s_streamBuf[idx++] = (uint8_t)(val >> 8U);
             s_streamBuf[idx++] = (uint8_t)(val & 0xFFU);
         }
+    }
+
+    /* I2C fault detection: track consecutive all-channel failures */
+    if (failCount >= totalCount)
+    {
+        s_i2cFailCount++;
+        if ((s_i2cFailCount >= I2C_FAIL_STOP_THRESHOLD))
+        {
+            App_Protocol_SendErrorResp(0x00U, PROTO_ERR_EXEC_FAIL);
+            App_Protocol_SendDebugInfo("I2C bus stuck, sampling auto-stopped");
+            App_Sample_Stop();
+            return;     /* Don't send this frame */
+        }
+        if ((s_i2cFailCount >= I2C_FAIL_WARN_THRESHOLD) && (s_i2cWarnSent == 0U))
+        {
+            App_Protocol_SendDebugInfo("I2C bus stuck, sampling degraded");
+            s_i2cWarnSent = 1U;
+        }
+    }
+    else
+    {
+        s_i2cFailCount = 0U;
+        s_i2cWarnSent  = 0U;
     }
 
     /* XOR: effectiveMask XOR LEN XOR all data bytes */
@@ -234,8 +268,10 @@ void App_Sample_Init(void)
 {
     uint8_t i;
 
-    s_sampling    = 0U;
-    s_channelMask = 0x01U;
+    s_sampling     = 0U;
+    s_channelMask  = 0x01U;
+    s_i2cFailCount = 0U;
+    s_i2cWarnSent  = 0U;
 
     for (i = 0U; i < APP_SAMPLE_NUM_CHANNELS; i++)
     {
@@ -422,7 +458,7 @@ ErrorStatus App_Generator_StartCosine(int16_t amplitude, int16_t offset,
         s_cosPhaseX10[i] = phaseX10[i];
     }
 
-    s_cosStartTick = BSP_GetTick();
+    s_cosTickCount = 0U;
 
     /* Cosine writes every tick */
     s_genDivider = 1U;
@@ -442,4 +478,11 @@ void App_Generator_Stop(void)
 uint8_t App_Generator_IsRunning(void)
 {
     return (s_genMode != GEN_NONE) ? 1U : 0U;
+}
+
+uint8_t App_Generator_GetWriteChannelCount(void)
+{
+    if (s_genMode == GEN_LINEAR) { return 1U; }
+    if (s_genMode == GEN_COSINE) { return s_cosChCount; }
+    return 0U;
 }

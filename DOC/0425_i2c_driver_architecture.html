@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>I2C 驱动架构：bsp_i2c 与 bsp_i2c1/2/3 的交互关系</title>
+<style>
+  :root { --bg: #1e1e2e; --fg: #cdd6f4; --accent: #89b4fa; --green: #a6e3a1;
+           --red: #f38ba8; --yellow: #f9e2af; --surface: #313244; --overlay: #45475a;
+           --mauve: #cba6f7; --peach: #fab387; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg);
+         color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 960px; margin: 0 auto; }
+  h1 { color: var(--accent); font-size: 1.6rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+  h2 { color: var(--mauve); font-size: 1.3rem; margin: 2rem 0 0.8rem; }
+  h3 { color: var(--green); font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+  p, li { margin-bottom: 0.5rem; }
+  ul { padding-left: 1.5rem; }
+  code { background: var(--surface); padding: 0.15rem 0.4rem; border-radius: 4px;
+         font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.9em; color: var(--green); }
+  pre { background: var(--surface); border: 1px solid var(--overlay); border-radius: 8px;
+        padding: 1rem; overflow-x: auto; margin: 0.8rem 0 1.2rem;
+        font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.85rem; line-height: 1.6; }
+  pre .kw { color: var(--mauve); }
+  pre .tp { color: var(--yellow); }
+  pre .fn { color: var(--accent); }
+  pre .cm { color: #6c7086; font-style: italic; }
+  pre .st { color: var(--green); }
+  pre .num { color: var(--peach); }
+  .diagram { background: var(--surface); border: 1px solid var(--overlay); border-radius: 8px;
+             padding: 1.5rem; margin: 1rem 0; font-family: 'Cascadia Code', monospace;
+             font-size: 0.82rem; line-height: 1.5; white-space: pre; overflow-x: auto; }
+  .box { border: 2px solid var(--accent); border-radius: 8px; padding: 1rem; margin: 1rem 0;
+         background: rgba(137, 180, 250, 0.05); }
+  .box-yellow { border-color: var(--yellow); background: rgba(249, 226, 175, 0.05); }
+  .box-green { border-color: var(--green); background: rgba(166, 227, 161, 0.05); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+  th, td { border: 1px solid var(--overlay); padding: 0.5rem 0.8rem; text-align: left; }
+  th { background: var(--surface); color: var(--accent); }
+  td code { background: transparent; padding: 0; }
+  .arrow { color: var(--peach); font-weight: bold; }
+  .highlight { color: var(--yellow); font-weight: bold; }
+  .tag { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin-right: 0.3rem; }
+  .tag-common { background: rgba(137, 180, 250, 0.2); color: var(--accent); }
+  .tag-wrapper { background: rgba(166, 227, 161, 0.2); color: var(--green); }
+  .tag-caller { background: rgba(249, 226, 175, 0.2); color: var(--yellow); }
+</style>
+</head>
+<body>
+
+<h1>I2C 驱动架构：bsp_i2c 与 bsp_i2c1/2/3 的交互关系</h1>
+<p>重构后的 I2C 驱动采用 <strong>实例配置结构体 + 公共驱动 + 薄包装层</strong> 的设计模式。本文解释三层之间的完整交互流程。</p>
+
+<h2>1. 整体架构图</h2>
+
+<div class="diagram">
+┌─────────────────────────────────────────────────────────────────┐
+│  <span style="color: var(--yellow);">App 层（调用者）</span>                                                │
+│                                                                 │
+│  app_motor.c      app_protocol.c      bsp_pmic.c               │
+│  调用 BSP_I2C2_*   调用 BSP_I2C1/2/3_Scan  调用 BSP_I2C3_*     │
+└───────┬───────────────────┬───────────────────┬─────────────────┘
+        │                   │                   │
+        │  <span style="color: var(--peach);">API 签名完全不变</span>    │                   │
+        ▼                   ▼                   ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│ <span style="color: var(--green);">bsp_i2c1.c</span>    │ │ <span style="color: var(--green);">bsp_i2c2.c</span>    │ │ <span style="color: var(--green);">bsp_i2c3.c</span>    │
+│ <span style="color: #6c7086;">薄包装层</span>       │ │ <span style="color: #6c7086;">薄包装层</span>       │ │ <span style="color: #6c7086;">薄包装层</span>       │
+│               │ │               │ │               │
+│ k_i2c1Cfg     │ │ k_i2c2Cfg     │ │ k_i2c3Cfg     │
+│ (static const)│ │ (static const)│ │ (static const)│
+│ regAddr16=<span style="color: var(--red);">0</span>  │ │ regAddr16=<span style="color: var(--green);">1</span>  │ │ regAddr16=<span style="color: var(--red);">0</span>  │
+│ postRecover=  │ │ postRecover=  │ │ postRecover=  │
+│   <span style="color: var(--red);">NULL</span>       │ │   <span style="color: var(--green);">Callback</span>  │ │   <span style="color: var(--red);">NULL</span>       │
+└───────┬───────┘ └───────┬───────┘ └───────┬───────┘
+        │                 │                 │
+        │  <span style="color: var(--peach);">传递 &k_i2cXCfg</span>  │                 │
+        ▼                 ▼                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  <span style="color: var(--accent);">bsp_i2c.c</span>  —  公共 I2C 驱动                                    │
+│                                                                 │
+│  BSP_I2C_Init(cfg)       通过 cfg-> 访问所有硬件参数             │
+│  BSP_I2C_RecoverBus(cfg) 恢复后调用 cfg->pfnPostRecover          │
+│  BSP_I2C_WriteReg(cfg, devAddr, reg, pData, len)                │
+│  BSP_I2C_ReadReg(cfg, devAddr, reg, pData, len)                 │
+│  BSP_I2C_Scan(cfg, pAddrList, pCount)                           │
+│                                                                 │
+│  内部: ConfigGpioAF(cfg)  PeriphInit(cfg)  WritePhase(cfg,...)  │
+└─────────────────────────────────────────────────────────────────┘
+</div>
+
+<h2>2. 核心机制：配置结构体</h2>
+
+<p><code>BSP_I2C_Config_t</code> 结构体描述一条 I2C 总线的<strong>全部</strong>硬件参数。公共驱动的每个函数都以 <code>const BSP_I2C_Config_t *cfg</code> 作为第一个参数，通过 <code>cfg-></code> 访问硬件寄存器，而不是硬编码宏。</p>
+
+<pre>
+<span class="kw">typedef struct</span>
+{
+    <span class="tp">I2C_TypeDef</span>    *periph;         <span class="cm">/* I2C1 / I2C2 / I2C3         */</span>
+    <span class="tp">uint32_t</span>        rccApb1;        <span class="cm">/* RCC 时钟使能位             */</span>
+    <span class="tp">uint32_t</span>        speed;          <span class="cm">/* 400000U                    */</span>
+    <span class="tp">uint32_t</span>        timeout;        <span class="cm">/* 超时循环计数               */</span>
+
+    <span class="cm">/* SCL 引脚（独立字段，兼容 I2C3 双端口） */</span>
+    <span class="tp">GPIO_TypeDef</span>   *sclPort;
+    <span class="tp">uint16_t</span>        sclPin;
+    ...
+
+    <span class="cm">/* SDA 引脚 */</span>
+    <span class="tp">GPIO_TypeDef</span>   *sdaPort;
+    <span class="tp">uint16_t</span>        sdaPin;
+    ...
+
+    <span class="tp">uint8_t</span>         regAddr16;      <span class="cm">/* 0=8-bit寄存器, 1=16-bit寄存器 */</span>
+    <span class="tp">BSP_I2C_PostRecoverFn</span> pfnPostRecover; <span class="cm">/* 恢复成功后的回调      */</span>
+} <span class="tp">BSP_I2C_Config_t</span>;
+</pre>
+
+<h2>3. 薄包装层的工作方式</h2>
+
+<p>每个 <code>bsp_i2cX.c</code> 做两件事：</p>
+
+<h3>3.1 定义一个 static const 配置实例</h3>
+
+<p>用各自 <code>bsp_i2cX.h</code> 中的硬件宏填充结构体字段：</p>
+
+<pre>
+<span class="cm">/* bsp_i2c1.c */</span>
+<span class="kw">static const</span> <span class="tp">BSP_I2C_Config_t</span> k_i2c1Cfg = {
+    .periph       = BSP_I2C1_PERIPH,       <span class="cm">/* → I2C1 */</span>
+    .sclPort      = BSP_I2C1_SCL_GPIO_PORT, <span class="cm">/* → GPIOB */</span>
+    .sclPin       = BSP_I2C1_SCL_PIN,       <span class="cm">/* → GPIO_Pin_6 */</span>
+    .sdaPort      = BSP_I2C1_SDA_GPIO_PORT, <span class="cm">/* → GPIOB (同一端口) */</span>
+    .sdaPin       = BSP_I2C1_SDA_PIN,       <span class="cm">/* → GPIO_Pin_7 */</span>
+    .regAddr16    = <span class="num">0U</span>,                     <span class="cm">/* 8-bit 寄存器地址 */</span>
+    .pfnPostRecover = <span class="num">NULL</span>,                 <span class="cm">/* 无回调 */</span>
+};
+
+<span class="cm">/* bsp_i2c3.c — 注意 SCL/SDA 在不同 GPIO 端口 */</span>
+<span class="kw">static const</span> <span class="tp">BSP_I2C_Config_t</span> k_i2c3Cfg = {
+    .sclPort      = BSP_I2C3_SCL_GPIO_PORT, <span class="cm">/* → GPIOA */</span>
+    .sdaPort      = BSP_I2C3_SDA_GPIO_PORT, <span class="cm">/* → GPIOC (不同端口!) */</span>
+    ...
+};
+
+<span class="cm">/* bsp_i2c2.c — 16-bit 地址 + 恢复回调 */</span>
+<span class="kw">static const</span> <span class="tp">BSP_I2C_Config_t</span> k_i2c2Cfg = {
+    .regAddr16      = <span class="num">1U</span>,                   <span class="cm">/* 16-bit 寄存器地址 */</span>
+    .pfnPostRecover = PostRecoverCallback,   <span class="cm">/* 恢复后置标志 */</span>
+    ...
+};
+</pre>
+
+<h3>3.2 提供一行转发函数</h3>
+
+<p>每个公开 API 函数只做一件事：把 <code>&k_i2cXCfg</code> 传给公共驱动：</p>
+
+<pre>
+<span class="tp">ErrorStatus</span> <span class="fn">BSP_I2C1_WriteReg</span>(<span class="tp">uint8_t</span> devAddr, <span class="tp">uint8_t</span> reg,
+                               <span class="kw">const</span> <span class="tp">uint8_t</span> *pData, <span class="tp">uint16_t</span> len)
+{
+    <span class="kw">return</span> <span class="fn">BSP_I2C_WriteReg</span>(&k_i2c1Cfg, devAddr, (<span class="tp">uint16_t</span>)reg, pData, len);
+}                            <span class="cm">▲</span>
+                             <span class="cm">│</span>
+                    <span class="cm">把配置实例的地址传进去</span>
+</pre>
+
+<div class="box">
+<strong>关键点：</strong>App 层调用 <code>BSP_I2C1_WriteReg(addr, reg, data, len)</code>，签名完全没变。薄包装层在中间加了一个 <code>&k_i2c1Cfg</code> 参数后转发给 <code>BSP_I2C_WriteReg()</code>。App 层代码<strong>零修改</strong>。
+</div>
+
+<h2>4. 公共驱动如何处理三个总线的差异</h2>
+
+<p>三条 I2C 总线有三个差异点，全部通过结构体字段自动处理：</p>
+
+<table>
+<tr>
+  <th>差异</th>
+  <th>涉及总线</th>
+  <th>结构体字段</th>
+  <th>公共驱动中的处理</th>
+</tr>
+<tr>
+  <td>寄存器地址宽度</td>
+  <td>I2C2 = 16-bit<br>I2C1/I2C3 = 8-bit</td>
+  <td><code>regAddr16</code></td>
+  <td>WritePhase() 中 <code>if (cfg->regAddr16)</code> 分支</td>
+</tr>
+<tr>
+  <td>SCL/SDA 端口</td>
+  <td>I2C3: GPIOA + GPIOC<br>I2C1/I2C2: 同一端口</td>
+  <td><code>sclPort</code> / <code>sdaPort</code></td>
+  <td>统一用独立初始化（I2C1/I2C2 两个 port 值相同，无影响）</td>
+</tr>
+<tr>
+  <td>恢复后通知</td>
+  <td>仅 I2C2 有</td>
+  <td><code>pfnPostRecover</code></td>
+  <td>RecoverBus() 末尾 <code>if (callback != NULL) callback()</code></td>
+</tr>
+</table>
+
+<h3>4.1 寄存器地址宽度（WritePhase 内部）</h3>
+
+<pre>
+<span class="kw">static</span> <span class="tp">ErrorStatus</span> <span class="fn">WritePhase</span>(<span class="kw">const</span> <span class="tp">BSP_I2C_Config_t</span> *cfg,
+                               <span class="tp">uint8_t</span> devAddr, <span class="tp">uint16_t</span> reg)
+{
+    ...
+    <span class="kw">if</span> (cfg->regAddr16 != <span class="num">0U</span>)
+    {
+        <span class="cm">/* I2C2 走这里：先发高字节，再发低字节 */</span>
+        <span class="fn">I2C_SendData</span>(cfg->periph, (<span class="tp">uint8_t</span>)(reg >> <span class="num">8U</span>));
+        <span class="cm">/* ...等待发送完成... */</span>
+        <span class="fn">I2C_SendData</span>(cfg->periph, (<span class="tp">uint8_t</span>)(reg & <span class="num">0xFF</span>));
+        <span class="cm">/* ...等待发送完成... */</span>
+    }
+    <span class="kw">else</span>
+    {
+        <span class="cm">/* I2C1 / I2C3 走这里：只发一个字节 */</span>
+        <span class="fn">I2C_SendData</span>(cfg->periph, (<span class="tp">uint8_t</span>)reg);
+        <span class="cm">/* ...等待发送完成... */</span>
+    }
+}
+</pre>
+
+<h3>4.2 GPIO 双端口（ConfigGpioAF 和 RecoverBus 内部）</h3>
+
+<pre>
+<span class="kw">static void</span> <span class="fn">ConfigGpioAF</span>(<span class="kw">const</span> <span class="tp">BSP_I2C_Config_t</span> *cfg)
+{
+    <span class="cm">/* SCL 和 SDA 分别初始化，不合并到一个 GPIO_Init 调用 */</span>
+    gpioInit.GPIO_Pin = cfg->sclPin;
+    <span class="fn">GPIO_Init</span>(cfg-><span style="color: var(--yellow);">sclPort</span>, &gpioInit);  <span class="cm">/* I2C3: GPIOA */</span>
+
+    gpioInit.GPIO_Pin = cfg->sdaPin;
+    <span class="fn">GPIO_Init</span>(cfg-><span style="color: var(--yellow);">sdaPort</span>, &gpioInit);  <span class="cm">/* I2C3: GPIOC (不同!) */</span>
+}
+</pre>
+
+<div class="box box-yellow">
+<strong>为什么不合并？</strong>旧的 I2C1/I2C2 代码用 <code>GPIO_Pin_SCL | GPIO_Pin_SDA</code> 一次初始化两个引脚，但这要求它们在同一个端口。I2C3 的 SCL(PA8) 和 SDA(PC9) 分属 GPIOA 和 GPIOC，必须分开调用 <code>GPIO_Init()</code>。统一用分别初始化的方式，对 I2C1/I2C2 无影响（两个 port 值相同），但完美兼容 I2C3。
+</div>
+
+<h3>4.3 恢复回调（RecoverBus 末尾）</h3>
+
+<pre>
+<span class="kw">void</span> <span class="fn">BSP_I2C_RecoverBus</span>(<span class="kw">const</span> <span class="tp">BSP_I2C_Config_t</span> *cfg)
+{
+    <span class="cm">/* ... 9 个 SCL 脉冲 + 手动 STOP + 重初始化 ... */</span>
+
+    <span class="cm">/* 恢复成功后的回调 */</span>
+    <span class="kw">if</span> ((cfg->pfnPostRecover != <span class="num">NULL</span>) &&
+        (<span class="fn">I2C_GetFlagStatus</span>(cfg->periph, I2C_FLAG_BUSY) == RESET))
+    {
+        cfg-><span class="fn">pfnPostRecover</span>();  <span class="cm">/* I2C2: 置 s_busRecovered = 1 */</span>
+    }
+}
+</pre>
+
+<p>I2C2 的配置中 <code>.pfnPostRecover = PostRecoverCallback</code>，该回调定义在 <code>bsp_i2c2.c</code> 中：</p>
+
+<pre>
+<span class="cm">/* bsp_i2c2.c */</span>
+<span class="kw">static</span> <span class="tp">uint8_t</span> s_busRecovered = <span class="num">0U</span>;
+
+<span class="kw">static void</span> <span class="fn">PostRecoverCallback</span>(<span class="kw">void</span>)
+{
+    s_busRecovered = <span class="num">1U</span>;
+}
+</pre>
+
+<p>I2C1 和 I2C3 的配置中 <code>.pfnPostRecover = NULL</code>，公共驱动检测到 NULL 就跳过回调。</p>
+
+<h2>5. 完整调用链示例</h2>
+
+<p>以 <code>app_motor.c</code> 读取电机寄存器为例，追踪完整调用路径：</p>
+
+<div class="diagram">
+<span style="color: var(--yellow);">app_motor.c</span>
+│
+│  <span class="fn">App_Motor_ReadReg</span>(regAddr, &val)
+│  → <span class="fn">BSP_I2C2_ReadReg</span>(g_motorIcAddr, regAddr, buf, 2)
+│
+▼
+<span style="color: var(--green);">bsp_i2c2.c</span>  <span style="color: #6c7086;">(薄包装)</span>
+│
+│  <span class="fn">BSP_I2C2_ReadReg</span>(devAddr, reg, pData, len)
+│  {
+│      return <span class="fn">BSP_I2C_ReadReg</span>(<span style="color: var(--peach);">&k_i2c2Cfg</span>, devAddr, reg, pData, len);
+│  }                         <span style="color: var(--peach);">▲ 传入 I2C2 的硬件配置</span>
+│
+▼
+<span style="color: var(--accent);">bsp_i2c.c</span>  <span style="color: #6c7086;">(公共驱动)</span>
+│
+│  <span class="fn">BSP_I2C_ReadReg</span>(cfg, devAddr, reg, pData, len)
+│  {
+│      <span class="fn">WritePhase</span>(cfg, devAddr, reg);
+│      │  → cfg->periph = <span style="color: var(--yellow);">I2C2</span>
+│      │  → cfg->regAddr16 = <span style="color: var(--green);">1</span>  →  发送 16-bit 寄存器地址
+│      │  → cfg->timeout = <span style="color: var(--peach);">10000</span>
+│      │
+│      <span class="cm">/* Repeated START + 读取数据 */</span>
+│      ...
+│      <span class="kw">如果超时:</span>
+│      │  <span class="fn">BSP_I2C_RecoverBus</span>(cfg);
+│      │  → 9 个 SCL 脉冲
+│      │  → cfg->pfnPostRecover = <span style="color: var(--green);">PostRecoverCallback</span>
+│      │  → 调用回调 → <span style="color: var(--green);">s_busRecovered = 1</span>
+│  }
+│
+▼
+<span style="color: #6c7086;">硬件：I2C2 外设 (PB10/PB11)</span>
+</div>
+
+<h2>6. 文件职责一览</h2>
+
+<table>
+<tr>
+  <th>文件</th>
+  <th>角色</th>
+  <th>内容</th>
+  <th>行数</th>
+</tr>
+<tr>
+  <td><span class="tag tag-common">公共</span><code>bsp_i2c.h</code></td>
+  <td>接口定义</td>
+  <td>BSP_I2C_Config_t 结构体 + BSP_I2C_* 函数声明</td>
+  <td>65</td>
+</tr>
+<tr>
+  <td><span class="tag tag-common">公共</span><code>bsp_i2c.c</code></td>
+  <td>逻辑实现</td>
+  <td>Init / RecoverBus / WriteReg / ReadReg / Scan 的完整实现</td>
+  <td>310</td>
+</tr>
+<tr>
+  <td><span class="tag tag-wrapper">包装</span><code>bsp_i2c1.c</code></td>
+  <td>I2C1 薄包装</td>
+  <td>k_i2c1Cfg (8-bit reg, 无回调) + 转发函数</td>
+  <td>62</td>
+</tr>
+<tr>
+  <td><span class="tag tag-wrapper">包装</span><code>bsp_i2c2.c</code></td>
+  <td>I2C2 薄包装</td>
+  <td>k_i2c2Cfg (16-bit reg, 有回调) + 转发函数 + motor 全局变量 + recovery flag</td>
+  <td>96</td>
+</tr>
+<tr>
+  <td><span class="tag tag-wrapper">包装</span><code>bsp_i2c3.c</code></td>
+  <td>I2C3 薄包装</td>
+  <td>k_i2c3Cfg (8-bit reg, 无回调, 双端口) + 转发函数</td>
+  <td>62</td>
+</tr>
+<tr>
+  <td><span class="tag tag-caller">调用者</span><code>bsp_i2c1.h</code></td>
+  <td>不变</td>
+  <td>硬件宏 + BSP_I2C1_* API 声明（App 层 include 此文件）</td>
+  <td>不变</td>
+</tr>
+<tr>
+  <td><span class="tag tag-caller">调用者</span><code>bsp_i2c2.h</code></td>
+  <td>不变</td>
+  <td>硬件宏 + BSP_I2C2_* API 声明 + motor 全局变量 extern</td>
+  <td>不变</td>
+</tr>
+<tr>
+  <td><span class="tag tag-caller">调用者</span><code>bsp_i2c3.h</code></td>
+  <td>不变</td>
+  <td>硬件宏 + BSP_I2C3_* API 声明</td>
+  <td>不变</td>
+</tr>
+</table>
+
+<h2>7. 设计收益</h2>
+
+<div class="box box-green">
+<ul>
+  <li><strong>Bug 修复只改一处</strong>：以前改一个 I2C bug 要同步修改三个文件，现在只改 <code>bsp_i2c.c</code></li>
+  <li><strong>不会功能分叉</strong>：以前 I2C2 有 recovery flag 而 I2C1/I2C3 没有，是因为复制代码后忘记同步。现在通过回调机制统一处理</li>
+  <li><strong>代码量减少 55%</strong>：三份驱动共 1168 行 → 公共 310 行 + 包装 220 行 = 530 行</li>
+  <li><strong>App 层零修改</strong>：所有 <code>BSP_I2Cx_*</code> 函数签名完全不变，调用者无感知</li>
+  <li><strong>新增 I2C 总线极简</strong>：只需新建一个包装文件，填写 <code>BSP_I2C_Config_t</code> 并写转发函数</li>
+</ul>
+</div>
+
+</body>
+</html>

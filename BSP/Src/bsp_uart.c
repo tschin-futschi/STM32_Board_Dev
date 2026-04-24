@@ -19,7 +19,8 @@ static volatile uint16_t s_rxTail = 0U;   /* read by main, written by main only 
 
 /* TX DMA buffer — must be in SRAM1 (static, not CCM) */
 static uint8_t  s_txBuf[BSP_UART_TX_BUF_SIZE];
-static volatile uint8_t s_txDone = 1U;    /* 1 = idle, 0 = busy */
+static volatile uint8_t  s_txDone = 1U;           /* 1 = idle, 0 = busy */
+static volatile uint32_t s_rxOverflowCount = 0U;   /* bytes lost due to RX full */
 
 /*--------------------------------------------------------------------------*/
 /*                          Private helpers                                 */
@@ -246,6 +247,10 @@ void BSP_UART_RxISR_Callback(void)
         s_rxBuf[s_rxHead] = byte;
         s_rxHead = nextHead;
     }
+    else
+    {
+        s_rxOverflowCount++;
+    }
 }
 
 void BSP_UART_TxDmaISR_Callback(void)
@@ -256,6 +261,15 @@ void BSP_UART_TxDmaISR_Callback(void)
 /*--------------------------------------------------------------------------*/
 /*                          RX read (App layer)                             */
 /*--------------------------------------------------------------------------*/
+
+uint32_t BSP_UART_GetAndClearOverflowCount(void)
+{
+    __disable_irq();
+    uint32_t count = s_rxOverflowCount;
+    s_rxOverflowCount = 0U;
+    __enable_irq();
+    return count;
+}
 
 void BSP_UART_RxFlush(void)
 {

@@ -43,6 +43,7 @@ C_SOURCES += Core/Src/system_stm32f4xx.c
 C_SOURCES += BSP/Src/bsp_tick.c
 C_SOURCES += BSP/Src/bsp_led.c
 C_SOURCES += BSP/Src/bsp_uart.c
+C_SOURCES += BSP/Src/bsp_i2c.c
 C_SOURCES += BSP/Src/bsp_i2c1.c
 C_SOURCES += BSP/Src/bsp_i2c2.c
 C_SOURCES += BSP/Src/bsp_i2c3.c
