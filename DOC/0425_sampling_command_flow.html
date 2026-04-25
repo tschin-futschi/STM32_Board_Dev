@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>采样中的命令流处理机制</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #39c5cf;
+    --pink: #f778ba;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.8rem;
+    color: #fff;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+  h2 {
+    font-size: 1.3rem;
+    color: var(--accent);
+    margin: 2rem 0 1rem;
+    padding-left: 0.5rem;
+    border-left: 3px solid var(--accent);
+  }
+  h3 {
+    font-size: 1.1rem;
+    color: var(--green);
+    margin: 1.5rem 0 0.7rem;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.5rem;
+    margin: 1rem 0;
+  }
+  pre {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  }
+  code {
+    font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    font-size: 0.85em;
+  }
+  .inline-code {
+    background: rgba(110,118,129,0.2);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    color: var(--cyan);
+  }
+  .kw { color: #ff7b72; }
+  .fn { color: #d2a8ff; }
+  .cm { color: #8b949e; font-style: italic; }
+  .str { color: #a5d6ff; }
+  .num { color: #79c0ff; }
+  .type { color: #ffa657; }
+  .macro { color: #f0883e; }
+  .var { color: #c9d1d9; }
+  .label { color: var(--green); }
+
+  /* Timeline / Flow diagrams */
+  .flow-diagram {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    font-family: 'Fira Code', Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .flow-diagram .axis { color: var(--text-dim); }
+  .flow-diagram .ctrl { color: var(--accent); }
+  .flow-diagram .stream { color: var(--green); }
+  .flow-diagram .isr { color: var(--orange); }
+  .flow-diagram .block { color: var(--red); }
+  .flow-diagram .skip { color: var(--purple); }
+  .flow-diagram .note { color: var(--pink); }
+
+  .highlight-box {
+    border-left: 4px solid var(--orange);
+    background: rgba(210,153,34,0.08);
+    padding: 0.8rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .success-box {
+    border-left: 4px solid var(--green);
+    background: rgba(63,185,80,0.08);
+    padding: 0.8rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .danger-box {
+    border-left: 4px solid var(--red);
+    background: rgba(248,81,73,0.08);
+    padding: 0.8rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  th {
+    background: rgba(88,166,255,0.12);
+    color: var(--accent);
+    text-align: left;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border);
+  }
+  td {
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--border);
+  }
+  tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+
+  .tag {
+    display: inline-block;
+    padding: 0.1em 0.5em;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .tag-ctrl { background: rgba(88,166,255,0.2); color: var(--accent); }
+  .tag-stream { background: rgba(63,185,80,0.2); color: var(--green); }
+  .tag-block { background: rgba(248,81,73,0.2); color: var(--red); }
+  .tag-skip { background: rgba(188,140,255,0.2); color: var(--purple); }
+
+  .section-num {
+    color: var(--text-dim);
+    font-size: 0.9em;
+    margin-right: 0.3em;
+  }
+
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .toc-title {
+    color: var(--accent);
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  .toc a {
+    color: var(--text);
+    text-decoration: none;
+    display: block;
+    padding: 0.2rem 0;
+  }
+  .toc a:hover { color: var(--accent); }
+  .toc .indent { padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+
+<h1>采样中的命令流处理机制</h1>
+<p class="subtitle">分析 STM32 固件如何在高频数据采样期间，安全地接收并执行上位机的控制指令</p>
+
+<div class="toc">
+  <div class="toc-title">目录</div>
+  <a href="#s1">1. 问题本质：单线程 + 单 UART 的并发挑战</a>
+  <a href="#s2">2. 主循环调度模型</a>
+  <a href="#s3">3. TX 通道仲裁：谁让谁？</a>
+  <a href="#s4">4. 完整时序图：采样中收到心跳</a>
+  <a href="#s5">5. 完整时序图：采样中收到寄存器读取</a>
+  <a href="#s6">6. 特殊场景：采样中请求 BulkRead</a>
+  <a href="#s7">7. 特殊场景：采样中切换波特率</a>
+  <a href="#s8">8. 特殊场景：采样中启动波形发生器</a>
+  <a href="#s9">9. I2C 总线竞争分析</a>
+  <a href="#s10">10. 保护机制总览</a>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s1"><span class="section-num">1.</span> 问题本质：单线程 + 单 UART 的并发挑战</h2>
+
+<div class="card">
+<p>系统只有<strong>一个主循环线程</strong>和<strong>一条 UART 通道</strong>，但需要同时完成两件事：</p>
+
+<table>
+  <tr>
+    <th>任务</th><th>方向</th><th>帧类型</th><th>频率</th>
+  </tr>
+  <tr>
+    <td>数据采样上报</td><td>STM32 &rarr; PC</td>
+    <td><span class="tag tag-stream">0xBB 数据流帧</span></td>
+    <td>500~5000 Hz</td>
+  </tr>
+  <tr>
+    <td>控制指令交互</td><td>PC &harr; STM32</td>
+    <td><span class="tag tag-ctrl">0xAA55 控制帧</span></td>
+    <td>不定时（心跳 1Hz + 用户操作）</td>
+  </tr>
+</table>
+
+<p>核心矛盾：两种帧<strong>共享同一个 DMA TX 缓冲区</strong>，同一时刻只能发一帧。如何保证：</p>
+<ul style="margin-top:0.5rem; padding-left:1.5rem;">
+  <li>控制指令的响应不被采样帧"饿死"</li>
+  <li>采样帧不会覆盖正在发送的控制帧</li>
+  <li>I2C 总线操作不会冲突</li>
+</ul>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s2"><span class="section-num">2.</span> 主循环调度模型</h2>
+
+<p>主循环非常简洁，每次迭代做四件事：</p>
+
+<pre>
+<span class="cm">/* main.c — 主循环 */</span>
+<span class="kw">while</span> (<span class="num">1</span>)
+{
+    <span class="type">uint32_t</span> <span class="var">now</span> = <span class="fn">BSP_GetTick</span>();
+
+    <span class="fn">App_Protocol_Poll</span>();      <span class="cm">// ① 解析 RX 缓冲区中的控制帧，执行命令</span>
+    <span class="fn">App_Sample_Poll</span>();        <span class="cm">// ② 如果 TIM6 flag 置位，执行采样+发送</span>
+
+    <span class="cm">// ③ PMIC HWEN 事件处理</span>
+    <span class="kw">if</span> (<span class="var">g_pmicHwenFlag</span> != <span class="num">0U</span>) { ... }
+
+    <span class="cm">// ④ LED 心跳翻转（200ms）</span>
+    <span class="kw">if</span> (<span class="var">now</span> - <span class="var">prevTick</span> >= <span class="macro">HEARTBEAT_INTERVAL_MS</span>) { ... }
+}
+</pre>
+
+<div class="highlight-box">
+  <strong>关键观察</strong>：<code class="inline-code">App_Protocol_Poll()</code> 在 <code class="inline-code">App_Sample_Poll()</code> <strong>之前</strong>执行。
+  这意味着每次主循环迭代中，控制指令总是先于采样帧被处理。控制帧天然具有"软优先级"。
+</div>
+
+<h3>App_Protocol_Poll() 的工作</h3>
+
+<pre>
+<span class="kw">void</span> <span class="fn">App_Protocol_Poll</span>(<span class="kw">void</span>)
+{
+    <span class="cm">// 1. 检查 I2C 总线恢复事件</span>
+    <span class="kw">if</span> (<span class="fn">BSP_I2C2_GetAndClearRecoveryFlag</span>() != <span class="num">0U</span>)
+        <span class="fn">App_Protocol_SendDebugInfo</span>(<span class="str">"I2C bus recovered"</span>);
+
+    <span class="cm">// 2. 检查 RX 缓冲区溢出</span>
+    overflow = <span class="fn">BSP_UART_GetAndClearOverflowCount</span>();
+    <span class="kw">if</span> (overflow > <span class="num">0U</span>)
+        <span class="fn">App_Protocol_SendDebugInfo</span>(...);
+
+    <span class="cm">// 3. 批量取出 RX 缓冲区中的所有字节</span>
+    len = <span class="fn">BSP_UART_RxRead</span>(s_rxBuf, <span class="macro">BSP_UART_RX_BUF_SIZE</span>);
+
+    <span class="cm">// 4. 逐字节送入状态机</span>
+    <span class="kw">for</span> (i = <span class="num">0U</span>; i < len; i++)
+        <span class="fn">ProcessByte</span>(s_rxBuf[i]);  <span class="cm">// → 帧完整时调用 DispatchFrame()</span>
+}
+</pre>
+
+<h3>App_Sample_Poll() 的工作</h3>
+
+<pre>
+<span class="kw">void</span> <span class="fn">App_Sample_Poll</span>(<span class="kw">void</span>)
+{
+    <span class="cm">// 0. 两个消费者都空闲 → 直接返回</span>
+    <span class="kw">if</span> (s_sampling == <span class="num">0U</span> && s_genMode == <span class="macro">GEN_NONE</span>) <span class="kw">return</span>;
+
+    <span class="cm">// 1. 检查 TIM6 中断标志</span>
+    <span class="kw">if</span> (<span class="fn">BSP_SampleTim_GetFlag</span>() == <span class="num">0U</span>) <span class="kw">return</span>;
+    <span class="fn">BSP_SampleTim_ClearFlag</span>();
+
+    <span class="cm">// 2. Phase 1: 波形发生器写入（如果在运行）</span>
+    <span class="kw">if</span> (s_genMode != <span class="macro">GEN_NONE</span>) { ... <span class="fn">Generator_DoWrite</span>(); }
+
+    <span class="cm">// 3. Phase 2: 采样读取 + 发送</span>
+    <span class="kw">if</span> (s_sampling != <span class="num">0U</span>)
+    {
+        <span class="kw">if</span> (<span class="fn">BSP_UART_IsTxBusy</span>() != <span class="num">0U</span>) <span class="kw">return</span>;  <span class="cm">// ★ TX 忙则跳过本帧</span>
+        <span class="fn">SendStreamFrame</span>(effectiveMask);
+    }
+}
+</pre>
+
+<!-- ================================================================ -->
+<h2 id="s3"><span class="section-num">3.</span> TX 通道仲裁：谁让谁？</h2>
+
+<p>系统中有两类发送者，它们对"TX 正忙"的处理策略<strong>截然相反</strong>：</p>
+
+<div class="card">
+<table>
+  <tr>
+    <th>发送者</th><th>函数</th><th>TX 忙时行为</th><th>策略</th>
+  </tr>
+  <tr>
+    <td><span class="tag tag-ctrl">控制帧</span></td>
+    <td><code class="inline-code">SendFrame()</code></td>
+    <td><span class="tag tag-block">阻塞等待</span> <code class="inline-code">BSP_UART_TxWait()</code></td>
+    <td>可靠性优先：必须发出去</td>
+  </tr>
+  <tr>
+    <td><span class="tag tag-stream">数据流帧</span></td>
+    <td><code class="inline-code">SendStreamFrame()</code></td>
+    <td><span class="tag tag-skip">直接跳过</span> <code class="inline-code">return</code></td>
+    <td>实时性优先：丢帧好过阻塞</td>
+  </tr>
+</table>
+</div>
+
+<p>这一设计的精妙之处在于：</p>
+
+<div class="success-box">
+  <strong>控制帧永远不会被"饿死"</strong>：<code class="inline-code">SendFrame()</code> 会等到 DMA 发完再发，所以控制帧的响应<strong>一定会送达 PC</strong>。<br><br>
+  <strong>数据流帧主动让路</strong>：如果上一帧还在发，数据流帧<strong>丢弃当前采样</strong>，等下一个 TIM6 tick 再尝试。对于示波器场景，偶尔丢一帧完全可接受。
+</div>
+
+<p>来看具体的代码对比：</p>
+
+<pre>
+<span class="cm">/* 控制帧发送 — app_protocol.c:119-147 */</span>
+<span class="kw">static</span> <span class="type">ErrorStatus</span> <span class="fn">SendFrame</span>(<span class="type">uint8_t</span> seq, <span class="type">uint8_t</span> cmd,
+                              <span class="kw">const</span> <span class="type">uint8_t</span> *pData, <span class="type">uint8_t</span> len)
+{
+    <span class="cm">// ...构建帧...</span>
+
+    <span class="fn">BSP_UART_TxWait</span>();              <span class="cm">// ★ 阻塞：等上一帧 DMA 发完</span>
+    <span class="kw">return</span> <span class="fn">BSP_UART_Transmit</span>(s_txBuf, idx);
+}
+
+<span class="cm">/* 数据流帧发送 — app_sample.c:316-321 */</span>
+<span class="kw">if</span> (s_sampling != <span class="num">0U</span>)
+{
+    <span class="kw">if</span> (<span class="fn">BSP_UART_IsTxBusy</span>() != <span class="num">0U</span>) <span class="kw">return</span>;  <span class="cm">// ★ 非阻塞：TX 忙则放弃</span>
+    <span class="fn">SendStreamFrame</span>(effectiveMask);
+}
+</pre>
+
+<!-- ================================================================ -->
+<h2 id="s4"><span class="section-num">4.</span> 完整时序图：采样中收到心跳</h2>
+
+<p>最常见的场景：采样运行中，PC 每秒发一次心跳（CMD=0x00）。</p>
+
+<div class="flow-diagram"><span class="axis">时间轴 ──────────────────────────────────────────────────────►</span>
+
+<span class="isr">TIM6 ISR</span>     ↓flag                  ↓flag                  ↓flag
+             │                       │                       │
+<span class="axis">主循环迭代</span>   ├──iter N──┤  ├──iter N+1──┤  ├──iter N+2──┤  ├──iter N+3──┤
+
+<span class="ctrl">Protocol_Poll</span>│ 无RX数据  │  │<span class="note">收到心跳帧</span>   │  │ 无RX数据   │  │ 无RX数据   │
+             │ (快速返回)│  │→ProcessByte│  │ (快速返回) │  │ (快速返回) │
+             │          │  │→Dispatch   │  │            │  │            │
+             │          │  │→<span class="ctrl">SendFrame</span>  │  │            │  │            │
+             │          │  │ TxWait:    │  │            │  │            │
+             │          │  │ <span class="block">等0xBB发完</span>  │  │            │  │            │
+             │          │  │ <span class="ctrl">DMA发心跳</span>  │  │            │  │            │
+             │          │  │            │  │            │  │            │
+<span class="stream">Sample_Poll</span>  │ flag=1   │  │ flag=0     │  │ flag=1     │  │ flag=0     │
+             │ 读I2C    │  │ (快速返回) │  │ <span class="skip">TX忙(心跳)</span> │  │ (快速返回) │
+             │ <span class="stream">DMA发0xBB</span>│  │            │  │ <span class="skip">→ 跳过本帧</span> │  │            │
+</div>
+
+<div class="card">
+<h3>逐步解析</h3>
+<ol style="padding-left: 1.5rem;">
+  <li><strong>迭代 N</strong>：TIM6 flag 置位，<code class="inline-code">Sample_Poll</code> 读 I2C 寄存器，构建 0xBB 帧，启动 DMA 发送</li>
+  <li><strong>迭代 N+1</strong>：<code class="inline-code">Protocol_Poll</code> 从 RX 缓冲区取出心跳帧字节，状态机解析完成，调用 <code class="inline-code">HandleHeartbeat()</code>
+    <ul>
+      <li><code class="inline-code">SendFrame()</code> 内部先调用 <code class="inline-code">BSP_UART_TxWait()</code>，等迭代 N 的 0xBB DMA 发完</li>
+      <li>然后启动新的 DMA 发送心跳响应帧</li>
+    </ul>
+  </li>
+  <li><strong>迭代 N+2</strong>：TIM6 flag 又置位，<code class="inline-code">Sample_Poll</code> 准备发 0xBB，但心跳帧 DMA 还在进行
+    <ul>
+      <li><code class="inline-code">BSP_UART_IsTxBusy()</code> 返回 1 → <strong>跳过本帧</strong></li>
+      <li>这一采样点的数据丢弃，PC 端示波器少收一个点（可接受）</li>
+    </ul>
+  </li>
+  <li><strong>迭代 N+3</strong>：DMA 空闲，下次 TIM6 flag 到来时正常采样</li>
+</ol>
+</div>
+
+<div class="highlight-box">
+  <strong>代价分析</strong>：一次心跳交互大约导致<strong>丢失 1~2 个采样帧</strong>（取决于波特率和采样频率）。
+  以 115200 bps、1kHz 采样为例，一个 9 字节心跳帧的 DMA 传输约 0.8ms，而采样间隔是 1ms，所以最多丢 1 帧。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s5"><span class="section-num">5.</span> 完整时序图：采样中收到寄存器读取</h2>
+
+<p>比心跳复杂一些：<code class="inline-code">HandleReadReg()</code> 需要先做一次 I2C 读操作，然后再发送响应帧。</p>
+
+<div class="flow-diagram"><span class="axis">时间轴 ──────────────────────────────────────────────────────────►</span>
+
+<span class="ctrl">Protocol_Poll</span>  ┌─────────── 收到 0x20 ReadReg 命令 ───────────┐
+               │ ProcessByte × 9  (9字节控制帧)               │
+               │ → DispatchFrame → HandleReadReg              │
+               │   ┌──────────────────────────────────────┐   │
+               │   │ <span class="note">① I2C2 读寄存器</span> (~142μs)              │   │
+               │   │    BSP_I2C2_ReadReg(addr, reg, ...)   │   │
+               │   │ <span class="note">② 构建响应帧</span>                         │   │
+               │   │    SendFrame(seq, 0x20, resp, 2)      │   │
+               │   │    <span class="block">TxWait: 等 0xBB DMA 发完</span>            │   │
+               │   │    <span class="ctrl">DMA 启动: 发 11 字节控制响应帧</span>       │   │
+               │   └──────────────────────────────────────┘   │
+               └──────────────────────────────────────────────┘
+                                                        ↓ 返回主循环
+
+<span class="stream">Sample_Poll</span>    flag可能已置位 → <span class="skip">TX忙，跳过</span>  │  下个tick → 正常发送
+</pre>
+</div>
+
+<div class="card">
+<p>这里涉及一个重要的细节：<strong>I2C 总线竞争</strong>。</p>
+<p><code class="inline-code">HandleReadReg()</code> 通过 <code class="inline-code">App_Motor_ReadReg()</code> 访问 I2C2 总线。
+如果此时 <code class="inline-code">Sample_Poll()</code> 也要读 I2C2（通过 <code class="inline-code">SendStreamFrame()</code> 中的 <code class="inline-code">App_Motor_ReadReg()</code>），会不会冲突？</p>
+
+<p style="margin-top: 0.5rem;"><strong>答案：不会</strong>。因为整个系统是<strong>单线程协作式</strong>的：</p>
+<ol style="padding-left: 1.5rem;">
+  <li><code class="inline-code">Protocol_Poll()</code> 先执行，HandleReadReg 的 I2C 读<strong>在主循环内完成</strong></li>
+  <li>返回后才轮到 <code class="inline-code">Sample_Poll()</code>，此时 I2C 总线已空闲</li>
+  <li>两者<strong>不可能并行执行</strong>，因为没有抢占式调度</li>
+</ol>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s6"><span class="section-num">6.</span> 特殊场景：采样中请求 BulkRead</h2>
+
+<p><code class="inline-code">HandleBulkRead(0x22)</code> 是最复杂的命令——它需要连续读取数百个寄存器，分多个包发送。
+这与高频采样有严重冲突：</p>
+
+<div class="danger-box">
+  <strong>问题</strong>：BulkRead 可能需要几秒才能完成（读 256 个寄存器 × 142μs ≈ 36ms，加上多包发送）。
+  这期间 TIM6 中断不断触发，采样帧无法发送；PC 的心跳也可能超时。
+</div>
+
+<p>代码的解决方案：<strong>直接拒绝</strong>。</p>
+
+<pre>
+<span class="cm">/* app_protocol.c:455-460 — BulkRead 互斥检查 */</span>
+<span class="kw">static void</span> <span class="fn">HandleBulkRead</span>(<span class="kw">const</span> <span class="type">Proto_Frame_t</span> *pFrame)
+{
+    ...
+    <span class="cm">/* Reject bulk read while sampling is active */</span>
+    <span class="kw">if</span> (<span class="fn">App_Sample_IsActive</span>() != <span class="num">0U</span>)
+    {
+        <span class="fn">SendErrorResp</span>(pFrame->seq, <span class="macro">PROTO_ERR_EXEC_FAIL</span>);
+        <span class="kw">return</span>;
+    }
+    ...
+}
+</pre>
+
+<div class="success-box">
+  <strong>设计决策</strong>：BulkRead 和采样互斥。PC 必须先停止采样（0x51），再发 BulkRead（0x22），
+  读完后再启动采样（0x50）。这避免了复杂的时分复用逻辑。
+</div>
+
+<h3>BulkRead 自身的心跳维持</h3>
+
+<p>虽然采样被禁止，但 BulkRead 期间 PC 仍在发心跳。如果不响应，PC 会判定连接断开。
+代码用了一个精巧的<strong>递归 Poll</strong> 机制：</p>
+
+<pre>
+<span class="cm">/* app_protocol.c:462-498 — BulkRead 多包发送循环 */</span>
+s_bulkReadActive = <span class="num">1U</span>;           <span class="cm">// ★ 设置互斥标志</span>
+<span class="kw">for</span> (pktIdx = <span class="num">0U</span>; pktIdx < totalPkts; pktIdx++)
+{
+    <span class="cm">// ...读寄存器，构建包...</span>
+
+    <span class="fn">BSP_UART_TxWait</span>();             <span class="cm">// 等上一包发完</span>
+    <span class="fn">App_Protocol_Poll</span>();           <span class="cm">// ★ 处理 RX：只允许心跳通过</span>
+    <span class="fn">SendFrame</span>(...);                <span class="cm">// 发送本包</span>
+}
+s_bulkReadActive = <span class="num">0U</span>;           <span class="cm">// 清除互斥标志</span>
+</pre>
+
+<pre>
+<span class="cm">/* app_protocol.c:734-740 — 分发器中的 BulkRead 保护 */</span>
+<span class="kw">static void</span> <span class="fn">DispatchFrame</span>(<span class="kw">const</span> <span class="type">Proto_Frame_t</span> *pFrame)
+{
+    <span class="cm">/* During bulk read, only respond to heartbeat */</span>
+    <span class="kw">if</span> (s_bulkReadActive && (pFrame->cmd != <span class="macro">PROTO_CMD_HEARTBEAT</span>))
+    {
+        <span class="kw">return</span>;  <span class="cm">// 非心跳命令全部忽略</span>
+    }
+    ...
+}
+</pre>
+
+<div class="flow-diagram"><span class="axis">BulkRead 期间的调用栈</span>
+
+<span class="ctrl">App_Protocol_Poll()</span>                       <span class="cm">← 主循环调用（外层）</span>
+  └→ <span class="fn">ProcessByte()</span> × N
+      └→ <span class="fn">DispatchFrame()</span>
+          └→ <span class="fn">HandleBulkRead()</span>
+              ├→ 读寄存器 + 发包
+              ├→ <span class="ctrl">App_Protocol_Poll()</span>        <span class="cm">← 内层递归调用</span>
+              │    └→ <span class="fn">ProcessByte()</span> × N
+              │        └→ <span class="fn">DispatchFrame()</span>
+              │            ├→ 心跳 → <span class="ctrl">HandleHeartbeat()</span> ✓
+              │            └→ 其他 → <span class="skip">忽略</span>（s_bulkReadActive=1）
+              ├→ 读寄存器 + 发包
+              └→ ...重复...
+</div>
+
+<div class="highlight-box">
+  <strong>栈安全</strong>：递归只会发生一层（内层 BulkRead 被 <code class="inline-code">s_bulkReadActive</code> 阻止），
+  额外栈消耗约 300~400 字节，2KB 栈够用。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s7"><span class="section-num">7.</span> 特殊场景：采样中切换波特率</h2>
+
+<p>这是一个<strong>有副作用</strong>的命令：波特率切换会影响正在进行的 DMA 发送和 RX 接收。</p>
+
+<pre>
+<span class="cm">/* app_protocol.c:220-245 — HandleSetBaudrate */</span>
+<span class="kw">static void</span> <span class="fn">HandleSetBaudrate</span>(<span class="kw">const</span> <span class="type">Proto_Frame_t</span> *pFrame)
+{
+    ...
+    <span class="cm">// ① 用旧波特率发送 ACK</span>
+    <span class="fn">SendFrame</span>(pFrame->seq, <span class="macro">PROTO_CMD_SET_BAUDRATE</span>, <span class="kw">NULL</span>, <span class="num">0U</span>);
+
+    <span class="cm">// ② 等 DMA 发完 + 移位寄存器排空</span>
+    <span class="fn">BSP_UART_TxWait</span>();
+
+    <span class="cm">// ③ 切换波特率（内部会禁用 USART、重新初始化）</span>
+    <span class="fn">BSP_UART_SetBaudrate</span>(k_baudrateTable[idx]);
+
+    <span class="cm">// ④ 丢弃过渡期间的垃圾字节</span>
+    <span class="fn">BSP_UART_RxFlush</span>();
+
+    <span class="cm">// ⑤ 重置状态机，防止半帧残留</span>
+    s_state = <span class="macro">STATE_WAIT_SOF1</span>;
+}
+</pre>
+
+<div class="card">
+<p><strong>采样中执行波特率切换的时序：</strong></p>
+<ol style="padding-left: 1.5rem;">
+  <li><code class="inline-code">SendFrame()</code> 内部 <code class="inline-code">TxWait()</code> 等当前 0xBB 帧 DMA 完成</li>
+  <li>用旧波特率 DMA 发出 ACK 控制帧</li>
+  <li>再次 <code class="inline-code">TxWait()</code> 确保 ACK 的最后一个 bit 离开移位寄存器</li>
+  <li><code class="inline-code">BSP_UART_SetBaudrate()</code> 内部：禁用 RXNE 中断 → 禁用 DMA → 关闭 USART → 以新波特率重新初始化</li>
+  <li>切换完成后，采样帧继续以新波特率发送</li>
+</ol>
+<p><strong>采样不会中断</strong>：TIM6 继续运行，<code class="inline-code">s_sampling</code> 未被修改。
+只是在波特率切换那一瞬间（~1ms），有 1~2 个采样帧被跳过。</p>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s8"><span class="section-num">8.</span> 特殊场景：采样中启动波形发生器</h2>
+
+<p>波形发生器（Linear/Cosine）和采样<strong>共享 TIM6</strong>，可以同时运行。
+但它们的 I2C 操作需要在同一个 tick 内完成，否则会丢帧。</p>
+
+<h3>Tick 超限检查（80% 规则）</h3>
+
+<pre>
+<span class="cm">/* app_protocol.c:514-531 — CheckTickOverrun */</span>
+<span class="kw">static</span> <span class="type">uint8_t</span> <span class="fn">CheckTickOverrun</span>(<span class="type">uint8_t</span> readCh, <span class="type">uint8_t</span> writeCh)
+{
+    <span class="type">uint32_t</span> periodUs   = <span class="fn">BSP_SampleTim_GetPeriodUs</span>();
+    <span class="type">uint32_t</span> estimateUs = readCh  * <span class="macro">I2C_READ_US</span>      <span class="cm">// 142μs/次</span>
+                        + writeCh * <span class="macro">I2C_WRITE_US</span>;     <span class="cm">// 115μs/次</span>
+    <span class="type">uint32_t</span> limitUs    = (periodUs * <span class="num">80U</span>) / <span class="num">100U</span>; <span class="cm">// 80% 裕量</span>
+
+    <span class="kw">if</span> (estimateUs > limitUs)
+    {
+        <span class="cm">// 发送 Debug 信息告知 PC 工作量超限</span>
+        <span class="fn">App_Protocol_SendDebugInfo</span>(<span class="str">"Tick overrun: ..."</span>);
+        <span class="kw">return</span> <span class="num">0U</span>;  <span class="cm">// 拒绝</span>
+    }
+    <span class="kw">return</span> <span class="num">1U</span>;  <span class="cm">// 允许</span>
+}
+</pre>
+
+<p>举个例子：1kHz 采样（周期 1000μs），80% 裕量 = 800μs：</p>
+
+<table>
+  <tr>
+    <th>场景</th><th>读通道</th><th>写通道</th><th>预计耗时</th><th>结果</th>
+  </tr>
+  <tr>
+    <td>4通道采样 + 无发生器</td><td>4</td><td>0</td>
+    <td>4 × 142 = 568μs</td><td style="color:var(--green)">允许</td>
+  </tr>
+  <tr>
+    <td>4通道采样 + 1路线性发生器</td><td>4</td><td>1</td>
+    <td>4 × 142 + 1 × 115 = 683μs</td><td style="color:var(--green)">允许</td>
+  </tr>
+  <tr>
+    <td>4通道采样 + 3路余弦发生器</td><td>4</td><td>3</td>
+    <td>4 × 142 + 3 × 115 = 913μs</td><td style="color:var(--red)">拒绝（超 800μs）</td>
+  </tr>
+</table>
+
+<h3>两阶段 Poll 的执行顺序</h3>
+
+<div class="flow-diagram"><span class="axis">一个 TIM6 tick 内的工作分配</span>
+
+┌────────────────────────────────────────────────┐
+│                  App_Sample_Poll()              │
+│                                                │
+│  <span class="isr">Phase 1: 波形发生器写入</span>                       │
+│  ├─ 检查 divider 计数器                         │
+│  └─ 调用 App_Motor_WriteReg() × writeCh        │
+│     (I2C2 写寄存器, ~115μs/次)                  │
+│                                                │
+│  <span class="stream">Phase 2: 采样读取 + 发送</span>                      │
+│  ├─ 检查 TX busy → 跳过 or 继续                │
+│  ├─ 调用 App_Motor_ReadReg() × readCh          │
+│  │  (I2C2 读寄存器, ~142μs/次)                  │
+│  └─ 构建 0xBB 帧 → BSP_UART_Transmit()         │
+│                                                │
+│  <span class="note">总耗时 = writeCh×115 + readCh×142 (μs)</span>        │
+└────────────────────────────────────────────────┘
+</pre>
+</div>
+
+<div class="success-box">
+  <strong>先写后读的意义</strong>：发生器先写入新值到电机 IC 寄存器，采样紧接着读取同一组寄存器。
+  这样 PC 端示波器能<strong>立即看到写入的效果</strong>，没有一个 tick 的延迟。
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s9"><span class="section-num">9.</span> I2C 总线竞争分析</h2>
+
+<p>项目中有 3 条 I2C 总线，电机 IC 相关操作都走 <strong>I2C2</strong>：</p>
+
+<table>
+  <tr>
+    <th>操作</th><th>I2C 总线</th><th>触发源</th>
+  </tr>
+  <tr><td>采样读寄存器</td><td>I2C2</td><td>TIM6 tick → Sample_Poll</td></tr>
+  <tr><td>发生器写寄存器</td><td>I2C2</td><td>TIM6 tick → Sample_Poll</td></tr>
+  <tr><td>HandleReadReg (0x20)</td><td>I2C2</td><td>PC 命令 → Protocol_Poll</td></tr>
+  <tr><td>HandleWriteReg (0x21)</td><td>I2C2</td><td>PC 命令 → Protocol_Poll</td></tr>
+  <tr><td>HandleMotorPing (0x05)</td><td>I2C2</td><td>PC 命令 → Protocol_Poll</td></tr>
+  <tr><td>PMIC 操作 (0x08-0x0A)</td><td>I2C3</td><td>PC 命令 → Protocol_Poll</td></tr>
+  <tr><td>I2C Scan (0x07)</td><td>I2C1/2/3</td><td>PC 命令 → Protocol_Poll</td></tr>
+</table>
+
+<div class="card">
+<h3>为什么不会冲突？</h3>
+
+<p>关键在于<strong>执行模型是协作式的</strong>（cooperative），不是抢占式的：</p>
+
+<pre>
+<span class="cm">/* 主循环 — 顺序执行，无并行 */</span>
+<span class="kw">while</span> (<span class="num">1</span>)
+{
+    <span class="fn">App_Protocol_Poll</span>();   <span class="cm">// 如果有命令，在这里完整执行（含 I2C 操作）</span>
+                           <span class="cm">// 执行完毕后才返回</span>
+
+    <span class="fn">App_Sample_Poll</span>();    <span class="cm">// 此时 Protocol_Poll 已完成，I2C 总线空闲</span>
+                           <span class="cm">// 可以安全地进行采样 I2C 操作</span>
+}
+</pre>
+
+<p>同一条 I2C 总线上的操作<strong>永远不会交错</strong>，因为：</p>
+<ul style="padding-left: 1.5rem; margin-top: 0.5rem;">
+  <li>I2C 操作是<strong>同步阻塞</strong>的（轮询模式 + 超时保护）</li>
+  <li>主循环是<strong>顺序执行</strong>的，Poll A 执行完才轮到 Poll B</li>
+  <li>ISR 中不做 I2C 操作（只置标志），不会从中断上下文访问总线</li>
+</ul>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s10"><span class="section-num">10.</span> 保护机制总览</h2>
+
+<p>将所有并发保护机制整理为一张全景图：</p>
+
+<div class="card">
+<table>
+  <tr>
+    <th>保护目标</th><th>机制</th><th>代码位置</th>
+  </tr>
+  <tr>
+    <td>TX DMA 互斥</td>
+    <td>控制帧 <code class="inline-code">TxWait()</code> 阻塞等待<br>数据流帧 <code class="inline-code">IsTxBusy()</code> 非阻塞跳过</td>
+    <td>app_protocol.c:145<br>app_sample.c:321</td>
+  </tr>
+  <tr>
+    <td>BulkRead vs 采样</td>
+    <td><code class="inline-code">App_Sample_IsActive()</code> 检查 → 拒绝</td>
+    <td>app_protocol.c:456</td>
+  </tr>
+  <tr>
+    <td>BulkRead 中维持心跳</td>
+    <td>递归 <code class="inline-code">App_Protocol_Poll()</code> + <code class="inline-code">s_bulkReadActive</code> 过滤</td>
+    <td>app_protocol.c:491, 737</td>
+  </tr>
+  <tr>
+    <td>I2C 总线不交错</td>
+    <td>单线程协作式调度，I2C 同步轮询</td>
+    <td>main.c:87-88（顺序 Poll）</td>
+  </tr>
+  <tr>
+    <td>Tick 超限</td>
+    <td>启动前预算 I2C 耗时 ≤ 80% tick 周期</td>
+    <td>app_protocol.c:514-531</td>
+  </tr>
+  <tr>
+    <td>I2C 总线死锁恢复</td>
+    <td>超时 → 9 SCL 脉冲 + 软件复位 → 通知上位机</td>
+    <td>bsp_i2c.c:183-234<br>app_protocol.c:910</td>
+  </tr>
+  <tr>
+    <td>I2C 持续故障</td>
+    <td>连续 50 次全通道失败 → 自动停止采样</td>
+    <td>app_sample.c:226-234</td>
+  </tr>
+  <tr>
+    <td>波特率切换</td>
+    <td>先 ACK → 等 DMA 完 → 等移位寄存器排空 → 切换 → 清 RX → 重置状态机</td>
+    <td>app_protocol.c:238-244</td>
+  </tr>
+  <tr>
+    <td>UART RX 溢出</td>
+    <td>溢出计数 → Debug 帧通知 PC</td>
+    <td>app_protocol.c:915-926</td>
+  </tr>
+  <tr>
+    <td>TIM6 共享</td>
+    <td><code class="inline-code">EnsureTimRunning()</code> 安全启动<br><code class="inline-code">StopTimIfIdle()</code> 双消费者都空闲才停</td>
+    <td>app_sample.c:70-84</td>
+  </tr>
+</table>
+</div>
+
+<div class="success-box" style="margin-top: 2rem; font-size: 1.05rem;">
+  <strong>总结</strong>：整个系统通过<strong>协作式调度 + 单一 UART 仲裁规则（控制帧阻塞等待、数据流帧主动让路）</strong>，
+  在单线程环境中实现了控制指令与高频采样的安全共存。设计简洁有效，无需引入 RTOS 或复杂的锁机制。
+</div>
+
+<div style="margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 0.8rem;">
+  Generated on 2026-04-25 | STM32F429ZG Motor Debug Board | Firmware Command Flow Analysis
+</div>
+
+</body>
+</html>
