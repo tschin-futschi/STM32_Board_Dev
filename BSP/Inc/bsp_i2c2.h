@@ -1,8 +1,8 @@
 /**
   * @file    bsp_i2c2.h
-  * @brief   I2C2 BSP — polling + software timeout, motor IC communication
+  * @brief   I2C2 BSP — software (bit-bang) I2C, motor IC communication
   *
-  * Hardware: I2C2, PB10(SCL) / PB11(SDA), AF4, 400 kHz
+  * Hardware: PB10(SCL) / PB11(SDA), GPIO open-drain bit-bang, 1 MHz
   */
 
 #ifndef __BSP_I2C2_H
@@ -11,29 +11,29 @@
 #include "stm32f4xx.h"
 
 /*--------------------------------------------------------------------------*/
-/*                          Hardware configuration                          */
+/*                        Hardware configuration                            */
 /*--------------------------------------------------------------------------*/
 
-#define BSP_I2C2_PERIPH             I2C2
-#define BSP_I2C2_RCC_APB1           RCC_APB1Periph_I2C2
-
-/* SCL: PB10, AF4 */
+/* SCL: PB10 */
 #define BSP_I2C2_SCL_GPIO_PORT      GPIOB
 #define BSP_I2C2_SCL_GPIO_CLK       RCC_AHB1Periph_GPIOB
 #define BSP_I2C2_SCL_PIN            GPIO_Pin_10
-#define BSP_I2C2_SCL_PIN_SOURCE     GPIO_PinSource10
-#define BSP_I2C2_SCL_AF             GPIO_AF_I2C2
 
-/* SDA: PB11, AF4 */
+/* SDA: PB11 */
 #define BSP_I2C2_SDA_GPIO_PORT      GPIOB
 #define BSP_I2C2_SDA_GPIO_CLK       RCC_AHB1Periph_GPIOB
 #define BSP_I2C2_SDA_PIN            GPIO_Pin_11
-#define BSP_I2C2_SDA_PIN_SOURCE     GPIO_PinSource11
-#define BSP_I2C2_SDA_AF             GPIO_AF_I2C2
 
-/* Speed & timeout */
-#define BSP_I2C2_SPEED              400000U     /* 400 kHz fast mode            */
-#define BSP_I2C2_TIMEOUT            10000U      /* Software timeout loop count  */
+/*--------------------------------------------------------------------------*/
+/*                    Software I2C timing (DWT cycles)                      */
+/*--------------------------------------------------------------------------*/
+
+#define BSP_I2C2_SW_SYSCLK_HZ       180000000U
+#define BSP_I2C2_SW_I2C_HZ          1000000U
+#define BSP_I2C2_SW_HALF_CYCLE      (BSP_I2C2_SW_SYSCLK_HZ / BSP_I2C2_SW_I2C_HZ / 2U) /* 90 cycles = 500 ns */
+#define BSP_I2C2_SW_SCL_LOW_ADJ     6U          /* GPIO ops compensation    */
+#define BSP_I2C2_SW_STRETCH_TIMEOUT 1800000U    /* 10 ms clock stretching   */
+#define BSP_I2C2_SW_RECOVER_PULSES  9U          /* Bus recovery SCL pulses  */
 
 /*--------------------------------------------------------------------------*/
 /*                          Motor IC runtime config                         */
