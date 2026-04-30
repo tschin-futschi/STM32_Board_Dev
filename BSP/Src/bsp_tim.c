@@ -16,13 +16,13 @@
 /* ARR = interval_us - 1 */
 static const uint16_t k_arrTable[BSP_SAMPLE_TIM_IDX_MAX + 1U] =
 {
-    199U,   /* idx 0:  200 us,  5000 Hz */
-    299U,   /* idx 1:  300 us,  3333 Hz */
-    499U,   /* idx 2:  500 us,  2000 Hz */
-    749U,   /* idx 3:  750 us,  1333 Hz */
-    999U,   /* idx 4: 1000 us,  1000 Hz (default) */
-   1499U,   /* idx 5: 1500 us,   667 Hz */
-   1999U,   /* idx 6: 2000 us,   500 Hz */
+    149U,   /* idx 0:  150 us,  6667 Hz */
+    249U,   /* idx 1:  250 us,  4000 Hz */
+    299U,   /* idx 2:  300 us,  3333 Hz */
+    399U,   /* idx 3:  400 us,  2500 Hz (default) */
+    499U,   /* idx 4:  500 us,  2000 Hz */
+    899U,   /* idx 5:  900 us,  1111 Hz */
+    999U,   /* idx 6: 1000 us,  1000 Hz */
 };
 
 /*--------------------------------------------------------------------------*/
@@ -37,7 +37,7 @@ static uint8_t s_currentIdx = BSP_SAMPLE_TIM_DEFAULT_IDX;
 /*--------------------------------------------------------------------------*/
 
 /**
-  * @brief  Initialize TIM6 with default sampling interval (index 4 = 1000 us).
+  * @brief  Initialize TIM6 with default sampling interval (index 3 = 400 us).
   *         Timer is NOT started — call BSP_SampleTim_Start() explicitly.
   */
 ErrorStatus BSP_SampleTim_Init(void)

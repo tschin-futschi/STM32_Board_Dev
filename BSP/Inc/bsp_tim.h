@@ -24,8 +24,8 @@
 /* PSC = 89: 90 MHz / 90 = 1 MHz counter clock, 1 count = 1 us */
 #define BSP_SAMPLE_TIM_PSC              89U
 
-/* Default sampling interval index (1000 us = 1 kHz) */
-#define BSP_SAMPLE_TIM_DEFAULT_IDX      4U
+/* Default sampling interval index (400 us = 2.5 kHz) */
+#define BSP_SAMPLE_TIM_DEFAULT_IDX      3U
 
 /* Maximum sampling interval index (7 options: 0~6) */
 #define BSP_SAMPLE_TIM_IDX_MAX          6U
@@ -36,13 +36,13 @@
 
 /*
  * ARR values for each index (ARR = interval_us - 1):
- *   idx 0:  200 us → ARR =  199,  5000 Hz
- *   idx 1:  300 us → ARR =  299,  3333 Hz
- *   idx 2:  500 us → ARR =  499,  2000 Hz
- *   idx 3:  750 us → ARR =  749,  1333 Hz
- *   idx 4: 1000 us → ARR =  999,  1000 Hz (default)
- *   idx 5: 1500 us → ARR = 1499,   667 Hz
- *   idx 6: 2000 us → ARR = 1999,   500 Hz
+ *   idx 0:  150 us → ARR =  149,  6667 Hz
+ *   idx 1:  250 us → ARR =  249,  4000 Hz
+ *   idx 2:  300 us → ARR =  299,  3333 Hz
+ *   idx 3:  400 us → ARR =  399,  2500 Hz (default)
+ *   idx 4:  500 us → ARR =  499,  2000 Hz
+ *   idx 5:  900 us → ARR =  899,  1111 Hz
+ *   idx 6: 1000 us → ARR =  999,  1000 Hz
  */
 
 /*--------------------------------------------------------------------------*/
