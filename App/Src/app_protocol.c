@@ -502,8 +502,8 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
 /*                    Tick overrun check (PROTO-03)                         */
 /*--------------------------------------------------------------------------*/
 
-#define I2C_WRITE_US    115U    /* typical I2C write latency at 400 kHz */
-#define I2C_READ_US     142U    /* typical I2C read  latency at 400 kHz */
+#define I2C_WRITE_US    54U     /* typical I2C write latency (SW bit-bang ~870 kHz) */
+#define I2C_READ_US     77U     /* typical I2C read  latency (SW bit-bang ~870 kHz) */
 
 /**
   * @brief  Check if the expected I2C workload fits within 80% of the tick period.
