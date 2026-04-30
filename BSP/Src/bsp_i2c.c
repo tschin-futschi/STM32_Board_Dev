@@ -207,19 +207,19 @@ void BSP_I2C_RecoverBus(const BSP_I2C_Config_t *cfg)
     GPIO_SetBits(cfg->sdaPort, cfg->sdaPin);
 
     /* 3. Toggle SCL 9 times */
-    for (i = 0U; i < 9U; i++)
+    for (i = 0U; i < BSP_I2C_RECOVER_SCL_PULSES; i++)
     {
         GPIO_ResetBits(cfg->sclPort, cfg->sclPin);
-        for (delay = 0U; delay < 200U; delay++) { __NOP(); }
+        for (delay = 0U; delay < BSP_I2C_RECOVER_HALF_DELAY; delay++) { __NOP(); }
         GPIO_SetBits(cfg->sclPort, cfg->sclPin);
-        for (delay = 0U; delay < 200U; delay++) { __NOP(); }
+        for (delay = 0U; delay < BSP_I2C_RECOVER_HALF_DELAY; delay++) { __NOP(); }
     }
 
     /* 4. Manual STOP: SDA low while SCL high, then SDA high */
     GPIO_ResetBits(cfg->sdaPort, cfg->sdaPin);
-    for (delay = 0U; delay < 200U; delay++) { __NOP(); }
+    for (delay = 0U; delay < BSP_I2C_RECOVER_HALF_DELAY; delay++) { __NOP(); }
     GPIO_SetBits(cfg->sdaPort, cfg->sdaPin);
-    for (delay = 0U; delay < 200U; delay++) { __NOP(); }
+    for (delay = 0U; delay < BSP_I2C_RECOVER_HALF_DELAY; delay++) { __NOP(); }
 
     /* 5. Restore GPIO as AF and re-init peripheral */
     ConfigGpioAF(cfg);

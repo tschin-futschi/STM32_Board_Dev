@@ -161,6 +161,7 @@ static void SendErrorResp(uint8_t seq, Proto_ErrCode_t err)
 /* Send a 0x06 debug info frame (ASCII string, max PROTO_MAX_DATA_LEN bytes) */
 void App_Protocol_SendDebugInfo(const char *msg)
 {
+    if (!msg) { return; }
     uint8_t len = (uint8_t)strlen(msg);
     (void)SendFrame(0x00U, (uint8_t)PROTO_CMD_DEBUG_INFO,
                     (const uint8_t *)msg, len);

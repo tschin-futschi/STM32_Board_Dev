@@ -164,6 +164,7 @@ Linker/            STM32F429ZGTX_FLASH.ld
 | 2 | UART RX |
 | 5/6 | I2C EV / ER |
 | 7 | TIM6 采样 |
+| 8 | PMIC HWEN (EXTI4) |
 | 10 | UART TX DMA |
 | 15 | SysTick |
 
