@@ -54,11 +54,11 @@ static uint16_t s_linIntervalMs;    /* saved for divider recalculation          
 /* Cosine mode */
 static int16_t  s_cosAmplitude;
 static int16_t  s_cosOffset;
-static uint16_t s_cosFreqX100;
 static uint8_t  s_cosChCount;
 static uint16_t s_cosAddr[APP_GEN_COS_MAX_CH];
 static int16_t  s_cosPhaseX10[APP_GEN_COS_MAX_CH];
-static uint32_t s_cosTickCount;     /* tick counter for μs-precision phase      */
+static float    s_cosPhaseAccum;    /* base phase accumulator (radians)         */
+static float    s_cosDPhase;        /* phase increment per tick (radians)       */
 
 /*--------------------------------------------------------------------------*/
 /*                   Shared TIM6 start / stop                              */
@@ -137,19 +137,15 @@ static void Generator_DoLinearWrite(void)
 
 static void Generator_DoCosineWrite(void)
 {
-    uint32_t periodUs  = (uint32_t)BSP_SampleTim_GetPeriodUs();
-    float    tSec      = (float)(s_cosTickCount * periodUs) * 0.000001f;
-    float    freqHz    = (float)s_cosFreqX100 * 0.01f;
-    uint8_t  i;
-
-    s_cosTickCount++;
+    static const float k_twoPi = 6.28318530f;
+    uint8_t i;
 
     for (i = 0U; i < s_cosChCount; i++)
     {
-        float phaseRad = (float)s_cosPhaseX10[i] * 0.1f * 3.14159265f / 180.0f;
+        float phaseRad = (float)s_cosPhaseX10[i] * (3.14159265f / 1800.0f);
         float rawValue = (float)s_cosOffset +
                          (float)s_cosAmplitude *
-                         cosf(6.28318530f * freqHz * tSec + phaseRad);
+                         cosf(s_cosPhaseAccum + phaseRad);
 
         /* Clamp to int16 range */
         int32_t clamped;
@@ -158,6 +154,13 @@ static void Generator_DoCosineWrite(void)
         else                            { clamped = (int32_t)rawValue; }
 
         (void)App_Motor_WriteReg(s_cosAddr[i], (uint16_t)(int16_t)clamped);
+    }
+
+    /* Advance phase, wrap at 2π to prevent float precision loss */
+    s_cosPhaseAccum += s_cosDPhase;
+    if (s_cosPhaseAccum >= k_twoPi)
+    {
+        s_cosPhaseAccum -= k_twoPi;
     }
 }
 
@@ -449,7 +452,6 @@ ErrorStatus App_Generator_StartCosine(int16_t amplitude, int16_t offset,
 
     s_cosAmplitude = amplitude;
     s_cosOffset    = offset;
-    s_cosFreqX100  = freqX100;
     s_cosChCount   = channelCount;
 
     for (i = 0U; i < channelCount; i++)
@@ -458,7 +460,14 @@ ErrorStatus App_Generator_StartCosine(int16_t amplitude, int16_t offset,
         s_cosPhaseX10[i] = phaseX10[i];
     }
 
-    s_cosTickCount = 0U;
+    /* Pre-calculate phase increment per tick: dPhase = 2πf × Δt */
+    {
+        uint32_t periodUs = (uint32_t)BSP_SampleTim_GetPeriodUs();
+        float freqHz      = (float)freqX100 * 0.01f;
+        float dtSec       = (float)periodUs * 0.000001f;
+        s_cosDPhase       = 6.28318530f * freqHz * dtSec;
+    }
+    s_cosPhaseAccum = 0.0f;
 
     /* Cosine writes every tick */
     s_genDivider = 1U;
