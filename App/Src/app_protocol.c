@@ -450,6 +450,13 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
         return;
     }
 
+    /* Reject if register address range overflows uint16_t */
+    if ((uint32_t)startReg + (uint32_t)totalRegs * 2U > 0xFFFFUL)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
     /* Calculate total packets (ceiling division) */
     totalPkts = (uint8_t)((totalRegs + BULK_REGS_PER_PKT - 1U) / BULK_REGS_PER_PKT);
 
@@ -487,9 +494,6 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
 
         /* Wait for previous TX to complete, then send this packet */
         BSP_UART_TxWait();
-
-        /* Process pending RX — heartbeat frames are answered, others ignored */
-        App_Protocol_Poll();
 
         (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_BULK_READ,
                         s_pktBuf, dataLen);

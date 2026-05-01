@@ -24,8 +24,8 @@
 #define I2C_FAIL_STOP_THRESHOLD   50U   /* consecutive all-fail ticks → auto-stop      */
 
 static volatile uint8_t  s_sampling;
-static uint8_t  s_channelMask;
-static uint16_t s_channelRegMap[APP_SAMPLE_NUM_CHANNELS];
+static volatile uint8_t  s_channelMask;
+static volatile uint16_t s_channelRegMap[APP_SAMPLE_NUM_CHANNELS];
 static uint16_t s_i2cFailCount;            /* consecutive all-channel I2C failure count */
 static uint8_t  s_i2cWarnSent;             /* 1 = warning 0x06 already sent            */
 
@@ -68,6 +68,7 @@ static uint16_t s_cosAddr[APP_GEN_COS_MAX_CH];
 static int16_t  s_cosPhaseX10[APP_GEN_COS_MAX_CH];
 static float    s_cosPhaseAccum;    /* base phase accumulator (radians)         */
 static float    s_cosDPhase;        /* phase increment per tick (radians)       */
+static uint16_t s_cosFreqX100;     /* saved freq (Hz×100) for divider recalc   */
 
 /*--------------------------------------------------------------------------*/
 /*                   Shared TIM6 start / stop                              */
@@ -384,12 +385,14 @@ void App_Sample_Poll(void)
         return;
     }
 
-    /* Snapshot ISR outputs and clear flag */
+    /* Snapshot ISR outputs and clear flag (atomic w.r.t. TIM6 ISR) */
+    __disable_irq();
     mask     = s_isrEffectiveMask;
     failCnt  = s_isrFailCount;
     totalCnt = s_isrTotalCount;
     readIdx  = s_isrWriteIdx ^ 1U;    /* ISR already swapped; read the other buffer */
     s_isrDataReady = 0U;
+    __enable_irq();
 
     if (mask == 0U)
     {
@@ -435,9 +438,19 @@ ErrorStatus App_Sample_SetInterval(uint8_t idx)
 {
     ErrorStatus result = BSP_SampleTim_SetFreq(idx);
 
-    if ((result == SUCCESS) && (s_genMode == GEN_LINEAR))
+    if (result == SUCCESS)
     {
-        s_genDivider = Generator_CalcDivider(s_linIntervalMs);
+        if (s_genMode == GEN_LINEAR)
+        {
+            s_genDivider = Generator_CalcDivider(s_linIntervalMs);
+        }
+        else if (s_genMode == GEN_COSINE)
+        {
+            uint32_t periodUs = (uint32_t)BSP_SampleTim_GetPeriodUs();
+            float freqHz = (float)s_cosFreqX100 * 0.01f;
+            float dtSec  = (float)periodUs * 0.000001f;
+            s_cosDPhase  = 6.28318530f * freqHz * dtSec;
+        }
     }
 
     return result;
@@ -456,11 +469,13 @@ ErrorStatus App_Sample_SetChannelMask(uint8_t mask)
 void App_Sample_SetRegMap(const uint8_t *pData)
 {
     uint8_t i;
+    __disable_irq();
     for (i = 0U; i < APP_SAMPLE_NUM_CHANNELS; i++)
     {
         s_channelRegMap[i] = ((uint16_t)pData[i * 2U] << 8U)
                              | (uint16_t)pData[i * 2U + 1U];
     }
+    __enable_irq();
 }
 
 uint8_t App_Sample_IsActive(void)
@@ -522,6 +537,7 @@ ErrorStatus App_Generator_StartCosine(int16_t amplitude, int16_t offset,
     s_cosAmplitude = amplitude;
     s_cosOffset    = offset;
     s_cosChCount   = channelCount;
+    s_cosFreqX100  = freqX100;
 
     for (i = 0U; i < channelCount; i++)
     {

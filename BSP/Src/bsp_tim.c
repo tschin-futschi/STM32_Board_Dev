@@ -31,7 +31,7 @@ static const uint16_t k_arrTable[BSP_SAMPLE_TIM_IDX_MAX + 1U] =
 
 static volatile uint8_t s_sampleFlag;
 static uint8_t s_currentIdx = BSP_SAMPLE_TIM_DEFAULT_IDX;
-static BSP_SampleTim_Callback_t s_callback = (void *)0;
+static volatile BSP_SampleTim_Callback_t s_callback = (void *)0;
 
 /*--------------------------------------------------------------------------*/
 /*                          Public API                                      */
@@ -84,6 +84,8 @@ ErrorStatus BSP_SampleTim_SetFreq(uint8_t idx)
         return ERROR;
     }
     TIM_SetAutoreload(BSP_SAMPLE_TIM_PERIPH, k_arrTable[idx]);
+    TIM_GenerateEvent(BSP_SAMPLE_TIM_PERIPH, TIM_EventSource_Update);
+    TIM_ClearITPendingBit(BSP_SAMPLE_TIM_PERIPH, TIM_IT_Update);
     s_currentIdx = idx;
     return SUCCESS;
 }
