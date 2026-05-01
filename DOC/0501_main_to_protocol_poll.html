@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>main() → App_Protocol_Poll() 工作原理讲解</title>
+<style>
+  :root { --bg: #1e1e2e; --fg: #cdd6f4; --accent: #89b4fa; --green: #a6e3a1;
+           --yellow: #f9e2af; --red: #f38ba8; --surface: #313244; --overlay: #45475a;
+           --comment: #6c7086; --orange: #fab387; --mauve: #cba6f7; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: 'Segoe UI', system-ui, sans-serif;
+         line-height: 1.7; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  h1 { color: var(--accent); font-size: 1.8rem; border-bottom: 2px solid var(--accent);
+       padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+  h2 { color: var(--mauve); font-size: 1.4rem; margin: 2rem 0 1rem; }
+  h3 { color: var(--green); font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+  p { margin: 0.6rem 0; }
+  code { background: var(--surface); color: var(--yellow); padding: 2px 6px; border-radius: 4px;
+         font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; }
+  pre { background: var(--surface); border-left: 3px solid var(--accent); padding: 1rem;
+        border-radius: 6px; overflow-x: auto; margin: 0.8rem 0;
+        font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.85rem; line-height: 1.6; }
+  .kw { color: var(--mauve); }
+  .fn { color: var(--accent); }
+  .cm { color: var(--comment); font-style: italic; }
+  .st { color: var(--green); }
+  .num { color: var(--orange); }
+  .type { color: var(--yellow); }
+  .flow-diagram { background: var(--surface); border-radius: 8px; padding: 1.5rem; margin: 1rem 0;
+                  font-family: 'Cascadia Code', monospace; font-size: 0.85rem; line-height: 1.8;
+                  white-space: pre; overflow-x: auto; }
+  .note { background: var(--overlay); border-left: 4px solid var(--yellow); padding: 0.8rem 1rem;
+          border-radius: 0 6px 6px 0; margin: 1rem 0; }
+  .note-title { color: var(--yellow); font-weight: bold; }
+  .critical { border-left-color: var(--red); }
+  .critical .note-title { color: var(--red); }
+  .good { border-left-color: var(--green); }
+  .good .note-title { color: var(--green); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+  th, td { padding: 0.5rem 0.8rem; border: 1px solid var(--overlay); text-align: left; }
+  th { background: var(--surface); color: var(--accent); }
+  .section { background: var(--surface); border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0; }
+  .step-num { display: inline-block; background: var(--accent); color: var(--bg); width: 28px;
+              height: 28px; border-radius: 50%; text-align: center; line-height: 28px;
+              font-weight: bold; font-size: 0.85rem; margin-right: 8px; }
+  .file-ref { color: var(--comment); font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<h1>main() → App_Protocol_Poll() 工作原理</h1>
+<p>本文讲解从 MCU 上电到协议帧被解析执行的完整数据流。涵盖三个阶段：<strong>硬件接收</strong>（ISR + 环形缓冲区）、<strong>主循环取数据</strong>（RxRead）、<strong>协议解析</strong>（状态机 + 派发）。</p>
+
+<!-- ========== 全局流程图 ========== -->
+<h2>一、全局数据流总览</h2>
+
+<div class="flow-diagram">
+PC 上位机
+   │  UART 115200, 8N1
+   ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="fn">USART1 硬件</span>                                          │
+│  PA9(TX) / PA10(RX), APB2 = 90 MHz                     │
+│  每收到 1 字节 → RXNE 标志置位 → 触发中断               │
+└────────────────────┬────────────────────────────────────┘
+                     │ USART1_IRQHandler (优先级 2)
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="fn">BSP_UART_RxISR_Callback()</span>                             │
+│  读 DR 寄存器 → 写入环形缓冲区 s_rxBuf[256]             │
+│  s_rxHead 前移，满则丢弃并计数                           │
+└────────────────────┬────────────────────────────────────┘
+                     │ 数据暂存在环形缓冲区中
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="fn">main() 主循环</span>                                         │
+│  while(1) {                                             │
+│      App_Protocol_Poll();  ← 每轮都调用                  │
+│      App_Sample_Poll();                                 │
+│      ...                                                │
+│  }                                                      │
+└────────────────────┬────────────────────────────────────┘
+                     │ App_Protocol_Poll() 内部
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="fn">BSP_UART_RxRead()</span>                                      │
+│  从环形缓冲区批量取出所有待处理字节                       │
+└────────────────────┬────────────────────────────────────┘
+                     │ 逐字节喂入
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="fn">ProcessByte()</span> 状态机                                   │
+│  7 个状态：SOF1→SOF2→SEQ→CMD→LEN→DATA→CRC               │
+│  拼装完整帧 + CRC 校验                                   │
+└────────────────────┬────────────────────────────────────┘
+                     │ CRC 通过
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="fn">DispatchFrame()</span>                                        │
+│  根据 cmd 字段 switch-case 派发到对应 Handler             │
+│  HandleHeartbeat / HandleReadReg / HandleStartSample ... │
+└────────────────────┬────────────────────────────────────┘
+                     │ Handler 构建响应
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="fn">SendFrame()</span> → <span class="fn">BSP_UART_Transmit()</span>                       │
+│  填充 s_txBuf → DMA2 Stream7 Ch4 → USART1 TX → PC      │
+└─────────────────────────────────────────────────────────┘
+</div>
+
+<!-- ========== 阶段 1：硬件接收 ========== -->
+<h2>二、阶段 1：硬件中断接收（ISR → 环形缓冲区）</h2>
+
+<div class="section">
+<h3><span class="step-num">1</span>USART1 收到一个字节</h3>
+<p>USART1 硬件自动将串口线上的数据移入 DR（Data Register），同时将 RXNE（RX Not Empty）标志置位，触发 <code>USART1_IRQHandler</code>（优先级 2）。</p>
+
+<pre><span class="cm">// stm32f4xx_it.c:74-81</span>
+<span class="kw">void</span> <span class="fn">USART1_IRQHandler</span>(<span class="kw">void</span>)
+{
+    <span class="kw">if</span> (USART_GetITStatus(BSP_UART_PERIPH, USART_IT_RXNE) != RESET)
+    {
+        <span class="fn">BSP_UART_RxISR_Callback</span>();          <span class="cm">// 读 DR → 自动清 RXNE</span>
+        USART_ClearITPendingBit(...);      <span class="cm">// 冗余清除（读 DR 已清）</span>
+    }
+}</pre>
+
+<h3><span class="step-num">2</span>回调函数：写入环形缓冲区</h3>
+<p>回调函数在 ISR 上下文中执行，必须尽快完成。它做的事情非常简单：读取 DR 中的字节，写入环形缓冲区，推进 head 指针。</p>
+
+<pre><span class="cm">// bsp_uart.c:240-254</span>
+<span class="kw">void</span> <span class="fn">BSP_UART_RxISR_Callback</span>(<span class="kw">void</span>)
+{
+    <span class="type">uint8_t</span>  byte     = (<span class="type">uint8_t</span>)USART_ReceiveData(BSP_UART_PERIPH);
+    <span class="type">uint16_t</span> nextHead = (s_rxHead + <span class="num">1U</span>) % BSP_UART_RX_BUF_SIZE;  <span class="cm">// 256</span>
+
+    <span class="kw">if</span> (nextHead != s_rxTail)      <span class="cm">// 缓冲区未满</span>
+    {
+        s_rxBuf[s_rxHead] = byte;  <span class="cm">// 存入当前 head 位置</span>
+        s_rxHead = nextHead;       <span class="cm">// head 前移</span>
+    }
+    <span class="kw">else</span>
+    {
+        s_rxOverflowCount++;       <span class="cm">// 满了就丢弃，计数</span>
+    }
+}</pre>
+
+<div class="note">
+<p><span class="note-title">环形缓冲区原理</span></p>
+<p><code>s_rxBuf[256]</code> 是一个环形数组，<code>s_rxHead</code> 指向下一个写入位置（ISR 推进），<code>s_rxTail</code> 指向下一个读取位置（主循环推进）。当 <code>head == tail</code> 时缓冲区为空，当 <code>(head + 1) % 256 == tail</code> 时为满。</p>
+<pre>
+   tail           head
+    ↓               ↓
+┌───┬───┬───┬───┬───┬───┬───┬───┐
+│   │ A │ B │ C │ D │   │   │   │  ← 4 字节待读取
+└───┴───┴───┴───┴───┴───┴───┴───┘
+     ←── 主循环读 ──→←── ISR 写 ──→
+</pre>
+</div>
+</div>
+
+<!-- ========== 阶段 2：主循环取数据 ========== -->
+<h2>三、阶段 2：主循环取出数据</h2>
+
+<div class="section">
+<h3><span class="step-num">3</span>main() 主循环调用 App_Protocol_Poll()</h3>
+
+<pre><span class="cm">// main.c:83-88</span>
+<span class="kw">while</span> (<span class="num">1</span>)
+{
+    <span class="type">uint32_t</span> now = BSP_GetTick();
+
+    <span class="fn">App_Protocol_Poll</span>();    <span class="cm">// ← 每轮循环第一件事</span>
+    <span class="fn">App_Sample_Poll</span>();     <span class="cm">// ← 采样处理</span>
+    ...
+}</pre>
+
+<h3><span class="step-num">4</span>App_Protocol_Poll() 内部逻辑</h3>
+<p>该函数做三件事：检查异常状态、批量读取缓冲区、逐字节解析。</p>
+
+<pre><span class="cm">// app_protocol.c:905-935</span>
+<span class="kw">void</span> <span class="fn">App_Protocol_Poll</span>(<span class="kw">void</span>)
+{
+    <span class="type">uint16_t</span> len;
+    <span class="type">uint16_t</span> i;
+
+    <span class="cm">// ① 检查 I2C 总线恢复事件</span>
+    <span class="kw">if</span> (<span class="fn">BSP_I2C2_GetAndClearRecoveryFlag</span>() != <span class="num">0U</span>)
+    {
+        <span class="fn">App_Protocol_SendDebugInfo</span>(<span class="st">"I2C bus recovered"</span>);
+    }
+
+    <span class="cm">// ② 检查 UART 接收溢出</span>
+    {
+        <span class="type">uint32_t</span> overflow = <span class="fn">BSP_UART_GetAndClearOverflowCount</span>();
+        <span class="kw">if</span> (overflow > <span class="num">0U</span>)
+        {
+            <span class="cm">// 向上位机上报丢字节数</span>
+            <span class="fn">App_Protocol_SendDebugInfo</span>(<span class="st">"UART RX overflow: ..."</span>);
+        }
+    }
+
+    <span class="cm">// ③ 从环形缓冲区批量读取所有待处理字节</span>
+    len = <span class="fn">BSP_UART_RxRead</span>(s_rxBuf, BSP_UART_RX_BUF_SIZE);
+
+    <span class="cm">// ④ 逐字节喂入状态机解析</span>
+    <span class="kw">for</span> (i = <span class="num">0U</span>; i &lt; len; i++)
+    {
+        <span class="fn">ProcessByte</span>(s_rxBuf[i]);
+    }
+}</pre>
+
+<h3><span class="step-num">5</span>BSP_UART_RxRead() — 批量取出</h3>
+<p>从环形缓冲区拷贝数据到协议层的本地缓冲区。快照 head 时短暂关中断，读取过程中 ISR 可以继续写入新数据。</p>
+
+<pre><span class="cm">// bsp_uart.c:281-298</span>
+<span class="type">uint16_t</span> <span class="fn">BSP_UART_RxRead</span>(<span class="type">uint8_t</span> *pBuf, <span class="type">uint16_t</span> maxLen)
+{
+    <span class="type">uint16_t</span> count = <span class="num">0U</span>;
+    <span class="type">uint16_t</span> head;
+
+    __disable_irq();
+    head = s_rxHead;       <span class="cm">// 快照当前 head（原子读取）</span>
+    __enable_irq();
+
+    <span class="kw">while</span> (count &lt; maxLen && s_rxTail != head)
+    {
+        pBuf[count] = s_rxBuf[s_rxTail];
+        s_rxTail = (s_rxTail + <span class="num">1U</span>) % BSP_UART_RX_BUF_SIZE;
+        count++;
+    }
+    <span class="kw">return</span> count;           <span class="cm">// 返回实际读取的字节数</span>
+}</pre>
+</div>
+
+<!-- ========== 阶段 3：协议解析 ========== -->
+<h2>四、阶段 3：协议帧解析（ProcessByte 状态机）</h2>
+
+<div class="section">
+<h3>控制帧格式回顾</h3>
+<pre>
+┌──────┬──────┬─────┬─────┬─────┬────────────┬────────┬────────┐
+│ 0xAA │ 0x55 │ SEQ │ CMD │ LEN │ DATA (n B) │ CRC_H  │ CRC_L  │
+│ SOF1 │ SOF2 │     │     │     │            │        │        │
+└──────┴──────┴─────┴─────┴─────┴────────────┴────────┴────────┘
+  帧头（同步）   ←── CRC16 校验范围 ──→
+</pre>
+
+<h3><span class="step-num">6</span>状态机 7 个状态</h3>
+
+<div class="flow-diagram">
+          收到 0xAA          收到 0x55
+ ┌──────────────┐    ┌──────────────┐
+ │ WAIT_SOF1    │───→│ WAIT_SOF2    │
+ └──────────────┘    └──────┬───────┘
+      ↑  不匹配则            │ 匹配
+      │  回到 SOF1           ▼
+      │              ┌──────────────┐
+      │              │ WAIT_SEQ     │ 存 seq，初始化 CRC
+      │              └──────┬───────┘
+      │                     ▼
+      │              ┌──────────────┐
+      │              │ WAIT_CMD     │ 存 cmd，更新 CRC
+      │              └──────┬───────┘
+      │                     ▼
+      │              ┌──────────────┐
+      │              │ WAIT_LEN     │ 存 len，更新 CRC
+      │              └──────┬───────┘
+      │                     │
+      │          len==0?    │    len>0?
+      │           ┌─────────┴─────────┐
+      │           ▼                   ▼
+      │   ┌──────────────┐   ┌──────────────┐
+      │   │ WAIT_CRC_H   │   │ WAIT_DATA    │ 逐字节存入 data[]
+      │   └──────┬───────┘   │ 更新 CRC     │
+      │          │           │ idx++ 直到    │
+      │          │           │ idx >= len    │
+      │          │           └──────┬───────┘
+      │          │                  │
+      │          │←─────────────────┘
+      │          ▼
+      │   ┌──────────────┐
+      │   │ WAIT_CRC_L   │ 组合 CRC_H + CRC_L
+      │   │              │ 与 s_rxCrcAccum 比较
+      │   └──────┬───────┘
+      │          │
+      │    匹配？│
+      │    ┌─────┴──────┐
+      │    ▼            ▼
+      │  CRC OK      CRC 失败
+      │  DispatchFrame()  SendErrorResp(0xFF, ERR_CRC)
+      │    │            │
+      └────┴────────────┘ 回到 WAIT_SOF1
+</div>
+
+<h3>关键代码逐段</h3>
+
+<p><strong>SOF 同步</strong>：连续的 <code>0xAA</code> 不会打断同步，状态机会停留在 WAIT_SOF2 等待 <code>0x55</code>。</p>
+
+<pre><span class="cm">// app_protocol.c:819-840</span>
+<span class="kw">case</span> STATE_WAIT_SOF1:
+    <span class="kw">if</span> (byte == <span class="num">0xAA</span>) { s_state = STATE_WAIT_SOF2; }
+    <span class="kw">break</span>;
+
+<span class="kw">case</span> STATE_WAIT_SOF2:
+    <span class="kw">if</span> (byte == <span class="num">0x55</span>)      { s_state = STATE_WAIT_SEQ; }   <span class="cm">// 帧头完成</span>
+    <span class="kw">else if</span> (byte == <span class="num">0xAA</span>) { s_state = STATE_WAIT_SOF2; }  <span class="cm">// 可能是新帧开头</span>
+    <span class="kw">else</span>                   { s_state = STATE_WAIT_SOF1; }  <span class="cm">// 不匹配，重来</span>
+    <span class="kw">break</span>;</pre>
+
+<p><strong>SEQ / CMD / LEN</strong>：每收一个字段字节，都同步更新 CRC 累加器。</p>
+
+<pre><span class="cm">// app_protocol.c:842-858</span>
+<span class="kw">case</span> STATE_WAIT_SEQ:
+    s_rxFrame.seq = byte;
+    s_rxCrcAccum  = <span class="fn">CRC16_Update</span>(<span class="num">0xFFFF</span>, byte);  <span class="cm">// CRC 初值 0xFFFF</span>
+    s_state       = STATE_WAIT_CMD;
+    <span class="kw">break</span>;
+
+<span class="kw">case</span> STATE_WAIT_CMD:
+    s_rxFrame.cmd = byte;
+    s_rxCrcAccum  = <span class="fn">CRC16_Update</span>(s_rxCrcAccum, byte);
+    s_state       = STATE_WAIT_LEN;
+    <span class="kw">break</span>;
+
+<span class="kw">case</span> STATE_WAIT_LEN:
+    s_rxFrame.len = byte;
+    s_rxCrcAccum  = <span class="fn">CRC16_Update</span>(s_rxCrcAccum, byte);
+    s_dataIdx     = <span class="num">0U</span>;
+    s_state       = (byte == <span class="num">0U</span>) ? STATE_WAIT_CRC_H : STATE_WAIT_DATA;
+    <span class="kw">break</span>;                   <span class="cm">// LEN=0 直接跳过 DATA 阶段</span></pre>
+
+<p><strong>DATA 接收</strong>：逐字节写入 <code>s_rxFrame.data[]</code>，直到收满 <code>len</code> 个字节。</p>
+
+<pre><span class="cm">// app_protocol.c:861-868</span>
+<span class="kw">case</span> STATE_WAIT_DATA:
+    s_rxFrame.data[s_dataIdx++] = byte;
+    s_rxCrcAccum = <span class="fn">CRC16_Update</span>(s_rxCrcAccum, byte);
+    <span class="kw">if</span> (s_dataIdx >= s_rxFrame.len)
+    {
+        s_state = STATE_WAIT_CRC_H;   <span class="cm">// 数据收完，等 CRC</span>
+    }
+    <span class="kw">break</span>;</pre>
+
+<p><strong>CRC 校验</strong>：收到 CRC 低字节后，组合为 16-bit 值，与累加计算的值比较。</p>
+
+<pre><span class="cm">// app_protocol.c:875-883</span>
+<span class="kw">case</span> STATE_WAIT_CRC_L:
+{
+    <span class="type">uint16_t</span> rxCrc = ((<span class="type">uint16_t</span>)s_rxCrcHigh &lt;&lt; <span class="num">8U</span>) | (<span class="type">uint16_t</span>)byte;
+    <span class="kw">if</span> (rxCrc != s_rxCrcAccum)
+        <span class="fn">SendErrorResp</span>(<span class="num">0xFF</span>, PROTO_ERR_CRC_FAIL);  <span class="cm">// CRC 错误，seq 不可信用 0xFF</span>
+    <span class="kw">else</span>
+        <span class="fn">DispatchFrame</span>(&s_rxFrame);               <span class="cm">// CRC 通过，派发执行</span>
+    s_state = STATE_WAIT_SOF1;                    <span class="cm">// 无论如何回到初始状态</span>
+    <span class="kw">break</span>;
+}</pre>
+</div>
+
+<!-- ========== 阶段 4：派发执行 ========== -->
+<h2>五、阶段 4：DispatchFrame 命令派发</h2>
+
+<div class="section">
+<h3><span class="step-num">7</span>根据 CMD 字段分发到对应 Handler</h3>
+
+<pre><span class="cm">// app_protocol.c:735-809</span>
+<span class="kw">static void</span> <span class="fn">DispatchFrame</span>(<span class="kw">const</span> <span class="type">Proto_Frame_t</span> *pFrame)
+{
+    <span class="cm">// 批量读取进行中时，只响应心跳，忽略其他命令</span>
+    <span class="kw">if</span> (s_bulkReadActive && (pFrame->cmd != PROTO_CMD_HEARTBEAT))
+        <span class="kw">return</span>;
+
+    <span class="kw">switch</span> (pFrame->cmd)
+    {
+        <span class="kw">case</span> <span class="num">0x00</span>:  <span class="fn">HandleHeartbeat</span>(pFrame);       <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x02</span>:  <span class="fn">HandleSetMotorAddr</span>(pFrame);    <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x03</span>:  <span class="fn">HandleSetBaudrate</span>(pFrame);     <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x04</span>:  <span class="fn">HandleReset</span>(pFrame);           <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x05</span>:  <span class="fn">HandleMotorPing</span>(pFrame);       <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x07</span>:  <span class="fn">HandleI2CScan</span>(pFrame);         <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x08</span>:  <span class="fn">HandlePmicEnable</span>(pFrame);      <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x09</span>:  <span class="fn">HandlePmicSetVolt</span>(pFrame);     <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x0A</span>:  <span class="fn">HandlePmicDisable</span>(pFrame);     <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x20</span>:  <span class="fn">HandleReadReg</span>(pFrame);         <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x21</span>:  <span class="fn">HandleWriteReg</span>(pFrame);        <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x22</span>:  <span class="fn">HandleBulkRead</span>(pFrame);        <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x50</span>:  <span class="fn">HandleStartSample</span>(pFrame);     <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x51</span>:  <span class="fn">HandleStopSample</span>(pFrame);      <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x52</span>:  <span class="fn">HandleSetInterval</span>(pFrame);     <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x53</span>:  <span class="fn">HandleSetChannel</span>(pFrame);      <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x54</span>:  <span class="fn">HandleSetRegMap</span>(pFrame);       <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x55</span>:  <span class="fn">HandleStartLinearGen</span>(pFrame);  <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x56</span>:  <span class="fn">HandleStartCosineGen</span>(pFrame); <span class="kw">break</span>;
+        <span class="kw">case</span> <span class="num">0x57</span>:  <span class="fn">HandleStopGenerator</span>(pFrame);   <span class="kw">break</span>;
+        <span class="kw">default</span>:   <span class="fn">SendErrorResp</span>(pFrame->seq, PROTO_ERR_UNKNOWN_CMD); <span class="kw">break</span>;
+    }
+}</pre>
+
+<table>
+<tr><th>命令码范围</th><th>分组</th><th>典型命令</th></tr>
+<tr><td><code>0x00~0x1F</code></td><td>系统控制</td><td>心跳、设地址、改波特率、复位、I2C 扫描、PMIC 控制</td></tr>
+<tr><td><code>0x20~0x4F</code></td><td>寄存器读写</td><td>单读、单写、批量读</td></tr>
+<tr><td><code>0x50~0x7F</code></td><td>示波器/发生器</td><td>启停采样、设频率、设通道、设寄存器映射、线性/余弦发生器</td></tr>
+</table>
+</div>
+
+<!-- ========== 响应发送 ========== -->
+<h2>六、响应发送路径</h2>
+
+<div class="section">
+<h3><span class="step-num">8</span>SendFrame() 构建响应帧 + DMA 发送</h3>
+<p>每个 Handler 执行完业务逻辑后，调用 <code>SendFrame()</code> 回复上位机。</p>
+
+<pre><span class="cm">// app_protocol.c:119-147</span>
+<span class="kw">static</span> <span class="type">ErrorStatus</span> <span class="fn">SendFrame</span>(<span class="type">uint8_t</span> seq, <span class="type">uint8_t</span> cmd,
+                              <span class="kw">const</span> <span class="type">uint8_t</span> *pData, <span class="type">uint8_t</span> len)
+{
+    <span class="kw">static</span> <span class="type">uint8_t</span> s_txBuf[PROTO_MAX_FRAME_LEN];  <span class="cm">// 262 字节</span>
+    <span class="type">uint16_t</span> crc = <span class="num">0xFFFF</span>;
+    <span class="type">uint16_t</span> idx = <span class="num">0U</span>;
+
+    s_txBuf[idx++] = <span class="num">0xAA</span>;                <span class="cm">// SOF1</span>
+    s_txBuf[idx++] = <span class="num">0x55</span>;                <span class="cm">// SOF2</span>
+    s_txBuf[idx] = seq; crc = <span class="fn">CRC16_Update</span>(crc, seq); idx++;
+    s_txBuf[idx] = cmd; crc = <span class="fn">CRC16_Update</span>(crc, cmd); idx++;
+    s_txBuf[idx] = len; crc = <span class="fn">CRC16_Update</span>(crc, len); idx++;
+
+    <span class="kw">for</span> (i = <span class="num">0U</span>; i &lt; len; i++) {          <span class="cm">// 填充数据 + 更新 CRC</span>
+        s_txBuf[idx] = pData[i];
+        crc = <span class="fn">CRC16_Update</span>(crc, pData[i]);
+        idx++;
+    }
+
+    s_txBuf[idx++] = (<span class="type">uint8_t</span>)(crc >> <span class="num">8U</span>); <span class="cm">// CRC 高字节</span>
+    s_txBuf[idx++] = (<span class="type">uint8_t</span>)(crc);       <span class="cm">// CRC 低字节</span>
+
+    <span class="fn">BSP_UART_TxWait</span>();                     <span class="cm">// 等上一帧发完</span>
+    <span class="kw">return</span> <span class="fn">BSP_UART_Transmit</span>(s_txBuf, idx); <span class="cm">// DMA 启动发送</span>
+}</pre>
+
+<div class="note good">
+<p><span class="note-title">发送不阻塞主循环</span></p>
+<p><code>BSP_UART_Transmit()</code> 将数据交给 DMA2 Stream7 Channel4，DMA 硬件自动逐字节搬运到 USART1 TX。CPU 立即返回继续执行主循环。DMA 传输完成后触发 <code>DMA2_Stream7_IRQHandler</code>，将 <code>s_txDone = 1</code>。</p>
+</div>
+</div>
+
+<!-- ========== 时序总结 ========== -->
+<h2>七、一次完整交互的时序</h2>
+
+<div class="section">
+<p>以上位机发送一个心跳帧为例：<code>AA 55 01 00 00 40 04</code></p>
+
+<div class="flow-diagram">
+时间轴 →
+
+PC 发送:   AA  55  01  00  00  40  04
+            │   │   │   │   │   │   │
+ISR 逐字节  ▼   ▼   ▼   ▼   ▼   ▼   ▼
+写入环形    [AA][55][01][00][00][40][04]
+缓冲区       ↑                       ↑
+         s_rxTail                s_rxHead
+
+─── 下一次主循环 ───
+
+App_Protocol_Poll():
+  ├─ BSP_UART_RxRead() → 读出 7 字节
+  ├─ ProcessByte(0xAA) → state: SOF1 → SOF2
+  ├─ ProcessByte(0x55) → state: SOF2 → SEQ
+  ├─ ProcessByte(0x01) → seq=1, CRC 初始化, state → CMD
+  ├─ ProcessByte(0x00) → cmd=0x00, state → LEN
+  ├─ ProcessByte(0x00) → len=0, state → CRC_H (跳过 DATA)
+  ├─ ProcessByte(0x40) → crcHigh=0x40, state → CRC_L
+  └─ ProcessByte(0x04) → rxCrc=0x4004, 校验通过
+       └─ DispatchFrame(cmd=0x00)
+            └─ HandleHeartbeat()
+                 └─ SendFrame(seq=1, cmd=0x00, NULL, 0)
+                      └─ DMA 发送: AA 55 01 00 00 40 04
+                           → PC 收到心跳回复
+</div>
+</div>
+
+<!-- ========== 关键设计要点 ========== -->
+<h2>八、关键设计要点总结</h2>
+
+<div class="section">
+<table>
+<tr><th>设计点</th><th>实现方式</th><th>作用</th></tr>
+<tr><td>接收解耦</td><td>ISR 写环形缓冲区，主循环读</td><td>ISR 快进快出（~20 条指令），不丢字节</td></tr>
+<tr><td>帧同步</td><td>双字节帧头 0xAA 0x55</td><td>在字节流中定位帧边界，容忍噪声</td></tr>
+<tr><td>完整性校验</td><td>CRC16 逐字节累加</td><td>检测传输错误，CRC 失败用固定 seq=0xFF 回复</td></tr>
+<tr><td>发送非阻塞</td><td>DMA 搬运 + TC 中断</td><td>CPU 不等待串口发完，继续处理下一个任务</td></tr>
+<tr><td>状态机解析</td><td>每字节切换一次状态</td><td>天然支持拆包（一帧可能跨多次 Poll 到达）</td></tr>
+<tr><td>错误隔离</td><td>CRC 错误不影响状态机</td><td>报错后立即回到 SOF1，等待下一帧</td></tr>
+</table>
+</div>
+
+</body>
+</html>

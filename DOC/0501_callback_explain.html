@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回调函数与回调注册 — 概念讲解</title>
+<style>
+  :root { --bg: #1e1e2e; --fg: #cdd6f4; --accent: #89b4fa; --green: #a6e3a1;
+           --yellow: #f9e2af; --red: #f38ba8; --surface: #313244; --overlay: #45475a;
+           --comment: #6c7086; --orange: #fab387; --mauve: #cba6f7; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: 'Segoe UI', system-ui, sans-serif;
+         line-height: 1.8; padding: 2rem; max-width: 1000px; margin: 0 auto; }
+  h1 { color: var(--accent); font-size: 1.8rem; border-bottom: 2px solid var(--accent);
+       padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+  h2 { color: var(--mauve); font-size: 1.4rem; margin: 2.5rem 0 1rem; }
+  h3 { color: var(--green); font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+  p { margin: 0.6rem 0; }
+  code { background: var(--surface); color: var(--yellow); padding: 2px 6px; border-radius: 4px;
+         font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; }
+  pre { background: var(--surface); border-left: 3px solid var(--accent); padding: 1rem;
+        border-radius: 6px; overflow-x: auto; margin: 0.8rem 0;
+        font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.85rem; line-height: 1.7; }
+  .kw { color: var(--mauve); }
+  .fn { color: var(--accent); }
+  .cm { color: var(--comment); font-style: italic; }
+  .st { color: var(--green); }
+  .num { color: var(--orange); }
+  .type { color: var(--yellow); }
+  .note { background: var(--overlay); border-left: 4px solid var(--yellow); padding: 0.8rem 1rem;
+          border-radius: 0 6px 6px 0; margin: 1rem 0; }
+  .note-title { color: var(--yellow); font-weight: bold; }
+  .good { border-left-color: var(--green); }
+  .good .note-title { color: var(--green); }
+  .section { background: var(--surface); border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0; }
+  .vs { display: flex; gap: 1rem; margin: 1rem 0; }
+  .vs > div { flex: 1; background: var(--surface); border-radius: 8px; padding: 1rem; }
+  .vs-title { color: var(--accent); font-weight: bold; margin-bottom: 0.5rem; font-size: 1rem; }
+  .flow { background: var(--surface); border-radius: 8px; padding: 1.5rem; margin: 1rem 0;
+          font-family: 'Cascadia Code', monospace; font-size: 0.85rem; line-height: 1.8;
+          white-space: pre; overflow-x: auto; }
+  .highlight { background: #585b7033; border-radius: 4px; padding: 2px 4px; }
+</style>
+</head>
+<body>
+
+<h1>回调函数与回调注册</h1>
+
+<!-- ========== 1. 普通函数调用 ========== -->
+<h2>一、先理解普通函数调用</h2>
+
+<div class="section">
+<p>普通函数调用的关系是<strong>固定的</strong>：A 调用 B，写代码时就确定了。</p>
+
+<pre>
+<span class="kw">void</span> <span class="fn">B</span>(<span class="kw">void</span>)
+{
+    <span class="cm">// 做某件事</span>
+}
+
+<span class="kw">void</span> <span class="fn">A</span>(<span class="kw">void</span>)
+{
+    <span class="fn">B</span>();   <span class="cm">// A 直接调用 B，编译时就确定了</span>
+}
+</pre>
+
+<p>这种方式的问题：如果 A 是底层模块（比如定时器 BSP），B 是上层模块（比如采样 App），那么 <strong>A 必须 #include B 的头文件</strong>，底层依赖了上层，这就是"反向依赖"，会导致代码耦合。</p>
+</div>
+
+<!-- ========== 2. 什么是回调函数 ========== -->
+<h2>二、什么是回调函数</h2>
+
+<div class="section">
+<p><strong>回调函数</strong>就是：<strong>你把一个函数交给别人，让别人在合适的时候替你调用它。</strong></p>
+
+<p>生活类比：</p>
+
+<div class="note">
+<p><span class="note-title">外卖类比</span></p>
+<p>你点了外卖（注册回调），留了你的手机号（函数指针）。外卖到了（事件发生），骑手打你电话（调用回调）。你不需要一直盯着门口等（不需要轮询），骑手也不需要认识你（底层不依赖上层）——他只知道"到了就打这个号码"。</p>
+</div>
+
+<p>在 C 语言中，回调函数通过<strong>函数指针</strong>实现：</p>
+
+<pre>
+<span class="cm">// 函数指针类型：指向一个 "无参数、无返回值" 的函数</span>
+<span class="kw">typedef void</span> (*<span class="type">Callback_t</span>)(<span class="kw">void</span>);
+
+<span class="cm">// 一个变量，存储函数的地址</span>
+<span class="type">Callback_t</span>  s_callback;
+
+<span class="cm">// 调用时，通过指针调用，效果等同于直接调用那个函数</span>
+<span class="fn">s_callback</span>();
+</pre>
+</div>
+
+<!-- ========== 3. 什么是回调注册 ========== -->
+<h2>三、什么是回调注册</h2>
+
+<div class="section">
+<p><strong>回调注册</strong>就是：<strong>把你的函数地址告诉对方，存到对方的函数指针变量里。</strong></p>
+
+<p>"注册"这个词的意思 = "登记、记录下来"，以后需要的时候就调用它。</p>
+
+<pre>
+<span class="cm">// 底层模块提供注册接口</span>
+<span class="kw">void</span> <span class="fn">SetCallback</span>(<span class="type">Callback_t</span> cb)
+{
+    s_callback = cb;   <span class="cm">// 把函数地址保存下来</span>
+}
+
+<span class="cm">// 上层模块注册自己的函数</span>
+<span class="fn">SetCallback</span>(<span class="fn">MyFunction</span>);   <span class="cm">// "把 MyFunction 的地址登记到底层"</span>
+</pre>
+
+<p>注册之后，底层模块在事件发生时就会调用你登记的函数，<strong>但底层完全不知道你的函数叫什么、做什么</strong>——它只知道"有人登记了一个函数，到时候调就行"。</p>
+</div>
+
+<!-- ========== 4. 对比 ========== -->
+<h2>四、直接调用 vs 回调：对比</h2>
+
+<div class="vs">
+<div>
+<p class="vs-title" style="color: var(--red);">直接调用（耦合）</p>
+<pre style="border-left-color: var(--red);">
+<span class="cm">// bsp_tim.c</span>
+<span class="kw">#include</span> <span class="st">"app_sample.h"</span>  <span class="cm">// ← 底层依赖上层！</span>
+
+<span class="kw">void</span> <span class="fn">BSP_SampleTim_ISR_Callback</span>(<span class="kw">void</span>)
+{
+    <span class="fn">SampleTimerISR</span>();  <span class="cm">// ← 写死了</span>
+    s_sampleFlag = <span class="num">1U</span>;
+}
+</pre>
+<p>BSP 层必须知道 App 层的函数名，<strong>换一个功能就要改 BSP 代码</strong>。</p>
+</div>
+<div>
+<p class="vs-title" style="color: var(--green);">回调方式（解耦）</p>
+<pre style="border-left-color: var(--green);">
+<span class="cm">// bsp_tim.c</span>
+<span class="cm">// 不需要 #include 任何 App 头文件</span>
+
+<span class="kw">void</span> <span class="fn">BSP_SampleTim_ISR_Callback</span>(<span class="kw">void</span>)
+{
+    <span class="kw">if</span> (s_callback != NULL)
+        <span class="fn">s_callback</span>();  <span class="cm">// ← 调谁？不知道，谁注册调谁</span>
+    s_sampleFlag = <span class="num">1U</span>;
+}
+</pre>
+<p>BSP 层不知道也不关心上层是谁，<strong>上层通过注册告诉 BSP 该调什么</strong>。</p>
+</div>
+</div>
+
+<!-- ========== 5. 项目中的实际代码 ========== -->
+<h2>五、当前项目中的实际代码</h2>
+
+<div class="section">
+<h3>第 1 步：定义函数指针类型（bsp_tim.h）</h3>
+<pre>
+<span class="cm">// "回调函数长什么样"——无参数、无返回值的函数</span>
+<span class="kw">typedef void</span> (*<span class="type">BSP_SampleTim_Callback_t</span>)(<span class="kw">void</span>);
+</pre>
+
+<h3>第 2 步：底层提供注册接口 + 保存指针（bsp_tim.c）</h3>
+<pre>
+<span class="cm">// 存储回调的变量（初始为空）</span>
+<span class="kw">static</span> <span class="type">BSP_SampleTim_Callback_t</span> s_callback = (<span class="kw">void</span> *)<span class="num">0</span>;
+
+<span class="cm">// 注册接口：上层调用此函数，把自己的函数地址传进来</span>
+<span class="kw">void</span> <span class="fn">BSP_SampleTim_SetCallback</span>(<span class="type">BSP_SampleTim_Callback_t</span> cb)
+{
+    s_callback = cb;   <span class="cm">// 保存函数地址</span>
+}
+
+<span class="cm">// ISR 回调：先调用注册的函数，再置标志</span>
+<span class="kw">void</span> <span class="fn">BSP_SampleTim_ISR_Callback</span>(<span class="kw">void</span>)
+{
+    <span class="kw">if</span> (s_callback != (<span class="kw">void</span> *)<span class="num">0</span>)
+    {
+        <span class="fn">s_callback</span>();   <span class="cm">// 调用注册的函数（不知道它是谁）</span>
+    }
+    s_sampleFlag = <span class="num">1U</span>;
+}
+</pre>
+
+<h3>第 3 步：上层注册自己的函数（app_sample.c）</h3>
+<pre>
+<span class="cm">// 这就是实际的回调函数——在 TIM6 ISR 中执行 I2C 读取</span>
+<span class="kw">static void</span> <span class="fn">SampleTimerISR</span>(<span class="kw">void</span>)
+{
+    <span class="cm">// 发生器写入 + I2C 采样读取</span>
+    ...
+}
+
+<span class="cm">// 初始化时注册：把 SampleTimerISR 的地址交给 BSP 层</span>
+<span class="kw">void</span> <span class="fn">App_Sample_Init</span>(<span class="kw">void</span>)
+{
+    ...
+    <span class="fn">BSP_SampleTim_SetCallback</span>(<span class="fn">SampleTimerISR</span>);  <span class="cm">// ← 注册！</span>
+}
+</pre>
+
+<div class="note good">
+<p><span class="note-title">注意</span></p>
+<p><code>SampleTimerISR</code> 没有加括号 <code>()</code>。加括号是<strong>调用</strong>函数，不加括号是<strong>取函数地址</strong>。这里是把地址传给 BSP 层保存，不是立即调用。</p>
+</div>
+</div>
+
+<!-- ========== 6. 完整调用链 ========== -->
+<h2>六、完整调用链</h2>
+
+<div class="flow">
+TIM6 硬件溢出
+  │
+  ▼
+<span class="fn">TIM6_DAC_IRQHandler</span>()                 <span class="cm">stm32f4xx_it.c:92   ← 中断入口（写死的）</span>
+  │
+  ├─ TIM_ClearITPendingBit()           <span class="cm">清中断标志</span>
+  │
+  └─ <span class="fn">BSP_SampleTim_ISR_Callback</span>()     <span class="cm">bsp_tim.c:147       ← BSP 层（写死的）</span>
+       │
+       ├─ <span class="fn">s_callback</span>()                 <span class="cm">                    ← 回调！（动态的）</span>
+       │    ║
+       │    ╠═ 实际执行的是 <span class="fn">SampleTimerISR</span>()   <span class="cm">app_sample.c:197</span>
+       │    ║    ├─ 发生器 I2C 写入
+       │    ║    └─ 采样 I2C 读取 → 存入双缓冲
+       │    ║
+       │    ╚═ 因为 Init 时注册了：<span class="fn">SetCallback</span>(<span class="fn">SampleTimerISR</span>)
+       │
+       └─ s_sampleFlag = 1U            <span class="cm">置标志（兼容旧逻辑）</span>
+</div>
+
+<!-- ========== 7. 为什么用回调 ========== -->
+<h2>七、为什么要用回调，不直接调用？</h2>
+
+<div class="section">
+<table style="width:100%; border-collapse:collapse;">
+<tr style="background:var(--surface);">
+<th style="padding:0.6rem; border:1px solid var(--overlay); color:var(--accent);">好处</th>
+<th style="padding:0.6rem; border:1px solid var(--overlay); color:var(--accent);">说明</th>
+</tr>
+<tr>
+<td style="padding:0.6rem; border:1px solid var(--overlay);"><strong>分层解耦</strong></td>
+<td style="padding:0.6rem; border:1px solid var(--overlay);">BSP 层不需要 <code>#include</code> App 层的头文件，符合 CLAUDE.md 的分层规范</td>
+</tr>
+<tr>
+<td style="padding:0.6rem; border:1px solid var(--overlay);"><strong>可替换</strong></td>
+<td style="padding:0.6rem; border:1px solid var(--overlay);">将来如果换一个不同的采样逻辑，只需注册不同的函数，BSP 代码零修改</td>
+</tr>
+<tr>
+<td style="padding:0.6rem; border:1px solid var(--overlay);"><strong>可选</strong></td>
+<td style="padding:0.6rem; border:1px solid var(--overlay);">如果没人注册回调（指针为空），ISR 就只置标志，行为和改造前完全一样</td>
+</tr>
+<tr>
+<td style="padding:0.6rem; border:1px solid var(--overlay);"><strong>测试友好</strong></td>
+<td style="padding:0.6rem; border:1px solid var(--overlay);">测试时可以注册一个简单的测试函数，不需要修改任何正式代码</td>
+</tr>
+</table>
+</div>
+
+</body>
+</html>

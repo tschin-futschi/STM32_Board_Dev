@@ -3,7 +3,8 @@
   * @brief   Oscilloscope sampling & wave generator
   *
   * Sampling and generator share TIM6 as a common tick source.
-  * Each tick: generator write first (if running), then sampling read (if running).
+  * I2C reads and generator writes execute in the TIM6 ISR for precise timing.
+  * Data is stored in a double buffer; main loop only handles UART transmission.
   * TIM6 runs whenever at least one consumer is active; stops when both are idle.
   */
 
@@ -22,7 +23,7 @@
 #define I2C_FAIL_WARN_THRESHOLD   10U   /* consecutive all-fail ticks → 0x06 warning  */
 #define I2C_FAIL_STOP_THRESHOLD   50U   /* consecutive all-fail ticks → auto-stop      */
 
-static uint8_t  s_sampling;
+static volatile uint8_t  s_sampling;
 static uint8_t  s_channelMask;
 static uint16_t s_channelRegMap[APP_SAMPLE_NUM_CHANNELS];
 static uint16_t s_i2cFailCount;            /* consecutive all-channel I2C failure count */
@@ -32,15 +33,23 @@ static uint8_t  s_i2cWarnSent;             /* 1 = warning 0x06 already sent     
 #define STREAM_FRAME_MAX_LEN    (1U + 1U + 1U + (APP_SAMPLE_NUM_CHANNELS * 2U) + 1U)
 static uint8_t s_streamBuf[STREAM_FRAME_MAX_LEN];
 
+/* Double buffer for ISR → main loop data transfer */
+static volatile uint16_t s_isrBuf[2][APP_SAMPLE_NUM_CHANNELS];
+static volatile uint8_t  s_isrWriteIdx;        /* which buffer ISR writes to      */
+static volatile uint8_t  s_isrDataReady;       /* 1 = new sample data available   */
+static volatile uint8_t  s_isrEffectiveMask;   /* channel mask captured in ISR    */
+static volatile uint8_t  s_isrFailCount;       /* I2C failures in last ISR sample */
+static volatile uint8_t  s_isrTotalCount;      /* total channels in last ISR sample */
+
 /*--------------------------------------------------------------------------*/
 /*                      Generator internal state                           */
 /*--------------------------------------------------------------------------*/
 
 typedef enum { GEN_NONE, GEN_LINEAR, GEN_COSINE } GenMode_t;
 
-static GenMode_t s_genMode;
-static uint16_t  s_genDivider;      /* tick divider: how many ticks per write   */
-static uint16_t  s_genCounter;      /* current tick counter                     */
+static volatile GenMode_t s_genMode;
+static volatile uint16_t  s_genDivider;      /* tick divider: how many ticks per write   */
+static volatile uint16_t  s_genCounter;      /* current tick counter                     */
 
 /* Linear mode */
 static uint16_t s_linAddr;
@@ -177,24 +186,90 @@ static void Generator_DoWrite(void)
 }
 
 /*--------------------------------------------------------------------------*/
+/*                     ISR callback — time-critical sampling               */
+/*--------------------------------------------------------------------------*/
+
+/**
+  * @brief  Called from TIM6 ISR. Performs generator write and sampling I2C
+  *         reads at hardware-precise timing. Data is stored in double buffer
+  *         for main loop to send via UART.
+  */
+static void SampleTimerISR(void)
+{
+    /* ---- Phase 1: Generator write (if running) ---- */
+    if (s_genMode != GEN_NONE)
+    {
+        s_genCounter++;
+        if (s_genCounter >= s_genDivider)
+        {
+            s_genCounter = 0U;
+            Generator_DoWrite();
+        }
+    }
+
+    /* ---- Phase 2: Sampling read (if running) ---- */
+    if (s_sampling != 0U)
+    {
+        uint8_t ch;
+        uint8_t bufIdx    = s_isrWriteIdx;
+        uint8_t failCnt   = 0U;
+        uint8_t totalCnt  = 0U;
+        uint8_t mask      = 0U;
+        uint16_t val;
+
+        /* Compute effective mask (channelMask & mapped channels) */
+        for (ch = 0U; ch < APP_SAMPLE_NUM_CHANNELS; ch++)
+        {
+            if (((s_channelMask & (uint8_t)(1U << ch)) != 0U) &&
+                (s_channelRegMap[ch] != APP_SAMPLE_REG_UNMAPPED))
+            {
+                mask |= (uint8_t)(1U << ch);
+            }
+        }
+
+        /* Read each active channel via I2C */
+        for (ch = 0U; ch < APP_SAMPLE_NUM_CHANNELS; ch++)
+        {
+            if ((mask & (uint8_t)(1U << ch)) != 0U)
+            {
+                totalCnt++;
+                if (App_Motor_ReadReg(s_channelRegMap[ch], &val) != SUCCESS)
+                {
+                    val = 0U;
+                    failCnt++;
+                }
+                s_isrBuf[bufIdx][ch] = val;
+            }
+        }
+
+        s_isrEffectiveMask = mask;
+        s_isrFailCount     = failCnt;
+        s_isrTotalCount    = totalCnt;
+        s_isrWriteIdx      = bufIdx ^ 1U;   /* swap buffer for next ISR */
+        s_isrDataReady     = 1U;
+    }
+}
+
+/*--------------------------------------------------------------------------*/
 /*                       Sampling internal helpers                         */
 /*--------------------------------------------------------------------------*/
 
 /**
-  * @brief  Build and transmit one data stream frame for the current sample.
-  * @param  effectiveMask  Bitmask of channels to include.
+  * @brief  Build and transmit one data stream frame from ISR buffer.
+  * @param  effectiveMask  Bitmask of channels included.
+  * @param  pData          Pointer to ISR sample buffer (one row).
+  * @param  failCount      Number of I2C failures in this sample.
+  * @param  totalCount     Total active channels in this sample.
   */
-static void SendStreamFrame(uint8_t effectiveMask)
+static void SendStreamFrame(uint8_t effectiveMask, const volatile uint16_t *pData,
+                             uint8_t failCount, uint8_t totalCount)
 {
-    uint8_t  idx = 0U;
-    uint8_t  ch;
-    uint8_t  xorVal = 0U;
-    uint8_t  len = 0U;
-    uint16_t val;
-    uint8_t  dataStart;
-    uint8_t  i;
-    uint8_t  failCount = 0U;
-    uint8_t  totalCount = 0U;
+    uint8_t idx = 0U;
+    uint8_t ch;
+    uint8_t xorVal = 0U;
+    uint8_t len = 0U;
+    uint8_t dataStart;
+    uint8_t i;
 
     /* Count active channels for LEN field */
     for (ch = 0U; ch < APP_SAMPLE_NUM_CHANNELS; ch++)
@@ -205,22 +280,17 @@ static void SendStreamFrame(uint8_t effectiveMask)
         }
     }
 
-    s_streamBuf[idx++] = 0xBBU;         /* Stream frame SOF */
+    s_streamBuf[idx++] = 0xBBU;
     s_streamBuf[idx++] = effectiveMask;
     s_streamBuf[idx++] = len;
     dataStart = idx;
 
-    /* Fill channel data (low channel first) */
+    /* Fill channel data from ISR buffer */
     for (ch = 0U; ch < APP_SAMPLE_NUM_CHANNELS; ch++)
     {
         if ((effectiveMask & (uint8_t)(1U << ch)) != 0U)
         {
-            totalCount++;
-            if (App_Motor_ReadReg(s_channelRegMap[ch], &val) != SUCCESS)
-            {
-                val = 0U;   /* Send 0 on read failure, keep stream alive */
-                failCount++;
-            }
+            uint16_t val = pData[ch];
             s_streamBuf[idx++] = (uint8_t)(val >> 8U);
             s_streamBuf[idx++] = (uint8_t)(val & 0xFFU);
         }
@@ -230,12 +300,12 @@ static void SendStreamFrame(uint8_t effectiveMask)
     if (failCount >= totalCount)
     {
         s_i2cFailCount++;
-        if ((s_i2cFailCount >= I2C_FAIL_STOP_THRESHOLD))
+        if (s_i2cFailCount >= I2C_FAIL_STOP_THRESHOLD)
         {
             App_Protocol_SendErrorResp(0x00U, PROTO_ERR_EXEC_FAIL);
             App_Protocol_SendDebugInfo("I2C bus stuck, sampling auto-stopped");
             App_Sample_Stop();
-            return;     /* Don't send this frame */
+            return;
         }
         if ((s_i2cFailCount >= I2C_FAIL_WARN_THRESHOLD) && (s_i2cWarnSent == 0U))
         {
@@ -249,7 +319,7 @@ static void SendStreamFrame(uint8_t effectiveMask)
         s_i2cWarnSent  = 0U;
     }
 
-    /* XOR: effectiveMask XOR LEN XOR all data bytes */
+    /* XOR checksum */
     xorVal = effectiveMask ^ len;
     for (i = dataStart; i < idx; i++)
     {
@@ -281,57 +351,56 @@ void App_Sample_Init(void)
         s_channelRegMap[i] = APP_SAMPLE_REG_UNMAPPED;
     }
 
+    /* ISR double buffer state */
+    s_isrWriteIdx     = 0U;
+    s_isrDataReady    = 0U;
+    s_isrEffectiveMask = 0U;
+    s_isrFailCount    = 0U;
+    s_isrTotalCount   = 0U;
+
     /* Generator state */
     s_genMode    = GEN_NONE;
     s_genDivider = 1U;
     s_genCounter = 0U;
 
     BSP_SampleTim_Init();
+    BSP_SampleTim_SetCallback(SampleTimerISR);
 }
 
 /**
   * @brief  Poll — called from main loop every iteration.
-  *         Each TIM6 tick: generator write (phase 1) then sampling read (phase 2).
+  *         ISR does I2C reads at precise timing; Poll sends buffered data via UART.
   */
 void App_Sample_Poll(void)
 {
-    /* Nothing to do if both idle */
-    if ((s_sampling == 0U) && (s_genMode == GEN_NONE))
+    uint8_t  mask;
+    uint8_t  readIdx;
+    uint8_t  failCnt;
+    uint8_t  totalCnt;
+
+    /* Check if ISR has new data */
+    if (s_isrDataReady == 0U)
     {
         return;
     }
 
-    if (BSP_SampleTim_GetFlag() == 0U) { return; }
-    BSP_SampleTim_ClearFlag();
+    /* Snapshot ISR outputs and clear flag */
+    mask     = s_isrEffectiveMask;
+    failCnt  = s_isrFailCount;
+    totalCnt = s_isrTotalCount;
+    readIdx  = s_isrWriteIdx ^ 1U;    /* ISR already swapped; read the other buffer */
+    s_isrDataReady = 0U;
 
-    /* ---- Phase 1: Generator write (if running) ---- */
-    if (s_genMode != GEN_NONE)
+    if (mask == 0U)
     {
-        s_genCounter++;
-        if (s_genCounter >= s_genDivider)
-        {
-            s_genCounter = 0U;
-            Generator_DoWrite();
-        }
+        App_Sample_Stop();
+        return;
     }
 
-    /* ---- Phase 2: Sampling read (if running) ---- */
-    if (s_sampling != 0U)
-    {
-        uint8_t effectiveMask;
+    /* Skip frame if TX still busy (previous frame not yet sent) */
+    if (BSP_UART_IsTxBusy() != 0U) { return; }
 
-        /* Skip frame if TX still busy */
-        if (BSP_UART_IsTxBusy() != 0U) { return; }
-
-        effectiveMask = App_Sample_GetEffectiveMask();
-        if (effectiveMask == 0U)
-        {
-            App_Sample_Stop();
-            return;
-        }
-
-        SendStreamFrame(effectiveMask);
-    }
+    SendStreamFrame(mask, s_isrBuf[readIdx], failCnt, totalCnt);
 }
 
 /**

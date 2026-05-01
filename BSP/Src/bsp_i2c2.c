@@ -7,7 +7,7 @@
   *
   * Replaces hardware I2C2 peripheral with bit-bang for 1 MHz operation.
   * Uses DWT->CYCCNT for precise half-cycle delays.
-  * Interrupt protection: __disable_irq / __enable_irq around each transaction.
+  * Interrupt protection: none — I2C tolerates clock stretching from ISR jitter.
   */
 
 #include "bsp_i2c2.h"
@@ -249,8 +249,6 @@ ErrorStatus BSP_I2C2_WriteReg(uint8_t devAddr, uint16_t reg,
 {
     uint16_t i;
 
-    __disable_irq();
-
     I2C_Start();
 
     /* Address + W */
@@ -267,12 +265,10 @@ ErrorStatus BSP_I2C2_WriteReg(uint8_t devAddr, uint16_t reg,
     }
 
     I2C_Stop();
-    __enable_irq();
     return SUCCESS;
 
 error:
     I2C_Stop();
-    __enable_irq();
     BSP_I2C2_RecoverBus();
     return ERROR;
 }
@@ -285,8 +281,6 @@ ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint16_t reg,
     uint16_t i;
 
     if (len == 0U) { return SUCCESS; }
-
-    __disable_irq();
 
     /* Write phase: START + addr+W + 16-bit reg addr */
     I2C_Start();
@@ -305,12 +299,10 @@ ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint16_t reg,
     }
 
     I2C_Stop();
-    __enable_irq();
     return SUCCESS;
 
 error:
     I2C_Stop();
-    __enable_irq();
     BSP_I2C2_RecoverBus();
     return ERROR;
 }
@@ -332,14 +324,12 @@ ErrorStatus BSP_I2C2_Scan(uint8_t *pAddrList, uint8_t *pCount)
 
     for (addr = 1U; addr <= 126U; addr++)
     {
-        __disable_irq();
         I2C_Start();
         if (SendByte((uint8_t)(addr << 1U)))
         {
             pAddrList[(*pCount)++] = addr;
         }
         I2C_Stop();
-        __enable_irq();
     }
 
     return SUCCESS;

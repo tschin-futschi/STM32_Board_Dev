@@ -46,6 +46,12 @@
  */
 
 /*--------------------------------------------------------------------------*/
+/*                          Callback type                                   */
+/*--------------------------------------------------------------------------*/
+
+typedef void (*BSP_SampleTim_Callback_t)(void);
+
+/*--------------------------------------------------------------------------*/
 /*                               API                                        */
 /*--------------------------------------------------------------------------*/
 
@@ -57,6 +63,8 @@ void        BSP_SampleTim_Stop(void);
 uint8_t     BSP_SampleTim_GetFlag(void);
 void        BSP_SampleTim_ClearFlag(void);
 uint16_t    BSP_SampleTim_GetPeriodUs(void);
+
+void        BSP_SampleTim_SetCallback(BSP_SampleTim_Callback_t cb);
 
 /* Called from ISR only */
 void        BSP_SampleTim_ISR_Callback(void);

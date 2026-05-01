@@ -31,6 +31,7 @@ static const uint16_t k_arrTable[BSP_SAMPLE_TIM_IDX_MAX + 1U] =
 
 static volatile uint8_t s_sampleFlag;
 static uint8_t s_currentIdx = BSP_SAMPLE_TIM_DEFAULT_IDX;
+static BSP_SampleTim_Callback_t s_callback = (void *)0;
 
 /*--------------------------------------------------------------------------*/
 /*                          Public API                                      */
@@ -134,9 +135,21 @@ void BSP_SampleTim_ClearFlag(void)
 }
 
 /**
-  * @brief  Called from TIM6_DAC_IRQHandler — set sample flag only.
+  * @brief  Register a callback to be called from TIM6 ISR before setting flag.
+  */
+void BSP_SampleTim_SetCallback(BSP_SampleTim_Callback_t cb)
+{
+    s_callback = cb;
+}
+
+/**
+  * @brief  Called from TIM6_DAC_IRQHandler — invoke callback then set flag.
   */
 void BSP_SampleTim_ISR_Callback(void)
 {
+    if (s_callback != (void *)0)
+    {
+        s_callback();
+    }
     s_sampleFlag = 1U;
 }
