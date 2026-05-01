@@ -14,7 +14,7 @@
 
 #define BSP_UART_PERIPH             USART1
 #define BSP_UART_CLK                RCC_APB2Periph_USART1
-#define BSP_UART_BAUDRATE_DEFAULT   115200U
+#define BSP_UART_BAUDRATE_DEFAULT   460800U
 
 /* TX pin: PA9, AF7 */
 #define BSP_UART_TX_GPIO_PORT       GPIOA
