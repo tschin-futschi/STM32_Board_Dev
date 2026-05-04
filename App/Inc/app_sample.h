@@ -52,6 +52,8 @@ uint8_t     App_Sample_GetEffectiveMask(void);
 
 ErrorStatus App_Generator_StartLinear(uint16_t addr, int16_t min, int16_t max,
                                       int16_t step, uint16_t intervalMs);
+ErrorStatus App_Generator_StartSawtooth(uint16_t addr, int16_t min, int16_t max,
+                                        int16_t step);
 ErrorStatus App_Generator_StartCosine(int16_t amplitude, int16_t offset,
                                       uint16_t freqX100, uint8_t channelCount,
                                       const uint16_t *addrs, const int16_t *phaseX10);

@@ -45,7 +45,7 @@ static volatile uint8_t  s_isrTotalCount;      /* total channels in last ISR sam
 /*                      Generator internal state                           */
 /*--------------------------------------------------------------------------*/
 
-typedef enum { GEN_NONE, GEN_LINEAR, GEN_COSINE } GenMode_t;
+typedef enum { GEN_NONE, GEN_LINEAR, GEN_COSINE, GEN_SAWTOOTH } GenMode_t;
 
 static volatile GenMode_t s_genMode;
 static volatile uint16_t  s_genDivider;      /* tick divider: how many ticks per write   */
@@ -145,6 +145,40 @@ static void Generator_DoLinearWrite(void)
     }
 }
 
+static void Generator_DoSawtoothWrite(void)
+{
+    /* Write current value */
+    (void)App_Motor_WriteReg(s_linAddr, (uint16_t)s_linCurrent);
+
+    /* Advance — same triangle logic as linear */
+    if (s_linAscending != 0U)
+    {
+        int32_t next = (int32_t)s_linCurrent + (int32_t)s_linStep;
+        if (next > (int32_t)s_linMax)
+        {
+            s_linCurrent   = s_linMax;
+            s_linAscending = 0U;
+        }
+        else
+        {
+            s_linCurrent = (int16_t)next;
+        }
+    }
+    else
+    {
+        int32_t next = (int32_t)s_linCurrent - (int32_t)s_linStep;
+        if (next < (int32_t)s_linMin)
+        {
+            s_linCurrent   = s_linMin;
+            s_linAscending = 1U;
+        }
+        else
+        {
+            s_linCurrent = (int16_t)next;
+        }
+    }
+}
+
 static void Generator_DoCosineWrite(void)
 {
     static const float k_twoPi = 6.28318530f;
@@ -183,6 +217,10 @@ static void Generator_DoWrite(void)
     else if (s_genMode == GEN_COSINE)
     {
         Generator_DoCosineWrite();
+    }
+    else if (s_genMode == GEN_SAWTOOTH)
+    {
+        Generator_DoSawtoothWrite();
     }
 }
 
@@ -525,6 +563,28 @@ ErrorStatus App_Generator_StartLinear(uint16_t addr, int16_t min, int16_t max,
     return SUCCESS;
 }
 
+ErrorStatus App_Generator_StartSawtooth(uint16_t addr, int16_t min, int16_t max,
+                                        int16_t step)
+{
+    /* Auto-stop previous generator */
+    s_genMode = GEN_NONE;
+
+    s_linAddr      = addr;
+    s_linMin       = min;
+    s_linMax       = max;
+    s_linStep      = step;
+    s_linCurrent   = min;
+    s_linAscending = 1U;
+
+    /* Every tick — no divider */
+    s_genDivider = 1U;
+    s_genCounter = 0U;
+    s_genMode    = GEN_SAWTOOTH;
+
+    EnsureTimRunning();
+    return SUCCESS;
+}
+
 ErrorStatus App_Generator_StartCosine(int16_t amplitude, int16_t offset,
                                       uint16_t freqX100, uint8_t channelCount,
                                       const uint16_t *addrs, const int16_t *phaseX10)
@@ -576,7 +636,8 @@ uint8_t App_Generator_IsRunning(void)
 
 uint8_t App_Generator_GetWriteChannelCount(void)
 {
-    if (s_genMode == GEN_LINEAR) { return 1U; }
-    if (s_genMode == GEN_COSINE) { return s_cosChCount; }
+    if (s_genMode == GEN_LINEAR)   { return 1U; }
+    if (s_genMode == GEN_SAWTOOTH) { return 1U; }
+    if (s_genMode == GEN_COSINE)   { return s_cosChCount; }
     return 0U;
 }

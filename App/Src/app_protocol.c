@@ -736,6 +736,49 @@ static void HandleStopGenerator(const Proto_Frame_t *pFrame)
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_STOP_GENERATOR, NULL, 0U);
 }
 
+/* 0x58 — Start sawtooth (triangle) generator, every tick */
+static void HandleStartSawtoothGen(const Proto_Frame_t *pFrame)
+{
+    uint16_t addr;
+    int16_t  min, max, step;
+
+    if (pFrame->len != 8U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    addr = ((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1];
+    min  = (int16_t)(((uint16_t)pFrame->data[2] << 8U) | (uint16_t)pFrame->data[3]);
+    max  = (int16_t)(((uint16_t)pFrame->data[4] << 8U) | (uint16_t)pFrame->data[5]);
+    step = (int16_t)(((uint16_t)pFrame->data[6] << 8U) | (uint16_t)pFrame->data[7]);
+
+    if ((min >= max) || (step <= 0))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    {
+        uint8_t readCh  = App_Sample_IsActive()
+                          ? CountBits(App_Sample_GetEffectiveMask()) : 0U;
+        uint8_t writeCh = 1U;
+        if (CheckTickOverrun(readCh, writeCh) == 0U)
+        {
+            SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+            return;
+        }
+    }
+
+    if (App_Generator_StartSawtooth(addr, min, max, step) != SUCCESS)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_SAWTOOTH_GEN, NULL, 0U);
+}
+
 static void DispatchFrame(const Proto_Frame_t *pFrame)
 {
     /* During bulk read, only respond to heartbeat — ignore all other commands */
@@ -805,6 +848,9 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
             break;
         case PROTO_CMD_STOP_GENERATOR:
             HandleStopGenerator(pFrame);
+            break;
+        case PROTO_CMD_START_SAWTOOTH_GEN:
+            HandleStartSawtoothGen(pFrame);
             break;
         default:
             SendErrorResp(pFrame->seq, PROTO_ERR_UNKNOWN_CMD);

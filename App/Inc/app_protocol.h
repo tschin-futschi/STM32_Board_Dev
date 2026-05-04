@@ -63,6 +63,7 @@ typedef enum
     PROTO_CMD_START_LINEAR_GEN = 0x55U, /* PC->STM32, 10 bytes: addr+min+max+step+interval  */
     PROTO_CMD_START_COSINE_GEN = 0x56U, /* PC->STM32, 7+N*4 bytes: amp+off+freq+N+channels  */
     PROTO_CMD_STOP_GENERATOR   = 0x57U, /* PC->STM32, data empty                            */
+    PROTO_CMD_START_SAWTOOTH_GEN = 0x58U, /* PC->STM32, 8 bytes: addr+min+max+step (every tick) */
 } Proto_Cmd_t;
 
 /*--------------------------------------------------------------------------*/
