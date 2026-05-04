@@ -379,6 +379,9 @@ void App_Sample_Poll(void)
     uint8_t  failCnt;
     uint8_t  totalCnt;
 
+    /* TX busy: keep dataReady=1 so data is not lost; retry next loop */
+    if (BSP_UART_IsTxBusy() != 0U) { return; }
+
     /* Check if ISR has new data */
     if (s_isrDataReady == 0U)
     {
@@ -399,9 +402,6 @@ void App_Sample_Poll(void)
         App_Sample_Stop();
         return;
     }
-
-    /* Skip frame if TX still busy (previous frame not yet sent) */
-    if (BSP_UART_IsTxBusy() != 0U) { return; }
 
     SendStreamFrame(mask, s_isrBuf[readIdx], failCnt, totalCnt);
 }
