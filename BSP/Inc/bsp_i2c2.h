@@ -57,4 +57,14 @@ ErrorStatus BSP_I2C2_Scan(uint8_t *pAddrList, uint8_t *pCount);
 void        BSP_I2C2_RecoverBus(void);
 uint8_t     BSP_I2C2_GetAndClearRecoveryFlag(void);
 
+/* AW Firmware I2C passthrough — opaque byte-stream write/read.
+ * AddrSize == 0 skips the address phase entirely.
+ * Bytes in pAddr / pData are forwarded to the bus in array order. */
+ErrorStatus BSP_I2C2_TransparentWrite(uint8_t devAddr,
+                                       const uint8_t *pAddr, uint8_t addrSize,
+                                       const uint8_t *pData, uint16_t dataLen);
+ErrorStatus BSP_I2C2_TransparentRead(uint8_t devAddr,
+                                      const uint8_t *pAddr, uint8_t addrSize,
+                                      uint8_t *pData, uint16_t dataLen);
+
 #endif /* __BSP_I2C2_H */

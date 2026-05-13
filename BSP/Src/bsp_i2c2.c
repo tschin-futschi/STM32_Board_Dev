@@ -317,6 +317,78 @@ ErrorStatus BSP_I2C2_ReadRegs(uint8_t devAddr, uint16_t startReg,
 
 /*--------------------------------------------------------------------------*/
 
+ErrorStatus BSP_I2C2_TransparentWrite(uint8_t devAddr,
+                                       const uint8_t *pAddr, uint8_t addrSize,
+                                       const uint8_t *pData, uint16_t dataLen)
+{
+    uint16_t i;
+
+    I2C_Start();
+    if (!SendByte((uint8_t)(devAddr << 1U)))             { goto error; }
+
+    for (i = 0U; i < addrSize; i++)
+    {
+        if (!SendByte(pAddr[i]))                          { goto error; }
+    }
+
+    for (i = 0U; i < dataLen; i++)
+    {
+        if (!SendByte(pData[i]))                          { goto error; }
+    }
+
+    I2C_Stop();
+    return SUCCESS;
+
+error:
+    I2C_Stop();
+    BSP_I2C2_RecoverBus();
+    return ERROR;
+}
+
+/*--------------------------------------------------------------------------*/
+
+ErrorStatus BSP_I2C2_TransparentRead(uint8_t devAddr,
+                                      const uint8_t *pAddr, uint8_t addrSize,
+                                      uint8_t *pData, uint16_t dataLen)
+{
+    uint16_t i;
+
+    if (dataLen == 0U) { return SUCCESS; }
+
+    if (addrSize > 0U)
+    {
+        I2C_Start();
+        if (!SendByte((uint8_t)(devAddr << 1U)))         { goto error; }
+        for (i = 0U; i < addrSize; i++)
+        {
+            if (!SendByte(pAddr[i]))                      { goto error; }
+        }
+
+        I2C_RepeatedStart();
+        if (!SendByte((uint8_t)((devAddr << 1U) | 0x01U))) { goto error; }
+    }
+    else
+    {
+        I2C_Start();
+        if (!SendByte((uint8_t)((devAddr << 1U) | 0x01U))) { goto error; }
+    }
+
+    for (i = 0U; i < dataLen; i++)
+    {
+        pData[i] = RecvByte((i < (dataLen - 1U)) ? 1U : 0U);
+    }
+
+    I2C_Stop();
+    return SUCCESS;
+
+error:
+    I2C_Stop();
+    BSP_I2C2_RecoverBus();
+    return ERROR;
+}
+
+/*--------------------------------------------------------------------------*/
+
 ErrorStatus BSP_I2C2_Scan(uint8_t *pAddrList, uint8_t *pCount)
 {
     uint8_t addr;

@@ -286,6 +286,7 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 | 4.2 | 系统控制命令（`0x02~0x05`） | 上位机发指令，STM32 正确响应 | **完成** |
 | 4.3 | 寄存器读写命令（`0x20~0x22`，新建 `app_motor.c`） | 读写 PMIC/INA 寄存器验证 | **完成** |
 | 4.4 | 采样控制命令（`0x50~0x54`，新建 `app_sample.c`） | 上位机能看到持续 `0xBB` 数据流 | **完成** |
+| 4.5 | AW Firmware I2C 透传读写（`0x30`/`0x31`，扩展 `bsp_i2c2.c` + `app_protocol.c`） | 上位机可对任意 DevId / 任意 AddrSize（含 0）/ 任意 DataLen 完成读写透传，服务 AW SDK DLL 回调 | **完成** |
 
 ---
 
@@ -293,7 +294,8 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 
 | 优先级 | 项目 | 说明 |
 |--------|------|------|
-| 高 | **阶段 4 代码 Review** | 对 4.1~4.4 实现的代码进行全面审查，包括 `bsp_tim.c`、`app_motor.c`、`app_sample.c`、`app_protocol.c` 新增部分 |
+| 高 | **H1: 采样运行中 I2C 总线并发保护** | TIM6 ISR (采样读/发生器写) 与主循环寄存器 IO (`0x20`/`0x21`/`0x30`/`0x31`) 共用 I2C2 无锁，存在抢断时总线时序损坏风险。**当前先不修，留待后续处理**。计划方案：`app_sample.c` 暴露 `AcquireBus/ReleaseBus` API（NVIC mask TIM6_DAC_IRQ），4 个 IO handler 包装 acquire-execute-release；详见 `TRACKING/0513_code_review.md` H1 与对话历史 |
+| 中 | 其它 review 发现 (H2~H4 / M2~M8 / L1~L5) | 完整清单见 `TRACKING/0513_code_review.md`，按优先级处理。重点项：H2 (`app_sample.h` 默认 idx 注释错)、H3 (totalCount=0 误触发 auto-stop)、H4 (TIM6 ISR clock-stretch 阻塞 10 ms)。M1 (LED 心跳频率) 已通过本次改动消除 |
 
 ---
 

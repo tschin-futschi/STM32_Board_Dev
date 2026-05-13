@@ -313,6 +313,38 @@
 
 ---
 
+#### `0x30` I2C 透传写
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | `[DevId(1B)] [AddrSize(1B)] [AddrBytes(AddrSize 字节)] [DataLen(1B)] [Data(DataLen 字节)]` |
+| 成功响应 | 同 CMD+SEQ，LEN=0 |
+| 失败响应 | 错误响应帧，错误码 `0x03` |
+| 备注 | `DevId` 为 7-bit I2C 从机地址（0x00–0x7F），不携带 R/W 位；`AddrSize == 0` 时跳过 AddrBytes 段，直接对从机写入一段字节流（用于无寄存器地址的命令式 I2C 设备 / Boot Loader 协议字节流） |
+
+**用途**：服务于厂家烧录 SDK DLL（如 AW86100.dll）的 `pFunc_I2C_Write` 回调，上位机把 DLL 的写请求按本协议透传给 STM32，STM32 端在软件位拼 I2C 总线上以单次 transaction 完成：`START → addr+W → [若 AddrSize > 0 发 AddrBytes 寄存器地址段] → Data 段 → STOP`。
+
+**AW SDK 场景约定**：`pFunc_I2C_Write` 回调签名只有 `(DevId, WrSize, WrData)` 三个参数（无 AddrSize），DLL 自行把寄存器地址拼在 WrData 头部交给上位机。因此本命令在服务 AW SDK 时 `AddrSize` 恒为 `0`，Data 段为 DLL 不透明字节流（可能在头部包含 IC 寄存器地址，由 DLL 决定），STM32 端原样透传到 I2C 总线即可，**不得**自行解析或重组。WrData 按 `WrData[0..WrSize-1]` 索引顺序追加到载荷，对应总线发送顺序（先发 WrData[0]）。
+
+---
+
+#### `0x31` I2C 透传读
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | `[DevId(1B)] [AddrSize(1B)] [AddrBytes(AddrSize 字节)] [ReadLen(1B)]` |
+| 成功响应 | 数据段为读到的 `ReadLen` 字节内容 |
+| 失败响应 | 错误响应帧，错误码 `0x03` |
+| 备注 | `DevId` 为 7-bit I2C 从机地址（0x00–0x7F），不携带 R/W 位；`AddrSize == 0` 时跳过 AddrBytes 段，直接从从机读取一段字节流 |
+
+**用途**：服务于厂家烧录 SDK DLL 的 `pFunc_I2C_Read` 回调，STM32 端在软件位拼 I2C 总线上完成：`AddrSize > 0` 时走 `START → addr+W → AddrBytes → RepeatedStart → addr+R → 读 ReadLen 字节 → STOP`；`AddrSize == 0` 时走 `START → addr+R → 读 ReadLen 字节 → STOP`。
+
+**AW SDK 场景约定**：`pFunc_I2C_Read` 回调签名为 `(DevId, AddrSize, pAddr, RdSize, pRdBuf)`，AddrSize 由 DLL 决定，烧录过程中常见取值为 1 或 2 字节寄存器地址；AddrSize=0（无寄存器地址直读）在 AW SDK 中是否会被实际调用属 OPEN 项，待供应商书面确认。AddrBytes 按 `pAddr` 缓冲索引 `0..AddrSize-1` 顺序追加到载荷，对应总线发送顺序（先发 AddrBytes[0]）；STM32 端原样转发到总线、不得翻转或重排字节序。
+
+---
+
 ### 4.4 示波器控制组（0x50~0x7F）
 
 #### 采样默认值
@@ -641,3 +673,7 @@ T_sample ≥ max( T_i2c + T_main,  T_uart,  T_i2c / k )
 | v1.9 | 2026-04-30 | I2C2（电机通道）由硬件 I2C 400kHz 改为软件模拟 I2C（GPIO bit-bang，实测 ~870 kHz）；更新 I2C 耗时参考表（写 115→54μs，读 142→77μs）；更新 0x50 耗时校验公式及场景表 |
 | v2.0 | 2026-05-01 | 默认波特率 115200→460800；新增采样时间间隔分析章节（三约束公式 + 460800/115200 速查表 + 推荐档位映射） |
 | v2.1 | 2026-05-04 | 新增 0x58 锯齿波（三角波）测试发生器：参数同 0x55（去掉 intervalMs），每 tick 写入一次，用于验证采样→示波器链路完整性 |
+| v2.2 | 2026-05-09 | 新增 0x30 / 0x31 通用 I2C 透传读写指令，支持任意 7-bit DevId / 任意寄存器地址字节数（含 0）/ 任意读写长度，服务于厂家烧录 SDK DLL 的 ExtFunc 回调 |
+| v2.3 | 2026-05-12 | 0x30 / 0x31 用途段描述与 STM32 实际 I2C 驱动方式对齐：STM32 端使用软件位拼 I2C（StdPeriph + GPIO bit-bang），不存在 HAL 库；用途段改为 START/STOP/RepeatedStart 时序描述，移除对 HAL_I2C_Master_Transmit / HAL_I2C_Mem_Read / HAL_I2C_Master_Receive 的引用 |
+| v2.4 | 2026-05-12 | 0x30 章节新增 **AW SDK 场景约定** 段落，明确：`pFunc_I2C_Write` 回调签名无 AddrSize，DLL 自行把寄存器地址拼在 WrData 头部；因此服务 AW SDK 时 AddrSize 恒为 0，Data 段为 DLL 不透明字节流，STM32 端原样透传不得解析或重组 |
+| v2.5 | 2026-05-12 | 0x31 章节新增 **AW SDK 场景约定** 段落（对称 0x30 v2.4），明确：`pFunc_I2C_Read` 回调签名含 AddrSize（由 DLL 决定，常见 1 或 2，AddrSize=0 是否实际调用属 OPEN 待供应商确认）；AddrBytes 按 `pAddr` 索引顺序对应总线发送顺序，STM32 端不得翻转字节序。同步在 0x30 段补充 WrData 字节顺序与总线发送顺序的对应说明 |

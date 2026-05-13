@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AW Firmware I2C 写指令（0x30）命令流</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         max-width: 1080px; margin: 24px auto; padding: 0 20px; line-height: 1.7;
+         color: #222; background: #fafafa; }
+  h1 { border-bottom: 3px solid #2563eb; padding-bottom: 8px; color: #1e40af; }
+  h2 { border-left: 5px solid #2563eb; padding-left: 12px; margin-top: 36px; color: #1e3a8a; }
+  h3 { color: #1e40af; margin-top: 24px; }
+  code, pre { font-family: Consolas, "Courier New", monospace; }
+  pre { background: #1e293b; color: #e2e8f0; padding: 14px 18px; border-radius: 6px;
+        overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { background: #e0e7ff; color: #1e40af; padding: 2px 6px; border-radius: 3px; font-size: 90%; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; background: #fff;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #2563eb; color: #fff; font-weight: 600; }
+  tr:nth-child(even) { background: #f3f4f6; }
+  .hl { background: #fef3c7; padding: 1px 5px; border-radius: 3px; color: #92400e; font-weight: 600; }
+  .danger { background: #fee2e2; padding: 1px 5px; border-radius: 3px; color: #991b1b; font-weight: 600; }
+  .ok { background: #d1fae5; padding: 1px 5px; border-radius: 3px; color: #065f46; font-weight: 600; }
+  .stage { background: #fff; border-left: 4px solid #2563eb; padding: 12px 18px;
+           margin: 12px 0; border-radius: 0 6px 6px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .stage h3 { margin-top: 0; }
+  .arrow { text-align: center; color: #2563eb; font-size: 22px; margin: 6px 0; }
+  blockquote { border-left: 4px solid #f59e0b; background: #fffbeb; padding: 10px 16px;
+               margin: 14px 0; color: #78350f; border-radius: 0 6px 6px 0; }
+</style>
+</head>
+<body>
+
+<h1>AW Firmware I2C 写指令（<code>0x30</code>）命令流</h1>
+
+<p>
+命令码 <code>0x30</code> 在本项目中统一称为 <span class="hl">AW Firmware I2C 写指令</span>，
+专门服务 AW 系列电机 IC 烧录 SDK DLL（例如 <code>AW86100.dll</code>）的
+<code>pFunc_I2C_Write</code> 回调。本文按链路顺序拆解从 DLL 调用到 I2C 总线落地的完整字节流。
+</p>
+
+<h2>1. 链路全貌</h2>
+
+<pre>
+┌──────────────────────┐
+│ 厂家 SDK DLL         │  pFunc_I2C_Write(DevId, WrSize, WrData)
+│ (AW86100.dll 等)     │
+└──────────┬───────────┘
+           │ ① 回调参数
+           ▼
+┌──────────────────────┐
+│ PC 上位机            │  按 0x30 协议帧封装，AddrSize 强制为 0
+└──────────┬───────────┘
+           │ ② UART 460800 8N1
+           ▼
+┌──────────────────────┐
+│ STM32 (app_protocol) │  CRC 校验 → 命令分发 → BSP 透传写
+└──────────┬───────────┘
+           │ ③ 软件模拟 I2C（GPIO bit-bang，~870 kHz）
+           ▼
+┌──────────────────────┐
+│ 电机 IC (DevId)      │
+└──────────────────────┘
+</pre>
+
+<h2>2. 阶段 ①：DLL 回调入口</h2>
+
+<div class="stage">
+<h3>2.1 回调签名</h3>
+<pre><code>pFunc_I2C_Write(DevId, WrSize, WrData)</code></pre>
+<table>
+<tr><th>参数</th><th>说明</th></tr>
+<tr><td><code>DevId</code></td><td>7-bit I2C 从机地址（<b>不带 R/W 位</b>，范围 0x00–0x7F）</td></tr>
+<tr><td><code>WrSize</code></td><td>WrData 字节数</td></tr>
+<tr><td><code>WrData</code></td><td><span class="hl">DLL 不透明字节流</span>：DLL 自行把寄存器地址（如有）拼在头部，PC 和 STM32 都<span class="danger">不允许解析</span></td></tr>
+</table>
+
+<h3>2.2 AW SDK 场景的关键约定（v2.4）</h3>
+<blockquote>
+AW SDK 的 <code>pFunc_I2C_Write</code> 回调签名<b>没有 AddrSize 参数</b>。
+DLL 自己决定是否在 <code>WrData</code> 头部拼上寄存器地址（1 / 2 字节），并将整块字节流交给上位机。
+因此服务 AW SDK 时，<code>0x30</code> 协议帧中 <span class="hl">AddrSize 恒为 0x00</span>，
+Data 段就是 <code>WrData</code> 原文。
+</blockquote>
+</div>
+
+<h2>3. 阶段 ②：PC 端封装 0x30 协议帧</h2>
+
+<div class="stage">
+<h3>3.1 帧字节布局</h3>
+<pre>
+┌──────┬──────┬─────┬──────┬─────┬───────┬──────────┬─────────┬───────────────┬──────┬──────┐
+│ 0xAA │ 0x55 │ SEQ │ 0x30 │ LEN │ DevId │ AddrSize │ DataLen │   WrData...   │ CRCH │ CRCL │
+│  1B  │  1B  │ 1B  │  1B  │ 1B  │  1B   │  =0x00   │ =WrSize │  WrSize 字节  │  1B  │  1B  │
+└──────┴──────┴─────┴──────┴─────┴───────┴──────────┴─────────┴───────────────┴──────┴──────┘
+                                                ↑
+                          AddrSize=0 → AddrBytes 段长度为 0，整段跳过
+</pre>
+
+<h3>3.2 字段说明</h3>
+<table>
+<tr><th>字段</th><th>取值 / 计算</th></tr>
+<tr><td>帧头</td><td><code>0xAA 0x55</code> 固定</td></tr>
+<tr><td>SEQ</td><td>PC 端递增帧序号（0~255 循环）；重发时<b>沿用原 SEQ</b></td></tr>
+<tr><td>CMD</td><td><code>0x30</code></td></tr>
+<tr><td>LEN</td><td>载荷字节数 = 1(DevId) + 1(AddrSize=0) + 1(DataLen) + WrSize = <code>3 + WrSize</code></td></tr>
+<tr><td>DevId</td><td>从 DLL 回调直接取，7-bit 不左移</td></tr>
+<tr><td>AddrSize</td><td><span class="hl">0x00</span>（AW SDK 场景固定）</td></tr>
+<tr><td>DataLen</td><td>等于 WrSize</td></tr>
+<tr><td>WrData[]</td><td>DLL 字节流原文，<code>WrData[0]</code> 在前</td></tr>
+<tr><td>CRC16</td><td>多项式 <code>0x8005</code>、初值 <code>0xFFFF</code>、<b>右移低位先行</b>；
+校验范围 = SEQ → WrData 末字节（不含帧头）；结果<b>大端</b>存放</td></tr>
+</table>
+
+<blockquote>
+注意：本协议使用 <code>0x8005</code> + 右移算法，<b>与标准 CRC16-MODBUS（反射多项式 <code>0xA001</code>）实现不同</b>，
+不能直接套用 Modbus CRC 库。
+</blockquote>
+
+<h3>3.3 实例（写 4 字节字节流到 DevId=0x58）</h3>
+<table>
+<tr><th>参数</th><th>值</th></tr>
+<tr><td>DevId</td><td><code>0x58</code></td></tr>
+<tr><td>WrSize</td><td>4</td></tr>
+<tr><td>WrData</td><td><code>0x01 0x23 0xA5 0x5A</code></td></tr>
+<tr><td>LEN</td><td><code>0x07</code>（= 3 + 4）</td></tr>
+</table>
+
+<p>完整帧（不含 CRC）：</p>
+<pre>AA 55 [SEQ] 30 07 58 00 04 01 23 A5 5A [CRCH] [CRCL]</pre>
+</div>
+
+<h2>4. 阶段 ③：UART 传输</h2>
+
+<div class="stage">
+<ul>
+<li>波特率：默认 <code>460800</code>，8 数据位 / 1 停止位 / 无校验 / 无流控</li>
+<li>STM32 端 USART1 <code>RXNE</code> 中断把字节存入 256 B 环形缓冲</li>
+<li>主循环 <code>App_Protocol_Poll()</code> 完成帧定界（首字节 <code>0xAA</code> → 第二字节 <code>0x55</code>）与 CRC 校验</li>
+</ul>
+</div>
+
+<h2>5. 阶段 ④：STM32 内部派发</h2>
+
+<div class="stage">
+<pre>
+App_Protocol_Poll()
+   ├─ 帧头匹配 0xAA 0x55
+   ├─ CRC16 校验 ────────► 失败：发 0x01 错误响应（错误码 0x01，SEQ 固定 0xFF）
+   ├─ 命令码分发 → 0x30
+   │     ├─ 解析 DevId / AddrSize(=0) / DataLen / WrData 指针
+   │     └─ 调用 BSP I2C 透传写（AddrSize=0 走"裸字节流"分支）
+   └─ I2C 返回 OK ───────► 同 CMD+SEQ、LEN=0 响应
+      I2C NACK / 超时 ───► 0x01 错误响应（错误码 0x03 执行失败）
+</pre>
+
+<blockquote>
+BSP 返回 <code>ERROR</code> 时应用层<span class="danger">不做本地重试</span>，直接向上位机回 NACK。
+重试策略由 PC 端控制（100 ms 超时 + 最多 2 次重发，共 3 次）。
+</blockquote>
+</div>
+
+<h2>6. 阶段 ⑤：I2C2 总线时序</h2>
+
+<div class="stage">
+<h3>6.1 时序图（AddrSize == 0 单 transaction）</h3>
+<pre>
+ SCL ─┐_┌─┐_┌─┐_┌─┐_ ... ─┐_┌─┐_
+ SDA  S│ DevId&lt;&lt;1 + W │A│ WrData[0] │A│ WrData[1] │A│ ... │ WrData[N-1] │A│ P
+      └───────────────┴─┴───────────┴─┴───────────┴─┴─────┴─────────────┴─┘
+      START                                                              STOP
+</pre>
+
+<h3>6.2 字节发送顺序</h3>
+<table>
+<tr><th>序号</th><th>总线字节</th><th>来源</th></tr>
+<tr><td>START</td><td>—</td><td>STM32 产生起始条件</td></tr>
+<tr><td>Byte 0</td><td><code>DevId &lt;&lt; 1</code>（W 位 = 0）</td><td>协议帧 DevId 字段</td></tr>
+<tr><td>Byte 1</td><td><code>WrData[0]</code></td><td>协议帧 Data[0]</td></tr>
+<tr><td>Byte 2</td><td><code>WrData[1]</code></td><td>协议帧 Data[1]</td></tr>
+<tr><td>...</td><td>...</td><td>...</td></tr>
+<tr><td>Byte N</td><td><code>WrData[N-1]</code></td><td>协议帧 Data[N-1]</td></tr>
+<tr><td>STOP</td><td>—</td><td>STM32 产生停止条件</td></tr>
+</table>
+
+<h3>6.3 STM32 端约束（来自 v2.4）</h3>
+<ul>
+<li><span class="hl">WrData[0] 先发</span>，对应总线发送顺序，与协议帧载荷索引一致</li>
+<li><span class="danger">不得</span>翻转字节序</li>
+<li><span class="danger">不得</span>解析或重组 Data 段</li>
+<li><span class="danger">不得</span>拆分 transaction，<span class="danger">不得</span>插入 RepeatedStart</li>
+<li>整个写操作在一次 <code>START</code> → <code>STOP</code> 之间完成</li>
+</ul>
+
+<h3>6.4 物理层参数</h3>
+<table>
+<tr><th>项目</th><th>值</th></tr>
+<tr><td>总线</td><td>I2C2（PB10 SCL / PB11 SDA）</td></tr>
+<tr><td>驱动方式</td><td>软件模拟 I2C（GPIO bit-bang）</td></tr>
+<tr><td>实测频率</td><td>~870 kHz（bit 周期 ~1.15 μs）</td></tr>
+<tr><td>单字节耗时参考</td><td>地址 + 数据共 N+1 字节，单字节 ~9 bit ≈ 10.4 μs</td></tr>
+</table>
+</div>
+
+<h2>7. 响应帧</h2>
+
+<table>
+<tr><th>结果</th><th>响应字节</th><th>说明</th></tr>
+<tr>
+<td><span class="ok">成功</span></td>
+<td><code>AA 55 [SEQ] 30 00 [CRCH] [CRCL]</code></td>
+<td>LEN=0，SEQ 沿用请求帧</td>
+</tr>
+<tr>
+<td><span class="danger">I2C 失败</span></td>
+<td><code>AA 55 [SEQ] 01 01 03 [CRCH] [CRCL]</code></td>
+<td>错误码 <code>0x03</code>（执行失败），SEQ 沿用请求帧</td>
+</tr>
+<tr>
+<td><span class="danger">CRC 失败</span></td>
+<td><code>AA 55 FF 01 01 01 [CRCH] [CRCL]</code></td>
+<td>原 SEQ 不可信，SEQ <span class="hl">固定 0xFF</span>，错误码 <code>0x01</code></td>
+</tr>
+</table>
+
+<h2>8. 端到端时序总览</h2>
+
+<pre>
+DLL                  PC                        STM32                       Slave IC
+ │                    │                          │                            │
+ │ Write(DevId,sz,d)  │                          │                            │
+ │ ─────────────────► │                          │                            │
+ │                    │ AA 55 SEQ 30 LEN ...     │                            │
+ │                    │ ───── UART 460800 ─────► │                            │
+ │                    │                          │ CRC OK                     │
+ │                    │                          │ START + DevId&lt;&lt;1+W         │
+ │                    │                          │ ─────────────────────────► │
+ │                    │                          │                       ACK  │
+ │                    │                          │ WrData[0..N-1] (每字节后 ACK)
+ │                    │                          │ ─────────────────────────► │
+ │                    │                          │ STOP                       │
+ │                    │                          │                            │
+ │                    │ AA 55 SEQ 30 00 CRC      │                            │
+ │                    │ ◄───── UART 460800 ───── │                            │
+ │ ◄─── return OK ─── │                          │                            │
+</pre>
+
+<h2>9. 与 <code>0x21</code> 写单寄存器的区别</h2>
+
+<table>
+<tr><th>维度</th><th><code>0x21</code> 写单寄存器</th><th><code>0x30</code> AW Firmware I2C 写</th></tr>
+<tr><td>目标设备</td><td>固定 <code>g_motorIcAddr</code></td><td>任意 DevId（参数指定）</td></tr>
+<tr><td>寄存器地址</td><td>固定 16-bit 大端</td><td>0 / 1 / 2 / 任意字节（AddrSize 指定）</td></tr>
+<tr><td>数据宽度</td><td>固定 2 字节</td><td>任意长度（DataLen 指定）</td></tr>
+<tr><td>字节解释</td><td>协议层解析 reg / data 字段</td><td>协议层<b>完全不解析</b>，原样透传</td></tr>
+<tr><td>典型场景</td><td>调试期常规寄存器读写</td><td>烧录 SDK 回调、非标 I2C 设备</td></tr>
+</table>
+
+<h2>10. 要点速查</h2>
+
+<ul>
+<li><span class="hl">AW SDK 场景下 AddrSize 恒为 0</span>，Data 段是 DLL 不透明字节流</li>
+<li>STM32 端<span class="danger">不得</span>解析 / 重组 / 翻转 / 拆分 transaction</li>
+<li>BSP I2C 失败时直接 NACK，<span class="danger">不本地重试</span>，重试由 PC 端控制（100ms × 3）</li>
+<li>SEQ 重发不变，STM32 不去重，每次重新执行</li>
+<li>CRC16 使用 <code>0x8005</code> + 右移低位先行（<b>非</b>标准 MODBUS）</li>
+</ul>
+
+<hr>
+<p style="color:#6b7280; font-size:13px; text-align:center;">
+项目：STM32F429ZG 电机调试板 ｜ 协议版本：v2.5 ｜ 文档生成：2026-05-13
+</p>
+
+</body>
+</html>

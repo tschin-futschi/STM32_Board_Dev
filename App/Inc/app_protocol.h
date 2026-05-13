@@ -53,6 +53,8 @@ typedef enum
     PROTO_CMD_READ_REG       = 0x20U,   /* PC->STM32, data = 2 bytes [regH][regL]                   */
     PROTO_CMD_WRITE_REG      = 0x21U,   /* PC->STM32, data = 4 bytes [regH][regL][valH][valL]        */
     PROTO_CMD_BULK_READ      = 0x22U,   /* PC->STM32, data = 4 bytes [regH][regL][cntH][cntL]        */
+    PROTO_CMD_I2C_PASS_WRITE = 0x30U,   /* PC->STM32, AW Firmware I2C 写指令; data = [DevId][AddrSize][AddrBytes...][DataLen][Data...] */
+    PROTO_CMD_I2C_PASS_READ  = 0x31U,   /* PC->STM32, AW Firmware I2C 读指令; data = [DevId][AddrSize][AddrBytes...][ReadLen] */
 
     /* Oscilloscope & generator control group (0x50~0x7F) */
     PROTO_CMD_START_SAMPLE     = 0x50U, /* PC->STM32, data empty                            */

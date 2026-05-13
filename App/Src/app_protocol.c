@@ -503,6 +503,110 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
     s_bulkReadActive = 0U;
 }
 
+/* 0x30 — AW Firmware I2C 写指令（透传）
+ * Payload: [DevId(1)][AddrSize(1)][AddrBytes(AddrSize)][DataLen(1)][Data(DataLen)]
+ * AddrSize == 0 跳过 AddrBytes 段；AW SDK 场景下固定为 0。 */
+static void HandleI2cPassWrite(const Proto_Frame_t *pFrame)
+{
+    uint8_t        devAddr;
+    uint8_t        addrSize;
+    uint8_t        dataLen;
+    const uint8_t *pAddr;
+    const uint8_t *pData;
+    uint16_t       expectedLen;
+
+    if (pFrame->len < 3U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    devAddr  = pFrame->data[0];
+    addrSize = pFrame->data[1];
+
+    if (devAddr > PROTO_MOTOR_ADDR_MAX)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    if ((uint16_t)pFrame->len < (uint16_t)(3U + addrSize))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    dataLen     = pFrame->data[2U + addrSize];
+    expectedLen = (uint16_t)(3U + addrSize) + (uint16_t)dataLen;
+    if ((uint16_t)pFrame->len != expectedLen)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    pAddr = (addrSize > 0U) ? &pFrame->data[2]                     : NULL;
+    pData = (dataLen  > 0U) ? &pFrame->data[3U + addrSize]          : NULL;
+
+    if (BSP_I2C2_TransparentWrite(devAddr, pAddr, addrSize, pData, dataLen) != SUCCESS)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_WRITE, NULL, 0U);
+}
+
+/* 0x31 — AW Firmware I2C 读指令（透传）
+ * Payload: [DevId(1)][AddrSize(1)][AddrBytes(AddrSize)][ReadLen(1)]
+ * AddrSize == 0 → 单段读 (START+addr+R+...+STOP)；AddrSize > 0 → 写地址后 RepeatedStart 读。 */
+static void HandleI2cPassRead(const Proto_Frame_t *pFrame)
+{
+    static uint8_t s_passReadBuf[255U];
+
+    uint8_t        devAddr;
+    uint8_t        addrSize;
+    uint8_t        readLen;
+    const uint8_t *pAddr;
+
+    if (pFrame->len < 3U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    devAddr  = pFrame->data[0];
+    addrSize = pFrame->data[1];
+
+    if (devAddr > PROTO_MOTOR_ADDR_MAX)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    if ((uint16_t)pFrame->len != (uint16_t)(3U + addrSize))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    readLen = pFrame->data[2U + addrSize];
+    if (readLen == 0U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    pAddr = (addrSize > 0U) ? &pFrame->data[2] : NULL;
+
+    if (BSP_I2C2_TransparentRead(devAddr, pAddr, addrSize, s_passReadBuf, readLen) != SUCCESS)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_READ, s_passReadBuf, readLen);
+}
+
 /*--------------------------------------------------------------------------*/
 /*                    Tick overrun check (PROTO-03)                         */
 /*--------------------------------------------------------------------------*/
@@ -824,6 +928,12 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
             break;
         case PROTO_CMD_BULK_READ:
             HandleBulkRead(pFrame);
+            break;
+        case PROTO_CMD_I2C_PASS_WRITE:
+            HandleI2cPassWrite(pFrame);
+            break;
+        case PROTO_CMD_I2C_PASS_READ:
+            HandleI2cPassRead(pFrame);
             break;
         case PROTO_CMD_START_SAMPLE:
             HandleStartSample(pFrame);
