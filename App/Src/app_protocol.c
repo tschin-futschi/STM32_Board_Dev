@@ -109,12 +109,16 @@ static uint16_t CRC16_Update(uint16_t crc, uint8_t byte)
 /*--------------------------------------------------------------------------*/
 
 /* USB-to-serial Latency Timer bypass for FW flash path: pad 0x30 / 0x31
-   success responses to >= 64 byte total frame so the bridge chip
-   (FTDI/CP210x/CH340) triggers full-packet release on STM32->PC direction
-   instead of waiting for Latency Timer (typ. 16ms default) to expire.
-   Only affects HandleI2cPassWrite / HandleI2cPassRead success paths;
-   error responses and all other command responses stay unchanged. */
-#define PROTO_FLASH_RESP_MIN_FRAME_LEN  64U
+   success responses up to >= 200 byte total frame so the bridge chip
+   triggers full-buffer release on STM32->PC direction instead of waiting
+   for Latency Timer (typ. 16ms default) to expire.
+   - 200 byte chosen empirically: 64 byte (FT232R USB FS bulk threshold)
+     proved insufficient on lab hardware (likely CP210x or other chip with
+     larger internal buffer), so we probe a higher threshold while staying
+     well below the 1-byte LEN field max (255 -> total frame 262).
+   - Only affects HandleI2cPassWrite / HandleI2cPassRead success paths;
+     error responses and all other command responses stay unchanged. */
+#define PROTO_FLASH_RESP_MIN_FRAME_LEN  200U
 
 /**
   * @brief Build and transmit a control frame.
@@ -190,7 +194,7 @@ static ErrorStatus SendFramePadded(uint8_t seq, uint8_t cmd,
 
     /* Compute padding so that total frame (overhead + len) reaches padToTotalLen.
        If real frame is already large enough, no padding is added. paddedLen fits
-       in uint8_t because padToTotalLen <= 64 in current use (well below 255+7). */
+       in uint8_t as long as padToTotalLen <= 262 (PROTO_FRAME_OVERHEAD + 255). */
     if ((uint16_t)PROTO_FRAME_OVERHEAD + (uint16_t)dataLen < padToTotalLen)
     {
         padBytes = (uint8_t)(padToTotalLen
