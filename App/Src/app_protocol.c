@@ -108,18 +108,6 @@ static uint16_t CRC16_Update(uint16_t crc, uint8_t byte)
 /*                         TX helpers                                       */
 /*--------------------------------------------------------------------------*/
 
-/* USB-to-serial Latency Timer bypass for FW flash path: pad 0x30 / 0x31
-   success responses up to >= 200 byte total frame so the bridge chip
-   triggers full-buffer release on STM32->PC direction instead of waiting
-   for Latency Timer (typ. 16ms default) to expire.
-   - 200 byte chosen empirically: 64 byte (FT232R USB FS bulk threshold)
-     proved insufficient on lab hardware (likely CP210x or other chip with
-     larger internal buffer), so we probe a higher threshold while staying
-     well below the 1-byte LEN field max (255 -> total frame 262).
-   - Only affects HandleI2cPassWrite / HandleI2cPassRead success paths;
-     error responses and all other command responses stay unchanged. */
-#define PROTO_FLASH_RESP_MIN_FRAME_LEN  200U
-
 /**
   * @brief Build and transmit a control frame.
   * @param seq    Frame sequence number (echo back the received seq).
@@ -147,86 +135,6 @@ static ErrorStatus SendFrame(uint8_t seq, uint8_t cmd,
     {
         s_txBuf[idx] = pData[i];
         crc = CRC16_Update(crc, pData[i]);
-        idx++;
-    }
-
-    /* CRC16 big-endian (protocol spec: high byte first) */
-    s_txBuf[idx++] = (uint8_t)(crc >> 8U);
-    s_txBuf[idx++] = (uint8_t)(crc & 0xFFU);
-
-    BSP_UART_TxWait();
-    return BSP_UART_Transmit(s_txBuf, idx);
-}
-
-/**
-  * @brief Build and transmit a control frame, padding the data section so
-  *        total frame length reaches at least padToTotalLen bytes.
-  *
-  * Used by 0x30 / 0x31 success responses to bypass USB-to-serial Latency
-  * Timer hold-back on STM32->PC direction: by reaching the bridge chip's
-  * full-packet threshold (64 byte for FTDI/CP210x/CH340 on USB FS bulk),
-  * the response is released immediately instead of waiting for the Latency
-  * Timer (typ. 16ms default) to expire. See protocol.md 0x30 / 0x31
-  * sections for the receiver-side semantics.
-  *
-  * Padding bytes are 0x00. CRC16 covers SEQ+CMD+LEN+(data+padding) as one
-  * contiguous payload. The receiver consumes only the first `dataLen`
-  * bytes of the logical response payload and discards the rest.
-  *
-  * @param seq             Frame sequence number (echo back the received seq).
-  * @param cmd             Command code.
-  * @param pData           Pointer to data payload, NULL if dataLen == 0.
-  * @param dataLen         Real (logical) data length in bytes.
-  * @param padToTotalLen   Minimum total frame size; if real frame size is
-  *                        already >= padToTotalLen, no padding is added.
-  * @retval SUCCESS / ERROR (BSP busy)
-  */
-static ErrorStatus SendFramePadded(uint8_t seq, uint8_t cmd,
-                                    const uint8_t *pData, uint8_t dataLen,
-                                    uint16_t padToTotalLen)
-{
-    static uint8_t s_txBuf[PROTO_MAX_FRAME_LEN];
-    uint16_t crc = k_crc16Init;
-    uint16_t idx = 0U;
-    uint8_t  paddedLen;
-    uint8_t  padBytes;
-    uint8_t  i;
-
-    /* Compute padding so that total frame (overhead + len) reaches padToTotalLen.
-       If real frame is already large enough, no padding is added. paddedLen fits
-       in uint8_t as long as padToTotalLen <= 262 (PROTO_FRAME_OVERHEAD + 255). */
-    if ((uint16_t)PROTO_FRAME_OVERHEAD + (uint16_t)dataLen < padToTotalLen)
-    {
-        padBytes = (uint8_t)(padToTotalLen
-                             - (uint16_t)PROTO_FRAME_OVERHEAD
-                             - (uint16_t)dataLen);
-    }
-    else
-    {
-        padBytes = 0U;
-    }
-    paddedLen = (uint8_t)(dataLen + padBytes);
-
-    s_txBuf[idx++] = PROTO_SOF1;
-    s_txBuf[idx++] = PROTO_SOF2;
-
-    s_txBuf[idx] = seq;       crc = CRC16_Update(crc, seq);       idx++;
-    s_txBuf[idx] = cmd;       crc = CRC16_Update(crc, cmd);       idx++;
-    s_txBuf[idx] = paddedLen; crc = CRC16_Update(crc, paddedLen); idx++;
-
-    /* Real payload */
-    for (i = 0U; i < dataLen; i++)
-    {
-        s_txBuf[idx] = pData[i];
-        crc = CRC16_Update(crc, pData[i]);
-        idx++;
-    }
-
-    /* Padding bytes (0x00); covered by CRC; receiver discards beyond dataLen */
-    for (i = 0U; i < padBytes; i++)
-    {
-        s_txBuf[idx] = 0x00U;
-        crc = CRC16_Update(crc, 0x00U);
         idx++;
     }
 
@@ -645,9 +553,7 @@ static void HandleI2cPassWrite(const Proto_Frame_t *pFrame)
         return;
     }
 
-    /* Padded success response: bypass USB-to-serial Latency Timer for FW flash path */
-    (void)SendFramePadded(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_WRITE,
-                          NULL, 0U, PROTO_FLASH_RESP_MIN_FRAME_LEN);
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_WRITE, NULL, 0U);
 }
 
 /* 0x31 — AW Firmware I2C 读指令（透传）
@@ -698,9 +604,7 @@ static void HandleI2cPassRead(const Proto_Frame_t *pFrame)
         return;
     }
 
-    /* Padded success response: bypass USB-to-serial Latency Timer for FW flash path */
-    (void)SendFramePadded(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_READ,
-                          s_passReadBuf, readLen, PROTO_FLASH_RESP_MIN_FRAME_LEN);
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_READ, s_passReadBuf, readLen);
 }
 
 /*--------------------------------------------------------------------------*/
