@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AW ISP 回调架构连线讲解 — 2026-05-19</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         max-width: 980px; margin: 2em auto; padding: 0 2em; line-height: 1.7;
+         color: #222; background: #fafafa; }
+  h1, h2, h3 { color: #1a3a5e; }
+  h1 { border-bottom: 3px solid #1a3a5e; padding-bottom: 0.4em; }
+  h2 { border-left: 5px solid #1a3a5e; padding-left: 0.6em; margin-top: 2em; }
+  h3 { color: #2a5a8e; }
+  code { background: #eef2f7; padding: 0.15em 0.4em; border-radius: 3px;
+         font-family: Consolas, "Courier New", monospace; color: #c0392b; }
+  pre { background: #2b2b2b; color: #f8f8f2; padding: 1em 1.4em; border-radius: 6px;
+        overflow-x: auto; line-height: 1.5; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  .kw   { color: #ff79c6; }
+  .typ  { color: #8be9fd; }
+  .fn   { color: #50fa7b; }
+  .str  { color: #f1fa8c; }
+  .num  { color: #bd93f9; }
+  .com  { color: #6272a4; font-style: italic; }
+  .done   { color: #2ecc71; font-weight: bold; }
+  .todo   { color: #e67e22; font-weight: bold; }
+  .warn   { color: #c0392b; font-weight: bold; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; background: white; }
+  th, td { border: 1px solid #ccc; padding: 0.5em 0.8em; text-align: left; }
+  th { background: #1a3a5e; color: white; }
+  tr:nth-child(even) td { background: #f4f7fa; }
+  .flow { background: white; border: 1px solid #ccc; border-radius: 6px;
+          padding: 1.2em; margin: 1em 0; font-family: Consolas, monospace;
+          white-space: pre; overflow-x: auto; font-size: 0.95em; }
+  .layer-done { background: #d4f4dd; border-left: 5px solid #2ecc71; padding: 0.8em;
+                margin: 0.6em 0; border-radius: 4px; }
+  .layer-todo { background: #fde9d2; border-left: 5px solid #e67e22; padding: 0.8em;
+                margin: 0.6em 0; border-radius: 4px; }
+  .layer-bsp  { background: #d6e4f5; border-left: 5px solid #3498db; padding: 0.8em;
+                margin: 0.6em 0; border-radius: 4px; }
+  .note { background: #fffbe6; border-left: 5px solid #f1c40f; padding: 0.8em 1em;
+          margin: 1em 0; border-radius: 4px; }
+  .arrow { text-align: center; font-size: 1.4em; color: #888; margin: 0.3em 0; }
+</style>
+</head>
+<body>
+
+<h1>AW ISP 回调架构 — 三个低层函数如何连到 BSP 库</h1>
+<p>日期：2026-05-19　|　涉及文件：<code>Flash/AW/AW86008_86100/</code></p>
+
+<h2>1. 结论一句话</h2>
+<p>
+<span class="warn">⚠ 目前还没真正连上。</span>
+回调架构（步骤 1）已经搭好；但 <code>s_ops</code> 在运行时仍为 <code>NULL</code>，
+还差<strong>步骤 2（写 port 文件）</strong>和<strong>步骤 3（main 注册）</strong>。
+</p>
+
+<h2>2. 完整数据流（4 层，颜色表示当前状态）</h2>
+
+<div class="layer-done">
+<strong>第 1 层　vendor 代码　<span class="done">✅ 已就绪</span></strong>
+<pre><code><span class="com">// aw_uboot_isp.c 中 vendor 真代码调用点（例如 aw_flash_block_erase_check）</span>
+(<span class="kw">void</span>)<span class="fn">aw_i2c_write</span>(AW_UBOOT_I2C_ADDR, <span class="num">0U</span>, <span class="kw">NULL</span>, <span class="num">15U</span>, w_buff);
+<span class="fn">delay_ms</span>(<span class="num">25</span> * len);
+(<span class="kw">void</span>)<span class="fn">aw_i2c_read</span>(AW_UBOOT_I2C_ADDR, <span class="num">0U</span>, <span class="kw">NULL</span>, <span class="num">10U</span>, r_buff);</code></pre>
+<p>vendor 只调用一个普通 C 函数名，<strong>不知道</strong>背后是 I2C 还是 SPI，也不知道是哪片 MCU 的 BSP。</p>
+</div>
+
+<div class="arrow">↓ 直接函数调用（同一 .c 内 static 符号）</div>
+
+<div class="layer-done">
+<strong>第 2 层　static 转发器　<span class="done">✅ 已就绪</span></strong>
+<pre><code><span class="com">// aw_uboot_isp.c:59-66</span>
+<span class="kw">static int</span> <span class="fn">aw_i2c_write</span>(<span class="typ">uint8_t</span> DevId,    <span class="typ">uint8_t</span> AddrSize, <span class="typ">uint8_t</span> *pAddr,
+                        <span class="typ">uint8_t</span> WrSize,   <span class="typ">uint8_t</span> *WrData)
+{
+    <span class="kw">if</span> (s_ops == <span class="kw">NULL</span>) {
+        <span class="kw">return</span> <span class="num">-1</span>;                          <span class="com">// 还没注册 → 失败返回</span>
+    }
+    <span class="kw">return</span> s_ops-&gt;<span class="fn">i2c_write</span>(DevId, AddrSize, pAddr, WrSize, WrData);
+}</code></pre>
+<p>转发器是 <code>static</code>，只在 isp.c 内部可见。把"调用什么函数"这件事推迟到运行时由 <code>s_ops</code> 函数指针决定。</p>
+</div>
+
+<div class="arrow">↓ 通过函数指针 dispatch</div>
+
+<div class="layer-todo">
+<strong>第 3 层　回调表 <code>s_ops</code> ← port 函数　<span class="todo">⚠ 待办（步骤 2）</span></strong>
+<pre><code><span class="com">// aw_uboot_isp.c:29  ← 当前指向 NULL</span>
+<span class="kw">static const</span> aw_isp_ops_t *s_ops = <span class="kw">NULL</span>;
+
+<span class="com">// ↓ aw_isp_init() 把这个指针指向哪里？</span>
+<span class="com">// ↓ 需要新建一个 port 文件提供具体实现</span>
+
+<span class="com">// Flash/AW/AW86008_86100/Src/aw_port_stm32.c  ← 待新建</span>
+<span class="kw">static int</span> <span class="fn">aw_port_i2c_write</span>(<span class="typ">uint8_t</span> DevId, <span class="typ">uint8_t</span> AddrSize, <span class="typ">uint8_t</span> *pAddr,
+                              <span class="typ">uint8_t</span> WrSize, <span class="typ">uint8_t</span> *WrData)
+{
+    <span class="com">// 把 AW 签名翻译成 BSP 签名（注意参数顺序 swap）</span>
+    <span class="typ">ErrorStatus</span> s = <span class="fn">BSP_I2C2_TransparentWrite</span>(DevId, pAddr, AddrSize, WrData, WrSize);
+    <span class="kw">return</span> (s == SUCCESS) ? <span class="num">0</span> : <span class="num">-1</span>;
+}
+
+<span class="kw">const</span> aw_isp_ops_t g_awOpsStm32 = {
+    .delay_ms  = aw_port_delay_ms,
+    .i2c_write = aw_port_i2c_write,
+    .i2c_read  = aw_port_i2c_read,
+};</code></pre>
+<p>port 文件是<strong>适配器</strong>：把 AW 厂家定义的回调签名翻译成本项目 BSP 实际提供的 API 签名。</p>
+</div>
+
+<div class="arrow">↓ 真正调用 BSP 库</div>
+
+<div class="layer-bsp">
+<strong>第 4 层　BSP 库　<span class="done">✅ 已存在</span></strong>
+<pre><code><span class="com">// BSP/Src/bsp_i2c2.c:320</span>
+<span class="typ">ErrorStatus</span> <span class="fn">BSP_I2C2_TransparentWrite</span>(<span class="typ">uint8_t</span> devAddr,
+                                       <span class="kw">const</span> <span class="typ">uint8_t</span> *pAddr, <span class="typ">uint8_t</span> addrSize,
+                                       <span class="kw">const</span> <span class="typ">uint8_t</span> *pData, <span class="typ">uint16_t</span> dataLen)
+{
+    <span class="fn">I2C_Start</span>();
+    <span class="kw">if</span> (!<span class="fn">SendByte</span>((<span class="typ">uint8_t</span>)(devAddr &lt;&lt; <span class="num">1U</span>))) { <span class="kw">goto</span> error; }
+    <span class="com">// ... GPIO bit-bang → I2C 总线 → AW86xxx 芯片 ...</span>
+}</code></pre>
+</div>
+
+<h2>3. 还要做的两步</h2>
+
+<h3>步骤 2：新建 <code>Flash/AW/AW86008_86100/Src/aw_port_stm32.c</code></h3>
+<pre><code><span class="kw">#include</span> <span class="str">"aw_uboot_isp.h"</span>
+<span class="kw">#include</span> <span class="str">"bsp_i2c2.h"</span>
+<span class="kw">#include</span> <span class="str">"bsp_tick.h"</span>
+
+<span class="kw">static int</span> <span class="fn">aw_port_i2c_write</span>(<span class="typ">uint8_t</span> DevId, <span class="typ">uint8_t</span> AddrSize, <span class="typ">uint8_t</span> *pAddr,
+                              <span class="typ">uint8_t</span> WrSize, <span class="typ">uint8_t</span> *WrData)
+{
+    <span class="typ">ErrorStatus</span> s = <span class="fn">BSP_I2C2_TransparentWrite</span>(DevId, pAddr, AddrSize, WrData, WrSize);
+    <span class="kw">return</span> (s == SUCCESS) ? <span class="num">0</span> : <span class="num">-1</span>;
+}
+
+<span class="kw">static int</span> <span class="fn">aw_port_i2c_read</span>(<span class="typ">uint8_t</span> DevId, <span class="typ">uint8_t</span> AddrSize, <span class="typ">uint8_t</span> *pAddr,
+                             <span class="typ">uint8_t</span> RdSize, <span class="typ">uint8_t</span> *pRdBuf)
+{
+    <span class="typ">ErrorStatus</span> s = <span class="fn">BSP_I2C2_TransparentRead</span>(DevId, pAddr, AddrSize, pRdBuf, RdSize);
+    <span class="kw">return</span> (s == SUCCESS) ? <span class="num">0</span> : <span class="num">-1</span>;
+}
+
+<span class="kw">static void</span> <span class="fn">aw_port_delay_ms</span>(<span class="typ">uint32_t</span> xms)
+{
+    <span class="typ">uint32_t</span> start = <span class="fn">BSP_GetTick</span>();
+    <span class="kw">while</span> ((<span class="fn">BSP_GetTick</span>() - start) &lt; xms) { }
+}
+
+<span class="kw">const</span> aw_isp_ops_t g_awOpsStm32 = {
+    .delay_ms  = aw_port_delay_ms,
+    .i2c_write = aw_port_i2c_write,
+    .i2c_read  = aw_port_i2c_read,
+};</code></pre>
+
+<h3>步骤 3：<code>main()</code> 启动时注册一次</h3>
+<pre><code><span class="com">// main.c 初始化序列里（BSP 初始化之后、任何 ISP 操作之前）</span>
+<span class="kw">extern const</span> aw_isp_ops_t g_awOpsStm32;
+
+<span class="kw">if</span> (<span class="fn">aw_isp_init</span>(&amp;g_awOpsStm32) != ISP_OK) {
+    <span class="com">// 注册失败 = ops 表中有 NULL 成员，固件 bug</span>
+}</code></pre>
+<p>注册完成后 <code>s_ops = &amp;g_awOpsStm32</code>，此时 vendor 任意 <code>aw_i2c_write(...)</code> 调用会一路打到 <code>BSP_I2C2_TransparentWrite()</code>。</p>
+
+<h2>4. port 文件需要处理的 3 处 signature mismatch</h2>
+
+<table>
+<tr><th>项目</th><th>AW 回调签名</th><th>BSP 实际签名</th><th>port 翻译动作</th></tr>
+<tr>
+  <td>参数顺序</td>
+  <td><code>(DevId, AddrSize, pAddr, Size, Data)</code></td>
+  <td><code>(devAddr, pAddr, addrSize, pData, dataLen)</code></td>
+  <td>把 <code>AddrSize</code> 跟 <code>pAddr</code> 调位置</td>
+</tr>
+<tr>
+  <td>返回类型</td>
+  <td><code>int</code>（0 = OK）</td>
+  <td><code>ErrorStatus</code>（SUCCESS / ERROR 枚举）</td>
+  <td><code>(s == SUCCESS) ? 0 : -1</code></td>
+</tr>
+<tr>
+  <td>长度参数类型</td>
+  <td><code>uint8_t</code>（最大 255）</td>
+  <td><code>uint16_t</code></td>
+  <td>隐式提升，无信息损失</td>
+</tr>
+</table>
+
+<h2>5. 为什么这种「回调表」架构</h2>
+
+<div class="note">
+<strong>多 IC 隔离</strong>：未来加 DW 系列芯片，DW 也有自己的 <code>delay_ms</code> / <code>i2c_write</code> / <code>i2c_read</code>。
+如果 AW 与 DW 都把这些定义成全局 <code>extern</code>，链接期会撞名。
+当前架构把它们都做成 <code>static</code> 私有 + 通过 <code>aw_isp_ops_t</code>（或将来 <code>dw_isp_ops_t</code>）暴露统一 API，<strong>跨 vendor 零符号冲突</strong>。
+</div>
+
+<div class="note">
+<strong>BSP 隔离</strong>：vendor 代码现在不 <code>#include "bsp_i2c2.h"</code>，意味着将来换 MCU / 换驱动 / 写单元测试时，
+vendor 代码完全不动，只换 <code>aw_port_xxx.c</code> 文件提供的实现即可。
+</div>
+
+<h2>6. 验证清单（步骤 2 / 3 完成后）</h2>
+<ul>
+<li>启动后 <code>aw_isp_init()</code> 返回 <code>ISP_OK</code></li>
+<li>调用 <code>aw_hank_connect_check()</code> 能在 I2C 总线上抓到 9 字节 UBOOT HANK 帧写、随后 14 字节读</li>
+<li>启动前不注册直接调 <code>aw_i2c_isp_download()</code> 应返 <code>ISP_NOT_INITED</code>（NULL 防御生效）</li>
+</ul>
+
+<hr>
+<p style="color:#888; font-size:0.9em;">
+本文档由 Claude Code 自动生成，参考自 <code>Inc/aw_uboot_isp.h</code>（修改记录 v2026-05-19）与 <code>Src/aw_uboot_isp.c</code>（修改记录 v2026-05-19）当前实际代码。
+</p>
+
+</body>
+</html>

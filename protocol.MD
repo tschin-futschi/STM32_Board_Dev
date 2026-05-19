@@ -325,6 +325,8 @@
 
 **用途**：服务于厂家烧录 SDK DLL（如 AW86100.dll）的 `pFunc_I2C_Write` 回调，上位机把 DLL 的写请求按本协议透传给 STM32，STM32 端在软件位拼 I2C 总线上以单次 transaction 完成：`START → addr+W → [若 AddrSize > 0 发 AddrBytes 寄存器地址段] → Data 段 → STOP`。
 
+**注**：自 v2.6 起，AW86006 / AW86100 烧录改为 STM32 本地 ISP 执行（见 §修订记录 v2.6），本命令仅保留为通用 I2C 透传 debug 工具，新工程不应再依赖 AW SDK DLL 经此命令烧录。
+
 **AW SDK 场景约定**：`pFunc_I2C_Write` 回调签名只有 `(DevId, WrSize, WrData)` 三个参数（无 AddrSize），DLL 自行把寄存器地址拼在 WrData 头部交给上位机。因此本命令在服务 AW SDK 时 `AddrSize` 恒为 `0`，Data 段为 DLL 不透明字节流（可能在头部包含 IC 寄存器地址，由 DLL 决定），STM32 端原样透传到 I2C 总线即可，**不得**自行解析或重组。WrData 按 `WrData[0..WrSize-1]` 索引顺序追加到载荷，对应总线发送顺序（先发 WrData[0]）。
 
 ---
@@ -341,7 +343,83 @@
 
 **用途**：服务于厂家烧录 SDK DLL 的 `pFunc_I2C_Read` 回调，STM32 端在软件位拼 I2C 总线上完成：`AddrSize > 0` 时走 `START → addr+W → AddrBytes → RepeatedStart → addr+R → 读 ReadLen 字节 → STOP`；`AddrSize == 0` 时走 `START → addr+R → 读 ReadLen 字节 → STOP`。
 
+**注**：自 v2.6 起，AW86006 / AW86100 烧录改为 STM32 本地 ISP 执行（见 §修订记录 v2.6），本命令仅保留为通用 I2C 透传 debug 工具，新工程不应再依赖 AW SDK DLL 经此命令烧录。
+
 **AW SDK 场景约定**：`pFunc_I2C_Read` 回调签名为 `(DevId, AddrSize, pAddr, RdSize, pRdBuf)`，AddrSize 由 DLL 决定，烧录过程中常见取值为 1 或 2 字节寄存器地址；AddrSize=0（无寄存器地址直读）在 AW SDK 中是否会被实际调用属 OPEN 项，待供应商书面确认。AddrBytes 按 `pAddr` 缓冲索引 `0..AddrSize-1` 顺序追加到载荷，对应总线发送顺序（先发 AddrBytes[0]）；STM32 端原样转发到总线、不得翻转或重排字节序。
+
+---
+
+### 4.3.5 AW 本地 ISP 烧录组（0x32~0x37）
+
+服务于 AW86008 / AW86100 的本地烧录（不再依赖 PC 端 DLL）。典型流程：
+PC 发 **0x32 BEGIN** 启动 session → 多次 **0x33 DATA** 分包送固件 → **0x34 EXEC** 触发实际烧录。
+固件最大 **64 KB**（受 STM32 SRAM1 单缓冲限制）。
+
+**重要**：`0x34 EXEC` 会阻塞 ~5-10 秒，期间 STM32 主循环停摆，**不会响应心跳**。
+PC 端在发 `0x34` 之前必须临时关闭心跳检测或扩大超时窗口。
+
+#### `0x32` 烧录 BEGIN
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 8 字节：`[addr(4 LE)] [totalBytes(4 LE)]` |
+| 成功响应 | 同 CMD+SEQ，LEN=0 |
+| 失败条件 | `addr` 不在 `[0x01000000, 0x01020000)`；`totalBytes` 为 0 / 非 4 字节对齐 / > 64 KB；`addr + totalBytes > 0x01020000` |
+| 失败响应 | 错误响应帧，错误码 `0x03` |
+| 副作用 | 重置 session 状态机为 RECEIVING，清零接收游标 |
+
+#### `0x33` 烧录 DATA
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | `[pktSeq(2 LE)] [chunkData(N 字节)]`，单帧 LEN ≤ 255 → chunkData ≤ 253 B |
+| 成功响应 | 同 CMD+SEQ，数据段 `[nextExpectedSeq(2 LE)]`（PC 用于流控） |
+| 失败条件 | 当前 state 不是 RECEIVING；`pktSeq` ≠ 当前 expected seq（不容忍乱序/重复）；累计接收量超过 `totalBytes` |
+| 失败响应 | 错误响应帧，错误码 `0x03` |
+| 副作用 | 累积接收量 == `totalBytes` 时，state 切到 READY |
+
+#### `0x34` 烧录 EXEC
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 空（LEN=0） |
+| 成功响应 | 同 CMD+SEQ，数据段 `[ispStatus(1)]`（`enum isp_status` 值，`0` = `ISP_OK` 全成功） |
+| 失败条件 | 当前 state 不是 READY |
+| 失败响应 | 错误响应帧，错误码 `0x03`（state 不对）；或正常 resp 中 `ispStatus != 0`（烧录本身失败） |
+| **阻塞时间** | **~5-10 秒**，期间 STM32 不响应心跳。**PC 端必须临时禁用心跳检测**。 |
+| 副作用 | 烧录完成后 state → DONE（成功）或 ERROR（失败） |
+
+#### `0x35` 烧录 STATUS
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 空（LEN=0） |
+| 成功响应 | 9 字节：`[state(1)] [rxOffset(4 LE)] [totalBytes(4 LE)]` |
+| 状态码 | `0 IDLE` / `1 RECEIVING` / `2 READY` / `3 EXECUTING`（极少观察到）/ `4 DONE` / `5 ERROR` |
+| 备注 | 任意时刻可调，不改变 state |
+
+#### `0x36` 烧录 CANCEL
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 空（LEN=0） |
+| 成功响应 | 同 CMD+SEQ，LEN=0 |
+| 副作用 | 强制重置 session 状态机为 IDLE，清零所有游标。任意时刻可调，包括错误恢复 |
+
+#### `0x37` 烧录 RESET_CHIP
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 空（LEN=0） |
+| 成功响应 | 同 CMD+SEQ，数据段 `[ispStatus(1)]` |
+| 用途 | 单独调 `aw_reset_chip()`，用于：芯片卡死手动复位、测试 reset 单独 OK；**不动 session 状态** |
+| **阻塞时间** | **~50 ms**（wake 序列 + 15 ms 收尾） |
 
 ---
 
@@ -677,3 +755,5 @@ T_sample ≥ max( T_i2c + T_main,  T_uart,  T_i2c / k )
 | v2.3 | 2026-05-12 | 0x30 / 0x31 用途段描述与 STM32 实际 I2C 驱动方式对齐：STM32 端使用软件位拼 I2C（StdPeriph + GPIO bit-bang），不存在 HAL 库；用途段改为 START/STOP/RepeatedStart 时序描述，移除对 HAL_I2C_Master_Transmit / HAL_I2C_Mem_Read / HAL_I2C_Master_Receive 的引用 |
 | v2.4 | 2026-05-12 | 0x30 章节新增 **AW SDK 场景约定** 段落，明确：`pFunc_I2C_Write` 回调签名无 AddrSize，DLL 自行把寄存器地址拼在 WrData 头部；因此服务 AW SDK 时 AddrSize 恒为 0，Data 段为 DLL 不透明字节流，STM32 端原样透传不得解析或重组 |
 | v2.5 | 2026-05-12 | 0x31 章节新增 **AW SDK 场景约定** 段落（对称 0x30 v2.4），明确：`pFunc_I2C_Read` 回调签名含 AddrSize（由 DLL 决定，常见 1 或 2，AddrSize=0 是否实际调用属 OPEN 待供应商确认）；AddrBytes 按 `pAddr` 索引顺序对应总线发送顺序，STM32 端不得翻转字节序。同步在 0x30 段补充 WrData 字节顺序与总线发送顺序的对应说明 |
+| v2.6 | 2026-05-19 | AW86006 / AW86100 烧录方案变更：废弃「PC 端 AW DLL → 0x30/0x31 透传」链路，改为 STM32 本地 ISP 烧录。原因：DLL 透传对 USB 转串口（如 FT232）的 Latency Timer 等通讯设置敏感，导致烧录程序不通用。0x30/0x31 保留为通用 I2C 透传 debug 工具不删除；新增 `0x32` ~ `0x37` 命令号预留给本地 ISP 烧录，字段后续补齐 |
+| v2.7 | 2026-05-19 | AW 本地 ISP 烧录 6 条命令字段定义完成：`0x32` BEGIN（`[addr][totalBytes]`）/ `0x33` DATA（`[pktSeq][chunk]` → `[nextSeq]`）/ `0x34` EXEC（→ `[ispStatus]`，阻塞 5-10s）/ `0x35` STATUS（→ `[state][rxOffset][totalBytes]`）/ `0x36` CANCEL / `0x37` RESET_CHIP。固件 max 64 KB（受 SRAM1 单缓冲限制）；`0x34` 阻塞期间 PC 须临时禁用心跳 |

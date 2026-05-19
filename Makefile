@@ -59,6 +59,12 @@ C_SOURCES += App/Src/app_sample.c
 C_SOURCES += Test/Src/test_pmic.c
 C_SOURCES += Test/Src/test_i2c_scan.c
 
+# Flash (vendor ISP) sources — AW86008/AW86100
+C_SOURCES += Flash/AW/AW86008_86100/Src/aw_port_stm32.c
+C_SOURCES += Flash/AW/AW86008_86100/Src/aw_uboot_isp.c
+C_SOURCES += Flash/AW/AW86008_86100/Src/aw_uboot_bufbuilt.c
+C_SOURCES += Flash/AW/AW86008_86100/Src/aw_flash.c
+
 # SPL driver sources (add as needed per phase)
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_rcc.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_gpio.c
@@ -100,6 +106,7 @@ C_INCLUDES  = -ICore/Inc
 C_INCLUDES += -IBSP/Inc
 C_INCLUDES += -IApp/Inc
 C_INCLUDES += -ITest/Inc
+C_INCLUDES += -IFlash/AW/AW86008_86100/Inc
 C_INCLUDES += -I$(SPL_DRV_DIR)/inc
 C_INCLUDES += -I$(CMSIS_DEV_DIR)/Include
 C_INCLUDES += -I$(CMSIS_INC_DIR)

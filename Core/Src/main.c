@@ -14,6 +14,8 @@
 #include "app_protocol.h"
 #include "app_sample.h"
 
+#include "aw_port_stm32.h"
+
 #include "test_config.h"
 #if TEST_PMIC_PID_READ
 #include "test_pmic.h"
@@ -64,6 +66,12 @@ int main(void)
 
     /* HWEN interrupt — enable after PMIC init to avoid spurious re-init */
     BSP_PMIC_HwenInit();
+
+    /* AW ISP callback registration — must be after BSP I2C2 + Tick are up */
+    if (aw_isp_init(&g_awOpsStm32) != ISP_OK)
+    {
+        while (1) { ; }   /* ops 表中有 NULL 成员 = 固件 bug — halt for debug */
+    }
 
     /* App */
     App_Protocol_Init();

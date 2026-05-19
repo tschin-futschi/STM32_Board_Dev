@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AWIC 86008/86100 ISP 代码逐行讲解</title>
+<style>
+:root {
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #6c7086;
+  --accent: #89b4fa;
+  --code-bg: #181825;
+  --comment: #6c7086;
+  --keyword: #cba6f7;
+  --string: #a6e3a1;
+  --number: #fab387;
+  --func: #89b4fa;
+  --type: #f9e2af;
+  --warn: #f38ba8;
+  --ok: #a6e3a1;
+  --table-border: #313244;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  margin: 0;
+  padding: 0;
+  line-height: 1.65;
+}
+header.page {
+  background: linear-gradient(135deg, #313244 0%, #1e1e2e 100%);
+  padding: 36px 40px;
+  border-bottom: 1px solid var(--table-border);
+}
+header.page h1 { margin: 0 0 6px 0; color: var(--accent); font-size: 26px; }
+header.page .meta { color: var(--muted); font-size: 13px; }
+nav.toc {
+  position: sticky;
+  top: 0;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--table-border);
+  padding: 12px 40px;
+  z-index: 10;
+  font-size: 14px;
+}
+nav.toc a {
+  color: var(--accent);
+  margin-right: 22px;
+  text-decoration: none;
+}
+nav.toc a:hover { text-decoration: underline; }
+main { padding: 32px 40px; max-width: 1500px; margin: 0 auto; }
+section { margin-bottom: 64px; }
+h2 {
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 8px;
+  margin-top: 0;
+}
+h3 { color: var(--type); margin-top: 32px; border-left: 4px solid var(--type); padding-left: 10px; }
+p { margin: 8px 0; }
+.callout {
+  background: var(--code-bg);
+  border-left: 4px solid var(--accent);
+  padding: 12px 16px;
+  margin: 16px 0;
+  border-radius: 4px;
+}
+.callout.warn { border-left-color: var(--warn); }
+.callout.ok { border-left-color: var(--ok); }
+.callout .tag {
+  font-weight: bold;
+  color: var(--accent);
+  margin-right: 8px;
+}
+.callout.warn .tag { color: var(--warn); }
+.callout.ok .tag { color: var(--ok); }
+table.code-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 12px 0 24px 0;
+}
+.code-table tr { border-bottom: 1px solid var(--table-border); }
+.code-table tr:hover { background: rgba(137, 180, 250, 0.04); }
+.code-table td { padding: 4px 8px; vertical-align: top; }
+.code-table .ln {
+  color: var(--muted);
+  text-align: right;
+  width: 50px;
+  user-select: none;
+  font-family: "Consolas", "Cascadia Code", monospace;
+}
+.code-table .code {
+  background: var(--code-bg);
+  white-space: pre;
+  font-family: "Consolas", "Cascadia Code", "Source Code Pro", monospace;
+  width: 48%;
+  font-size: 12.5px;
+  border-radius: 3px;
+}
+.code-table .note {
+  color: var(--fg);
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+}
+.code-table .note.empty {
+  color: var(--muted);
+  font-style: italic;
+}
+.kw { color: var(--keyword); }
+.str { color: var(--string); }
+.num { color: var(--number); }
+.fn { color: var(--func); }
+.ty { color: var(--type); }
+.cm { color: var(--comment); font-style: italic; }
+.flow {
+  background: var(--code-bg);
+  border: 1px solid var(--table-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.flow-step {
+  background: var(--bg);
+  padding: 10px 16px;
+  border-radius: 6px;
+  margin: 6px 0;
+  border-left: 3px solid var(--accent);
+}
+.flow-step.warn { border-left-color: var(--warn); }
+.flow-step .step-no {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  text-align: center;
+  font-weight: bold;
+  margin-right: 8px;
+  font-size: 12px;
+  line-height: 22px;
+}
+.flow-arrow { text-align: center; color: var(--muted); margin: 4px 0; font-family: monospace; }
+.grid {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.grid .hdr {
+  background: var(--accent);
+  color: var(--bg);
+  padding: 6px 10px;
+  font-weight: bold;
+  border-radius: 3px;
+}
+.grid .cell {
+  background: var(--code-bg);
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-family: "Consolas", monospace;
+}
+.frame-diagram {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 2px;
+  margin: 16px 0;
+  font-family: "Consolas", monospace;
+  font-size: 11px;
+}
+.frame-diagram .byte {
+  background: var(--code-bg);
+  padding: 6px 4px;
+  text-align: center;
+  border-radius: 3px;
+  border: 1px solid var(--table-border);
+}
+.frame-diagram .byte .idx { color: var(--muted); font-size: 9px; }
+.frame-diagram .byte .name { color: var(--type); font-weight: bold; }
+.frame-diagram .byte.payload { background: #2a2a3e; border-color: var(--accent); }
+.legend { font-size: 12px; color: var(--muted); margin: 6px 0; }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>AWIC 86008/86100 ISP 代码逐行讲解</h1>
+  <div class="meta">
+    路径：Firmware_Flash/AWIC/86008_86100/ &nbsp;|&nbsp;
+    文件：aw_uboot_bufbuilt.h/.c + aw_uboot_isp.h/.c &nbsp;|&nbsp;
+    总行数：747 &nbsp;|&nbsp;
+    生成日期：2026-05-19
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#overview">总览</a>
+  <a href="#protocol">协议帧结构</a>
+  <a href="#bufbuilt-h">bufbuilt.h</a>
+  <a href="#bufbuilt-c">bufbuilt.c</a>
+  <a href="#isp-h">isp.h</a>
+  <a href="#isp-c">isp.c</a>
+  <a href="#flow">ISP 流程图</a>
+  <a href="#issues">问题汇总</a>
+</nav>
+
+<main>
+
+<section id="overview">
+<h2>0. 总览</h2>
+<p>
+本目录是<strong>艾为(Awinic) AW86008 / AW86100 系列电机驱动 IC</strong> 的固件 ISP（In-System Programming）烧录参考代码，
+由 Awinic 官方提供。功能：主控（本项目的 STM32F429ZG）通过 I2C 与 AW IC 内置的 bootloader（UBOOT）通信，
+把外部固件 bin 写入 AW IC 内部 Flash（FLASH_BASE=0x01000000，128 KB 空间）。
+</p>
+
+<div class="callout warn">
+<span class="tag">注意</span>
+这是<strong>厂商样例代码</strong>，不能直接编译进本项目，存在多处需要修正的问题（详见文末"问题汇总"）。
+本文档目的是逐行讲清楚每一行的含义，方便后续移植成本项目可用的实现。
+</div>
+
+<h3>文件关系</h3>
+<div class="flow">
+  <div class="flow-step"><b>aw_uboot_bufbuilt.h / .c</b>　— 底层协议层：定义协议帧结构、枚举常量、帧打包函数 <code>aw_uboot_buff_built()</code></div>
+  <div class="flow-arrow">↑ 被调用</div>
+  <div class="flow-step"><b>aw_uboot_isp.h / .c</b>　— 业务流程层：握手、Flash 擦/写/读、跳转，全部使用 bufbuilt 打包帧后通过 <code>aw_i2c_write/read()</code> 收发</div>
+</div>
+
+<h3>四个文件的角色对照</h3>
+<div class="grid">
+  <div class="hdr">文件</div><div class="hdr">主要内容</div><div class="hdr">关键导出</div>
+  <div class="cell">bufbuilt.h</div>
+  <div class="cell">UBOOT 协议枚举 / 结构体 / 断言宏</div>
+  <div class="cell">UBOOT_PROTOCOL_TYPE_S, UBOOT_BUF_TYPE_S</div>
+  <div class="cell">bufbuilt.c</div>
+  <div class="cell">协议帧打包 + 两个校验和</div>
+  <div class="cell">aw_uboot_buff_built(), protocol_sum(), data_sum()</div>
+  <div class="cell">isp.h</div>
+  <div class="cell">ISP 流程状态枚举 + 函数原型</div>
+  <div class="cell">ISP_STATUS_E, FLASH_BASE/SIZE/TOP</div>
+  <div class="cell">isp.c</div>
+  <div class="cell">完整 ISP 流程（握手/擦/写/读/跳转）</div>
+  <div class="cell">aw_i2c_isp_download(), aw_flash_read() 等</div>
+</div>
+</section>
+
+<section id="protocol">
+<h2>1. UBOOT 协议帧结构</h2>
+<p>所有 ISP 命令通过同一种 12 字节帧封装（实际 I2C 发送 9 字节协议头 + N 字节 payload），结构如下：</p>
+
+<div class="frame-diagram">
+  <div class="byte"><div class="idx">[0]</div><div class="name">checksum</div></div>
+  <div class="byte"><div class="idx">[1]</div><div class="name">ver</div></div>
+  <div class="byte"><div class="idx">[2]</div><div class="name">addr</div></div>
+  <div class="byte"><div class="idx">[3]</div><div class="name">module</div></div>
+  <div class="byte"><div class="idx">[4]</div><div class="name">event</div></div>
+  <div class="byte"><div class="idx">[5]</div><div class="name">len[0]</div></div>
+  <div class="byte"><div class="idx">[6]</div><div class="name">len[1]</div></div>
+  <div class="byte"><div class="idx">[7]</div><div class="name">ack</div></div>
+  <div class="byte"><div class="idx">[8]</div><div class="name">sum</div></div>
+  <div class="byte payload"><div class="idx">[9..]</div><div class="name">data</div></div>
+  <div class="byte payload"><div class="idx">...</div><div class="name">data</div></div>
+  <div class="byte payload"><div class="idx">end</div><div class="name">data</div></div>
+</div>
+
+<div class="legend">
+  checksum = 字段[1..8] 累加和 &nbsp;&nbsp;|&nbsp;&nbsp;
+  ver = 协议版本 0x01 &nbsp;&nbsp;|&nbsp;&nbsp;
+  addr = 0x82 (CTL 控制帧) / 0x28 (ACK 应答帧) &nbsp;&nbsp;|&nbsp;&nbsp;
+  module = HANK/SRAM/FLASH/END &nbsp;&nbsp;|&nbsp;&nbsp;
+  event = 各模块下事件 &nbsp;&nbsp;|&nbsp;&nbsp;
+  len[2] = payload 字节长度（小端，实际只用 len[0]） &nbsp;&nbsp;|&nbsp;&nbsp;
+  ack = 固定 0x01 &nbsp;&nbsp;|&nbsp;&nbsp;
+  sum = payload 累加和
+</div>
+
+<p>SPI 模式下整帧前面再加一个 <code>0x5A</code> 起始字节。</p>
+</section>
+
+<!-- ============================================== -->
+<section id="bufbuilt-h">
+<h2>2. aw_uboot_bufbuilt.h（131 行）</h2>
+<p>UBOOT 协议的"字典"——所有枚举、结构体、断言宏都在这里。三个函数原型在文件末。</p>
+
+<table class="code-table">
+<tr><td class="ln">1</td><td class="code"><span class="cm">/*</span></td><td class="note">块注释开始。</td></tr>
+<tr><td class="ln">2</td><td class="code"><span class="cm">* Copyright © Shanghai Awinic Technology Co., Ltd. 2019 2020 . All rights reserved.</span></td><td class="note">版权声明：上海艾为电子。</td></tr>
+<tr><td class="ln">3</td><td class="code"><span class="cm">* Description: IIC header file, IIC related parameter definition file</span></td><td class="note">文件说明：IIC 协议头文件（描述与文件实际内容略有出入，实际是 UBOOT 协议定义）。</td></tr>
+<tr><td class="ln">4</td><td class="code"><span class="cm">*/</span></td><td class="note">块注释结束。</td></tr>
+<tr><td class="ln">5</td><td class="code"><span class="kw">#ifndef</span> __AW_UBOOT_REGISTER_H</td><td class="note">头文件保护宏开始（注意宏名是 REGISTER 而非 BUFBUILT，疑似复制粘贴遗留）。</td></tr>
+<tr><td class="ln">6</td><td class="code"><span class="kw">#define</span> __AW_UBOOT_REGISTER_H</td><td class="note">定义保护宏，防止重复包含。</td></tr>
+<tr><td class="ln">7</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">8</td><td class="code"><span class="kw">enum</span> uboot_status{</td><td class="note">定义 UBOOT 操作状态枚举（仅 OK / ERROR 两个值）。</td></tr>
+<tr><td class="ln">9</td><td class="code">	UBOOT_OK = <span class="num">0</span>,</td><td class="note">成功 = 0。</td></tr>
+<tr><td class="ln">10</td><td class="code">	UBOOT_ERROR,</td><td class="note">失败 = 1。</td></tr>
+<tr><td class="ln">11</td><td class="code">};</td><td class="note">枚举体结束。</td></tr>
+<tr><td class="ln">12</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> uboot_status <span class="ty">UBOOT_STATUS_E</span>;</td><td class="note">给上面枚举起类型别名 <code>UBOOT_STATUS_E</code>（_E 后缀表示 enum）。</td></tr>
+<tr><td class="ln">13</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">14</td><td class="code"><span class="kw">enum</span> uboot_way{</td><td class="note">通信方式枚举（I2C 还是 SPI）。</td></tr>
+<tr><td class="ln">15</td><td class="code">	UBOOT_I2C = <span class="num">0</span>,</td><td class="note">I2C = 0（本项目使用）。</td></tr>
+<tr><td class="ln">16</td><td class="code">	UBOOT_SPI,</td><td class="note">SPI = 1。</td></tr>
+<tr><td class="ln">17</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">18</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> uboot_way <span class="ty">UBOOT_WAY_E</span>;</td><td class="note">类型别名 <code>UBOOT_WAY_E</code>。</td></tr>
+<tr><td class="ln">19</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">20</td><td class="code"><span class="kw">enum</span> uboot_ack{</td><td class="note">帧方向枚举：是控制帧还是应答帧。</td></tr>
+<tr><td class="ln">21</td><td class="code">	UBOOT_CTL = <span class="num">0</span>,</td><td class="note">CTL = 控制帧（主控→IC），对应 addr=0x82。</td></tr>
+<tr><td class="ln">22</td><td class="code">	UBOOT_ACK,</td><td class="note">ACK = 应答帧（IC→主控），对应 addr=0x28。</td></tr>
+<tr><td class="ln">23</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">24</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> uboot_ack <span class="ty">UBOOT_ACK_E</span>;</td><td class="note">类型别名 <code>UBOOT_ACK_E</code>。</td></tr>
+<tr><td class="ln">25</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">26</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">27</td><td class="code"><span class="kw">enum</span> uboot_module{</td><td class="note">UBOOT 协议有 4 个模块（命令分类）。</td></tr>
+<tr><td class="ln">28</td><td class="code">	UBOOT_HANK  = <span class="num">0x01</span>,</td><td class="note">HANK 模块：握手/版本/ID。</td></tr>
+<tr><td class="ln">29</td><td class="code">	UBOOT_SRAM   =<span class="num">0x02</span>,</td><td class="note">SRAM 模块：直接读写 SRAM。</td></tr>
+<tr><td class="ln">30</td><td class="code">	UBOOT_FLASH = <span class="num">0x03</span>,</td><td class="note">FLASH 模块：擦/写/读 Flash（最常用）。</td></tr>
+<tr><td class="ln">31</td><td class="code">	UBOOT_END   = <span class="num">0x04</span>,</td><td class="note">END 模块：结束 UBOOT，跳转执行。</td></tr>
+<tr><td class="ln">32</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">33</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> uboot_module <span class="ty">UBOOT_MODULE_E</span>;</td><td class="note">类型别名。</td></tr>
+<tr><td class="ln">34</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">35</td><td class="code"><span class="kw">enum</span> hank_event{</td><td class="note">HANK 模块下的事件子枚举。每个命令成对：CTL 命令 + _ACK 应答。</td></tr>
+<tr><td class="ln">36</td><td class="code">	HANK_CONNECT        = <span class="num">0x01</span>,</td><td class="note">握手连接命令。</td></tr>
+<tr><td class="ln">37</td><td class="code">	HANK_CONNECT_ACK    = <span class="num">0x02</span>,</td><td class="note">握手连接应答。</td></tr>
+<tr><td class="ln">38</td><td class="code">	HANK_PROTICOL       = <span class="num">0x11</span>,</td><td class="note">查询协议版本（拼写：PROTICOL → PROTOCOL）。</td></tr>
+<tr><td class="ln">39</td><td class="code">	HANK_PROTICOL_ACK   = <span class="num">0x12</span>,</td><td class="note">协议版本应答。</td></tr>
+<tr><td class="ln">40</td><td class="code">	HANK_VERSION        = <span class="num">0x21</span>,</td><td class="note">查询 boot 版本。</td></tr>
+<tr><td class="ln">41</td><td class="code">	HANK_VERSION_ACK    = <span class="num">0x22</span>,</td><td class="note">boot 版本应答。</td></tr>
+<tr><td class="ln">42</td><td class="code">	HANK_ID             = <span class="num">0x31</span>,</td><td class="note">查询 IC ID。</td></tr>
+<tr><td class="ln">43</td><td class="code">	HANK_ID_ACK         = <span class="num">0x32</span>,</td><td class="note">IC ID 应答。</td></tr>
+<tr><td class="ln">44</td><td class="code">	HANK_DATE           = <span class="num">0x33</span>,</td><td class="note">查询日期（命令字与上一行差 0x02，疑似厂家编排）。</td></tr>
+<tr><td class="ln">45</td><td class="code">	HANK_DATA_ACK       = <span class="num">0x34</span>,</td><td class="note">日期应答（拼写不一致：DATE / DATA）。</td></tr>
+<tr><td class="ln">46</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">47</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> hank_event <span class="ty">HANK_EVENT_E</span>;</td><td class="note">类型别名。</td></tr>
+<tr><td class="ln">48</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">49</td><td class="code"><span class="kw">enum</span> sram_event{</td><td class="note">SRAM 模块事件。</td></tr>
+<tr><td class="ln">50</td><td class="code">	SRAM_WRITE          = <span class="num">0x01</span>,</td><td class="note">SRAM 写命令。</td></tr>
+<tr><td class="ln">51</td><td class="code">	SRAM_WRITE_ACK      = <span class="num">0x02</span>,</td><td class="note">SRAM 写应答。</td></tr>
+<tr><td class="ln">52</td><td class="code">	SRAM_READ           = <span class="num">0x11</span>,</td><td class="note">SRAM 读命令。</td></tr>
+<tr><td class="ln">53</td><td class="code">	SRAM_READ_ACK       = <span class="num">0x12</span>,</td><td class="note">SRAM 读应答。</td></tr>
+<tr><td class="ln">54</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">55</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> sram_event <span class="ty">SRAM_EVENT_E</span>;</td><td class="note">类型别名。</td></tr>
+<tr><td class="ln">56</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">57</td><td class="code"><span class="kw">enum</span> flash_event{</td><td class="note">FLASH 模块事件，是最常用的一组。</td></tr>
+<tr><td class="ln">58</td><td class="code">	FLASH_WRITE           = <span class="num">0x01</span>,</td><td class="note">Flash 写 64B 块命令。</td></tr>
+<tr><td class="ln">59</td><td class="code">	FLASH_WRITE_ACK       = <span class="num">0x02</span>,</td><td class="note">Flash 写应答。</td></tr>
+<tr><td class="ln">60</td><td class="code">	FLASH_READ            = <span class="num">0x11</span>,</td><td class="note">Flash 读 64B 块命令。</td></tr>
+<tr><td class="ln">61</td><td class="code">	FLASH_READ_ACK        = <span class="num">0x12</span>,</td><td class="note">Flash 读应答。</td></tr>
+<tr><td class="ln">62</td><td class="code">	FLASH_ERASE_BLOCK     = <span class="num">0x21</span>,</td><td class="note">Flash 擦 block 命令。</td></tr>
+<tr><td class="ln">63</td><td class="code">	FLASH_ERASE_BLOCK_ACK = <span class="num">0x22</span>,</td><td class="note">擦 block 应答。</td></tr>
+<tr><td class="ln">64</td><td class="code">	FLASH_ERASE_CHIP      = <span class="num">0x23</span>,</td><td class="note">整片擦除命令（小心）。</td></tr>
+<tr><td class="ln">65</td><td class="code">	FLASH_ERASE_CHIP_ACK  = <span class="num">0x24</span>,</td><td class="note">整片擦除应答。</td></tr>
+<tr><td class="ln">66</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">67</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> flash_event <span class="ty">FLASH_EVENT_E</span>;</td><td class="note">类型别名。</td></tr>
+<tr><td class="ln">68</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">69</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">70</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">71</td><td class="code"><span class="kw">enum</span> end_event{</td><td class="note">END 模块事件（结束 UBOOT 进入应用代码或重新进入 ROM bootloader）。</td></tr>
+<tr><td class="ln">72</td><td class="code">	END_SRAM_JUMP           = <span class="num">0x01</span>,</td><td class="note">跳转到 SRAM 执行。</td></tr>
+<tr><td class="ln">73</td><td class="code">	END_SRAM_JUMP_ACK       = <span class="num">0x02</span>,</td><td class="note">SRAM 跳转应答。</td></tr>
+<tr><td class="ln">74</td><td class="code">	END_FLASH_JUMP          = <span class="num">0x11</span>,</td><td class="note">跳转到 Flash 执行（烧录完后用这个）。</td></tr>
+<tr><td class="ln">75</td><td class="code">	END_FLASH_JUMP_ACK      = <span class="num">0x12</span>,</td><td class="note">Flash 跳转应答。</td></tr>
+<tr><td class="ln">76</td><td class="code">	END_ERASE_ROM_JUMP      = <span class="num">0x21</span>,</td><td class="note">擦除 ROM 并跳转。</td></tr>
+<tr><td class="ln">77</td><td class="code">	END_ERASE_ROM_JUMP_ACK  = <span class="num">0x22</span>,</td><td class="note">擦除并跳转应答。</td></tr>
+<tr><td class="ln">78</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">79</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> end_event <span class="ty">END_EVENT_E</span>;</td><td class="note">类型别名。</td></tr>
+<tr><td class="ln">80</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">81</td><td class="code"><span class="kw">struct</span> uboot_protocol{</td><td class="note">底层协议帧结构（12 字节，与硬件传输布局一一对应）。</td></tr>
+<tr><td class="ln">82</td><td class="code">	<span class="kw">unsigned char</span>  checksum;</td><td class="note">[0] 协议头校验和：[1..8] 字节累加和。</td></tr>
+<tr><td class="ln">83</td><td class="code">	<span class="kw">unsigned char</span>  protocol_ver;</td><td class="note">[1] 协议版本，固定 0x01。</td></tr>
+<tr><td class="ln">84</td><td class="code">	<span class="kw">unsigned char</span>  addr;</td><td class="note">[2] 方向地址：CTL=0x82, ACK=0x28。</td></tr>
+<tr><td class="ln">85</td><td class="code">	<span class="kw">unsigned char</span>  module;</td><td class="note">[3] 模块号：HANK/SRAM/FLASH/END。</td></tr>
+<tr><td class="ln">86</td><td class="code">	<span class="kw">unsigned char</span>  event;</td><td class="note">[4] 事件号（同 module 下的命令字）。</td></tr>
+<tr><td class="ln">87</td><td class="code">	<span class="kw">unsigned char</span>  len[<span class="num">2</span>];</td><td class="note">[5][6] payload 长度（小端 16 位，实际只用 len[0]）。</td></tr>
+<tr><td class="ln">88</td><td class="code">	<span class="kw">unsigned char</span>  ack;</td><td class="note">[7] 固定 0x01（虽然名为 ack，但实际写入端也是 0x01）。</td></tr>
+<tr><td class="ln">89</td><td class="code">	<span class="kw">unsigned char</span>  sum;</td><td class="note">[8] payload 累加和。</td></tr>
+<tr><td class="ln">90</td><td class="code">	<span class="kw">unsigned char</span>  reserved[<span class="num">3</span>];</td><td class="note">[9..11] 保留字节（实际不发送，对齐到 12 字节）。</td></tr>
+<tr><td class="ln">91</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">92</td><td class="code"><span class="kw">typedef</span> <span class="kw">struct</span> uboot_protocol <span class="ty">UBOOT_PROTOCOL_TYPE_S</span>;</td><td class="note">类型别名（_S = struct）。</td></tr>
+<tr><td class="ln">93</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">94</td><td class="code"><span class="kw">struct</span> uboot_buf{</td><td class="note">业务层结构体：把协议参数抽象为 6 个字段 + payload 指针，便于上层填写。</td></tr>
+<tr><td class="ln">95</td><td class="code">	<span class="kw">unsigned char</span> uboot_ways;		<span class="cm">//UBOOT通信方式I2C或SPI</span></td><td class="note">通信方式（UBOOT_I2C / UBOOT_SPI）。</td></tr>
+<tr><td class="ln">96</td><td class="code">	<span class="kw">unsigned char</span> uboot_module;		<span class="cm">//UBOOT模块Module</span></td><td class="note">模块号。</td></tr>
+<tr><td class="ln">97</td><td class="code">	<span class="kw">unsigned char</span> uboot_event;		<span class="cm">//UBOOT事件Event</span></td><td class="note">事件号。</td></tr>
+<tr><td class="ln">98</td><td class="code">	<span class="kw">unsigned char</span> uboot_ack;		<span class="cm">//UBOOT发送还是应答帧</span></td><td class="note">方向：CTL(发送) / ACK(应答)。</td></tr>
+<tr><td class="ln">99</td><td class="code">	<span class="kw">unsigned char</span> uboot_data_len;	<span class="cm">//数据层字节长度</span></td><td class="note">payload 字节数。</td></tr>
+<tr><td class="ln">100</td><td class="code">	<span class="kw">unsigned char</span> reserved[<span class="num">3</span>];</td><td class="note">保留 3 字节（结构对齐）。</td></tr>
+<tr><td class="ln">101</td><td class="code">	<span class="kw">unsigned char</span> *p_uboot_data;	<span class="cm">//数据层buff指针</span></td><td class="note">payload 数据指针（可为 NULL）。</td></tr>
+<tr><td class="ln">102</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">103</td><td class="code">};</td><td class="note">结构体结束。</td></tr>
+<tr><td class="ln">104</td><td class="code"><span class="kw">typedef</span> <span class="kw">struct</span> uboot_buf <span class="ty">UBOOT_BUF_TYPE_S</span>;</td><td class="note">类型别名 <code>UBOOT_BUF_TYPE_S</code>。</td></tr>
+<tr><td class="ln">105</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">106</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">107</td><td class="code"><span class="kw">#define</span> IS_UBOOT_WAYS(WAYS)				((WAYS ==UBOOT_I2C) || (WAYS ==UBOOT_SPI))</td><td class="note">参数检查宏：way 必须是 I2C 或 SPI。供 assert_param 使用。</td></tr>
+<tr><td class="ln">108</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">109</td><td class="code"><span class="kw">#define</span> IS_UBOOT_ACK(ACK)				((ACK ==UBOOT_CTL) || (ACK == UBOOT_ACK))</td><td class="note">ack 必须是 CTL 或 ACK。</td></tr>
+<tr><td class="ln">110</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">111</td><td class="code"><span class="kw">#define</span> IS_HANK_MODULE(MODULE)			((MODULE ==UBOOT_HANK) || (MODULE ==UBOOT_SRAM) || \</td><td class="note">module 必须是 4 个有效值之一（行尾反斜杠续行）。</td></tr>
+<tr><td class="ln">112</td><td class="code">										 (MODULE ==UBOOT_FLASH) || (MODULE ==UBOOT_END))</td><td class="note">续接上一行。</td></tr>
+<tr><td class="ln">113</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">114</td><td class="code"><span class="kw">#define</span> IS_HANK_EVENT(EVENT)			((EVENT ==HANK_CONNECT) || (EVENT ==HANK_PROTICOL) || \</td><td class="note">HANK 模块下事件检查（5 个事件）。</td></tr>
+<tr><td class="ln">115</td><td class="code">										 (EVENT ==HANK_VERSION) || (EVENT ==HANK_ID) || (EVENT ==HANK_DATE))</td><td class="note">续接。</td></tr>
+<tr><td class="ln">116</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">117</td><td class="code"><span class="kw">#define</span> IS_SRAM_EVENT(EVENT)			((EVENT ==SRAM_WRITE) || (EVENT ==SRAM_READ))</td><td class="note">SRAM 模块事件检查（写/读）。</td></tr>
+<tr><td class="ln">118</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">119</td><td class="code"><span class="kw">#define</span> IS_FLASH_EVENT(EVENT)			((EVENT ==FLASH_WRITE) || (EVENT ==FLASH_READ) || \</td><td class="note">FLASH 事件检查（写/读/擦块/擦片）。</td></tr>
+<tr><td class="ln">120</td><td class="code">										 (EVENT ==FLASH_ERASE_BLOCK) || (EVENT ==FLASH_ERASE_CHIP))</td><td class="note">续接。</td></tr>
+<tr><td class="ln">121</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">122</td><td class="code"><span class="kw">#define</span> IS_END_EVENT(EVENT)				((EVENT ==END_SRAM_JUMP) || (EVENT ==END_FLASH_JUMP) || \</td><td class="note">END 事件检查（3 种跳转）。</td></tr>
+<tr><td class="ln">123</td><td class="code">										 (EVENT ==END_ERASE_ROM_JUMP))</td><td class="note">续接。</td></tr>
+<tr><td class="ln">124</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">125</td><td class="code"><span class="ty">UBOOT_STATUS_E</span> <span class="fn">aw_uboot_buff_built</span>(<span class="kw">unsigned char</span>* buf, <span class="ty">UBOOT_BUF_TYPE_S</span> *uboot_struct);</td><td class="note">对外函数：把 uboot_struct 描述的命令打包成字节流写入 buf。</td></tr>
+<tr><td class="ln">126</td><td class="code"><span class="kw">unsigned char</span> <span class="fn">protocol_sum</span>(<span class="kw">void</span>);</td><td class="note">计算协议头校验和（实现见 bufbuilt.c）。</td></tr>
+<tr><td class="ln">127</td><td class="code"><span class="kw">unsigned char</span> <span class="fn">data_sum</span>(<span class="ty">UBOOT_BUF_TYPE_S</span> *uboot_struct);</td><td class="note">计算 payload 累加和。</td></tr>
+<tr><td class="ln">128</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">129</td><td class="code"><span class="kw">#define</span> assert_param(expr) ((<span class="kw">void</span>)<span class="num">0</span>)</td><td class="note"><b>关键：</b>把 assert_param 定义为 no-op。意味着上面的 IS_xxx 检查实际不生效，仅作文档。</td></tr>
+<tr><td class="ln">130</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">131</td><td class="code"><span class="kw">#endif</span></td><td class="note">头文件保护宏结束。</td></tr>
+</table>
+</section>
+
+<!-- ============================================== -->
+<section id="bufbuilt-c">
+<h2>3. aw_uboot_bufbuilt.c（107 行）</h2>
+<p>三个函数：<code>aw_uboot_buff_built()</code> 打包帧、<code>protocol_sum()</code> 算头校验、<code>data_sum()</code> 算 payload 校验。</p>
+
+<table class="code-table">
+<tr><td class="ln">1</td><td class="code"><span class="cm">/*</span></td><td class="note">块注释开始。</td></tr>
+<tr><td class="ln">2</td><td class="code"><span class="cm">* Copyright © Shanghai Awinic Technology Co., Ltd. 2019 2019 . All rights reserved.</span></td><td class="note">版权声明。</td></tr>
+<tr><td class="ln">3</td><td class="code"><span class="cm">* Description: spi correlation function</span></td><td class="note">描述：SPI 相关函数（描述与实际不符，实际是协议打包）。</td></tr>
+<tr><td class="ln">4</td><td class="code"><span class="cm">*/</span></td><td class="note">块注释结束。</td></tr>
+<tr><td class="ln">5</td><td class="code"><span class="kw">#include</span> <span class="str">"aw_uboot_bufbuilt.h"</span></td><td class="note">包含本模块头文件，获取结构体和枚举定义。</td></tr>
+<tr><td class="ln">6</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">7</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">8</td><td class="code"><span class="kw">static</span> <span class="ty">UBOOT_PROTOCOL_TYPE_S</span> protocol_struct = {<span class="num">0</span>};</td><td class="note"><b>文件级静态变量</b>：当前正在打包的协议头。{0} 全零初始化。<b>注意：静态意味着不可重入</b>——同时打两帧会互相覆盖。</td></tr>
+<tr><td class="ln">9</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">10</td><td class="code"><span class="ty">UBOOT_STATUS_E</span> <span class="fn">aw_uboot_buff_built</span>(<span class="kw">unsigned char</span>* buf, <span class="ty">UBOOT_BUF_TYPE_S</span> *uboot_struct)</td><td class="note">打包函数：输入 uboot_struct 描述，输出到 buf。</td></tr>
+<tr><td class="ln">11</td><td class="code">{</td><td class="note">函数体开始。</td></tr>
+<tr><td class="ln">12</td><td class="code">	<span class="kw">unsigned char</span> i = <span class="num">0</span>;</td><td class="note">循环变量。</td></tr>
+<tr><td class="ln">13</td><td class="code">	<span class="ty">UBOOT_STATUS_E</span> ret = UBOOT_ERROR;</td><td class="note">返回值，默认 ERROR，成功路径在结尾改为 OK。</td></tr>
+<tr><td class="ln">14</td><td class="code">	<span class="kw">unsigned char</span> *p_protocol = (<span class="kw">unsigned char</span>*)&amp;protocol_struct;</td><td class="note">把 protocol_struct 当字节数组访问的指针（按 struct 内存布局逐字节复制用）。</td></tr>
+<tr><td class="ln">15</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">16</td><td class="code">	<span class="kw">if</span> ((buf == (<span class="kw">void</span> *)<span class="num">0</span>) || ((uboot_struct == (<span class="kw">void</span> *)<span class="num">0</span>))) {</td><td class="note">空指针检查：buf 或 uboot_struct 为 NULL 时拒绝执行。</td></tr>
+<tr><td class="ln">17</td><td class="code">		<span class="kw">return</span> ret;</td><td class="note">返回 UBOOT_ERROR。</td></tr>
+<tr><td class="ln">18</td><td class="code">	}</td><td class="note">if 结束。</td></tr>
+<tr><td class="ln">19</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">20</td><td class="code">	assert_param(IS_UBOOT_WAYS(uboot_struct-&gt;uboot_ways));</td><td class="note">参数检查（已被宏掉为 (void)0，不生效）。</td></tr>
+<tr><td class="ln">21</td><td class="code">	assert_param(IS_UBOOT_ACK(uboot_struct-&gt;uboot_ack));</td><td class="note">同上。</td></tr>
+<tr><td class="ln">22</td><td class="code">	assert_param(IS_HANK_MODULE(uboot_struct-&gt;uboot_module));</td><td class="note">同上。</td></tr>
+<tr><td class="ln">23</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">24</td><td class="code">	<span class="kw">switch</span>(uboot_struct-&gt;uboot_module) {</td><td class="note">按 module 分支做事件合法性断言（同样不生效）。</td></tr>
+<tr><td class="ln">25</td><td class="code">		<span class="kw">case</span> UBOOT_HANK:</td><td class="note">HANK 模块。</td></tr>
+<tr><td class="ln">26</td><td class="code">			assert_param(IS_HANK_EVENT(uboot_struct-&gt;uboot_event));</td><td class="note">检查 event 是 HANK 系列。</td></tr>
+<tr><td class="ln">27</td><td class="code">			<span class="kw">break</span>;</td><td class="note">出 switch。</td></tr>
+<tr><td class="ln">28</td><td class="code">		<span class="kw">case</span> UBOOT_SRAM:</td><td class="note">SRAM 模块。</td></tr>
+<tr><td class="ln">29</td><td class="code">			assert_param(IS_SRAM_EVENT(uboot_struct-&gt;uboot_event));</td><td class="note">检查 event 是 SRAM 系列。</td></tr>
+<tr><td class="ln">30</td><td class="code">			<span class="kw">break</span>;</td><td class="note">出。</td></tr>
+<tr><td class="ln">31</td><td class="code">		<span class="kw">case</span> UBOOT_FLASH:</td><td class="note">FLASH 模块。</td></tr>
+<tr><td class="ln">32</td><td class="code">			assert_param(IS_FLASH_EVENT(uboot_struct-&gt;uboot_event));</td><td class="note">检查 event 是 FLASH 系列。</td></tr>
+<tr><td class="ln">33</td><td class="code">			<span class="kw">break</span>;</td><td class="note">出。</td></tr>
+<tr><td class="ln">34</td><td class="code">		<span class="kw">case</span> UBOOT_END:</td><td class="note">END 模块。</td></tr>
+<tr><td class="ln">35</td><td class="code">			assert_param(IS_END_EVENT(uboot_struct-&gt;uboot_event));</td><td class="note">检查 event 是 END 系列。</td></tr>
+<tr><td class="ln">36</td><td class="code">			<span class="kw">break</span>;</td><td class="note">出。</td></tr>
+<tr><td class="ln">37</td><td class="code">		<span class="kw">default</span>:</td><td class="note">未知 module。</td></tr>
+<tr><td class="ln">38</td><td class="code">			<span class="kw">break</span>;</td><td class="note">什么都不做（应当报错，这里漏掉）。</td></tr>
+<tr><td class="ln">39</td><td class="code">	}</td><td class="note">switch 结束。</td></tr>
+<tr><td class="ln">40</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">41</td><td class="code">	<span class="kw">if</span> (uboot_struct-&gt;p_uboot_data == (<span class="kw">void</span> *)<span class="num">0</span>) {</td><td class="note">如果数据指针是 NULL：</td></tr>
+<tr><td class="ln">42</td><td class="code">		uboot_struct-&gt;uboot_data_len = <span class="num">0</span>;</td><td class="note">强制把长度也清零（防御性）。</td></tr>
+<tr><td class="ln">43</td><td class="code">		protocol_struct.len[<span class="num">0</span>] = <span class="num">0</span>;</td><td class="note">协议字段 len[0] 同步为 0。</td></tr>
+<tr><td class="ln">44</td><td class="code">	}</td><td class="note">if 结束。</td></tr>
+<tr><td class="ln">45</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">46</td><td class="code">	protocol_struct.protocol_ver = <span class="num">0x01</span>;</td><td class="note">协议版本固定 0x01。</td></tr>
+<tr><td class="ln">47</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">48</td><td class="code">	<span class="kw">if</span> (uboot_struct-&gt;uboot_ack == UBOOT_CTL) {</td><td class="note">如果是控制帧（主控发出）：</td></tr>
+<tr><td class="ln">49</td><td class="code">		protocol_struct.addr = <span class="num">0x82</span>;</td><td class="note">addr 字段填 0x82（CTL 方向）。</td></tr>
+<tr><td class="ln">50</td><td class="code">	} <span class="kw">else</span> {</td><td class="note">应答帧：</td></tr>
+<tr><td class="ln">51</td><td class="code">		protocol_struct.addr = <span class="num">0x28</span>;</td><td class="note">addr 填 0x28（ACK 方向）。</td></tr>
+<tr><td class="ln">52</td><td class="code">	}</td><td class="note">if-else 结束。</td></tr>
+<tr><td class="ln">53</td><td class="code">	protocol_struct.module = uboot_struct-&gt;uboot_module;</td><td class="note">透传 module。</td></tr>
+<tr><td class="ln">54</td><td class="code">	protocol_struct.event = uboot_struct-&gt;uboot_event;</td><td class="note">透传 event。</td></tr>
+<tr><td class="ln">55</td><td class="code">	protocol_struct.ack = <span class="num">0x01</span>;</td><td class="note">ack 字段固定 0x01（不依赖方向，与字段名容易混淆）。</td></tr>
+<tr><td class="ln">56</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">57</td><td class="code">	protocol_struct.len[<span class="num">0</span>] = uboot_struct-&gt;uboot_data_len;</td><td class="note">payload 长度低字节（注意：仅支持 0–255 字节 payload）。</td></tr>
+<tr><td class="ln">58</td><td class="code">	protocol_struct.sum = <span class="fn">data_sum</span>(uboot_struct);</td><td class="note">计算 payload 累加和填入 sum 字段。</td></tr>
+<tr><td class="ln">59</td><td class="code">	protocol_struct.checksum = <span class="fn">protocol_sum</span>();</td><td class="note">计算协议头校验和填入 checksum 字段（必须最后算，因为依赖前面所有字段）。</td></tr>
+<tr><td class="ln">60</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">61</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">62</td><td class="code">	<span class="kw">if</span> (uboot_struct-&gt;uboot_ways == UBOOT_I2C) {</td><td class="note">I2C 模式：不加起始字节。</td></tr>
+<tr><td class="ln">63</td><td class="code">		<span class="kw">for</span>(i = <span class="num">0</span>; i &lt; <span class="num">9</span>; i++) {</td><td class="note">复制协议头前 9 字节（checksum..sum）到 buf[0..8]。</td></tr>
+<tr><td class="ln">64</td><td class="code">			buf[i] = p_protocol[i];</td><td class="note">逐字节拷贝。</td></tr>
+<tr><td class="ln">65</td><td class="code">		}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">66</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">67</td><td class="code">		<span class="kw">for</span>(i = <span class="num">0</span>; i &lt; (protocol_struct.len[<span class="num">0</span>]); i++) {</td><td class="note">把 payload 追加到 buf[9..]。</td></tr>
+<tr><td class="ln">68</td><td class="code">			buf[i + <span class="num">9</span>] = uboot_struct-&gt;p_uboot_data[i];</td><td class="note">逐字节拷贝 payload。</td></tr>
+<tr><td class="ln">69</td><td class="code">		}</td><td class="note">for 结束。I2C 帧总长 = 9 + len。</td></tr>
+<tr><td class="ln">70</td><td class="code">	} <span class="kw">else</span> {</td><td class="note">SPI 模式：</td></tr>
+<tr><td class="ln">71</td><td class="code">		buf[<span class="num">0</span>] = <span class="num">0x5A</span>;</td><td class="note">SPI 帧首字节固定 0x5A（起始/同步字节）。</td></tr>
+<tr><td class="ln">72</td><td class="code">		<span class="kw">for</span>(i = <span class="num">0</span>; i &lt; <span class="num">9</span>; i++) {</td><td class="note">协议头复制到 buf[1..9]（整体后移一字节）。</td></tr>
+<tr><td class="ln">73</td><td class="code">			buf[i + <span class="num">1</span>] = p_protocol[i];</td><td class="note">逐字节拷贝。</td></tr>
+<tr><td class="ln">74</td><td class="code">		}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">75</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">76</td><td class="code">		<span class="kw">for</span>(i = <span class="num">0</span>; i &lt; (protocol_struct.len[<span class="num">0</span>]); i++) {</td><td class="note">payload 追加到 buf[10..]。</td></tr>
+<tr><td class="ln">77</td><td class="code">			buf[i + <span class="num">10</span>] = uboot_struct-&gt;p_uboot_data[i];</td><td class="note">逐字节拷贝。SPI 帧总长 = 10 + len。</td></tr>
+<tr><td class="ln">78</td><td class="code">		}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">79</td><td class="code">	}</td><td class="note">if-else 结束。</td></tr>
+<tr><td class="ln">80</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">81</td><td class="code">	ret = UBOOT_OK;</td><td class="note">走到这里说明打包成功，标记 OK。</td></tr>
+<tr><td class="ln">82</td><td class="code">	<span class="kw">return</span> ret;</td><td class="note">返回 OK。</td></tr>
+<tr><td class="ln">83</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+<tr><td class="ln">84</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">85</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">86</td><td class="code"><span class="kw">unsigned char</span> <span class="fn">protocol_sum</span>(<span class="kw">void</span>)</td><td class="note">协议头校验和函数。</td></tr>
+<tr><td class="ln">87</td><td class="code">{</td><td class="note">函数体开始。</td></tr>
+<tr><td class="ln">88</td><td class="code">	<span class="kw">unsigned char</span> sum = <span class="num">0</span>;</td><td class="note">累加和初始 0。</td></tr>
+<tr><td class="ln">89</td><td class="code">	<span class="kw">unsigned char</span> i = <span class="num">0</span>;</td><td class="note">循环变量。</td></tr>
+<tr><td class="ln">90</td><td class="code">	<span class="kw">unsigned char</span> *p_protocol = (<span class="kw">unsigned char</span>*)&amp;protocol_struct;</td><td class="note">同样按字节访问 protocol_struct。</td></tr>
+<tr><td class="ln">91</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">92</td><td class="code">	<span class="kw">for</span> (i = <span class="num">1</span>; i &lt; <span class="num">9</span> ; i++) {</td><td class="note"><b>从 [1] 到 [8] 累加</b>——跳过 [0]（checksum 字段自身），覆盖 ver..sum 共 8 字节。</td></tr>
+<tr><td class="ln">93</td><td class="code">		sum += p_protocol[i];</td><td class="note">加和。</td></tr>
+<tr><td class="ln">94</td><td class="code">	}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">95</td><td class="code">	<span class="kw">return</span> sum;</td><td class="note">返回 8 位累加和（自然溢出截断）。</td></tr>
+<tr><td class="ln">96</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+<tr><td class="ln">97</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">98</td><td class="code"><span class="kw">unsigned char</span> <span class="fn">data_sum</span>(<span class="ty">UBOOT_BUF_TYPE_S</span> *uboot_struct)</td><td class="note">payload 累加和函数。</td></tr>
+<tr><td class="ln">99</td><td class="code">{</td><td class="note">函数体开始。</td></tr>
+<tr><td class="ln">100</td><td class="code">	<span class="kw">unsigned char</span> sum = <span class="num">0</span>;</td><td class="note">累加初始 0。</td></tr>
+<tr><td class="ln">101</td><td class="code">	<span class="kw">unsigned char</span> i = <span class="num">0</span>;</td><td class="note">循环变量。</td></tr>
+<tr><td class="ln">102</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">103</td><td class="code">	<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; uboot_struct-&gt;uboot_data_len; i++) {</td><td class="note">遍历 payload 每字节（注：未空指针保护，调用方需自行确保 data_len=0 时 p_uboot_data 可为 NULL）。</td></tr>
+<tr><td class="ln">104</td><td class="code">		sum += uboot_struct-&gt;p_uboot_data[i];</td><td class="note">加和。</td></tr>
+<tr><td class="ln">105</td><td class="code">	}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">106</td><td class="code">	<span class="kw">return</span> sum;</td><td class="note">返回 8 位累加和。</td></tr>
+<tr><td class="ln">107</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+</table>
+
+<div class="callout">
+<span class="tag">小结</span>
+打包流程：填 protocol_struct → 算 data_sum → 算 protocol_sum → 把 protocol_struct 前 9 字节和 payload 拼到 buf。
+data_len 长度字段是 uint8，因此<strong>单帧 payload 最大 255 字节</strong>。
+</div>
+</section>
+
+<!-- ============================================== -->
+<section id="isp-h">
+<h2>4. aw_uboot_isp.h（42 行）</h2>
+<p>对外暴露 ISP 流程函数原型 + Flash 地址常量 + 状态码枚举。</p>
+
+<table class="code-table">
+<tr><td class="ln">1</td><td class="code"><span class="cm">/*</span></td><td class="note">块注释开始。</td></tr>
+<tr><td class="ln">2</td><td class="code"><span class="cm">* Copyright © Shanghai Awinic Technology Co., Ltd. 2019 2020 . All rights reserved.</span></td><td class="note">版权声明。</td></tr>
+<tr><td class="ln">3</td><td class="code"><span class="cm">* Description: IIC header file, IIC related parameter definition file</span></td><td class="note">描述。</td></tr>
+<tr><td class="ln">4</td><td class="code"><span class="cm">*/</span></td><td class="note">块注释结束。</td></tr>
+<tr><td class="ln">5</td><td class="code"><span class="kw">#ifndef</span> __AW_UBOOT_REGISTER_H</td><td class="note"><b>注意：</b>头文件保护宏与 bufbuilt.h 同名！如果两个文件同时被包含将会冲突——这是厂商代码 bug。</td></tr>
+<tr><td class="ln">6</td><td class="code"><span class="kw">#define</span> __AW_UBOOT_REGISTER_H</td><td class="note">定义保护宏。</td></tr>
+<tr><td class="ln">7</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">8</td><td class="code"><span class="kw">#define</span> FLASH_BASE		(<span class="num">0x01000000</span>)</td><td class="note">AW IC 内部 Flash 起始地址（不是 STM32 的 Flash，是被烧录目标 IC 的地址空间）。</td></tr>
+<tr><td class="ln">9</td><td class="code"><span class="kw">#define</span> FLASH_SIZE		(<span class="num">0x20000</span>)</td><td class="note">Flash 大小 128 KB。</td></tr>
+<tr><td class="ln">10</td><td class="code"><span class="kw">#define</span> FLASH_TOP		(FLASH_BASE + FLASH_SIZE)</td><td class="note">Flash 结束地址（不可达）= 0x01020000。</td></tr>
+<tr><td class="ln">11</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">12</td><td class="code"><span class="kw">#include</span> <span class="str">"aw_uboot_bufbuilt.h"</span></td><td class="note">引入 UBOOT_BUF_TYPE_S 等类型。</td></tr>
+<tr><td class="ln">13</td><td class="code"><span class="kw">#include</span> <span class="str">"main.h"</span></td><td class="note"><b>外部依赖</b>：main.h 必须提供 AW_U8 / AW_U32 类型定义（厂商假设你的工程里有这两个 typedef）。</td></tr>
+<tr><td class="ln">14</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">15</td><td class="code"><span class="kw">enum</span> isp_status{</td><td class="note">ISP 流程状态枚举。</td></tr>
+<tr><td class="ln">16</td><td class="code">	ISP_OK = <span class="num">0</span>,</td><td class="note">成功。</td></tr>
+<tr><td class="ln">17</td><td class="code">	ISP_ADDR_ERROR,</td><td class="note">地址不在 FLASH_BASE..FLASH_TOP 范围。</td></tr>
+<tr><td class="ln">18</td><td class="code">	ISP_PBUF_ERROR,</td><td class="note">数据指针为 NULL。</td></tr>
+<tr><td class="ln">19</td><td class="code">	ISP_HANK_ERROR,</td><td class="note">握手失败。</td></tr>
+<tr><td class="ln">20</td><td class="code">	ISP_JUMP_ERROR,</td><td class="note">跳转 Flash 执行失败。</td></tr>
+<tr><td class="ln">21</td><td class="code">	ISP_FLASH_ERROR,</td><td class="note">Flash 擦/写/读失败。</td></tr>
+<tr><td class="ln">22</td><td class="code">	ISP_SPACE_ERROR,</td><td class="note">剩余空间不足以容纳要烧的数据。</td></tr>
+<tr><td class="ln">23</td><td class="code">};</td><td class="note">结束。</td></tr>
+<tr><td class="ln">24</td><td class="code"><span class="kw">typedef</span> <span class="kw">enum</span> isp_status <span class="ty">ISP_STATUS_E</span>;</td><td class="note">类型别名。</td></tr>
+<tr><td class="ln">25</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_boot_control</span>();</td><td class="note">"使 IC 进入 UBOOT 模式"的上电控制序列（注：实际 .c 中是伪代码）。</td></tr>
+<tr><td class="ln">26</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_reset_chip</span>();</td><td class="note">复位 IC（注：实际 .c 中是伪代码）。</td></tr>
+<tr><td class="ln">27</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_i2c_isp_download</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U8</span> *bin_buf, <span class="ty">AW_U32</span> len);</td><td class="note"><b>顶层入口</b>：从 addr 开始下载 bin（len 个 word = 4 字节单位）。</td></tr>
+<tr><td class="ln">28</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_download_check</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U8</span> *bin_buf, <span class="ty">AW_U32</span> len);</td><td class="note">擦+写整个 bin（不含握手和跳转）。</td></tr>
+<tr><td class="ln">29</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_block_erase_check</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U32</span> len);</td><td class="note">擦除以 addr 起的 len 个 sector。</td></tr>
+<tr><td class="ln">30</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_block_write_ckeck</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U32</span> block_num, <span class="ty">AW_U8</span> *bin_buf, <span class="ty">AW_U32</span> len);</td><td class="note">写单个 64B 块（拼写：ckeck → check）。</td></tr>
+<tr><td class="ln">31</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_hank_connect_check</span>(<span class="kw">void</span>);</td><td class="note">发握手帧并校验应答。</td></tr>
+<tr><td class="ln">32</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_jump_check</span>(<span class="ty">AW_U32</span> addr);</td><td class="note">指令 IC 跳转到 addr 执行（实现被注释，恒返回 OK）。</td></tr>
+<tr><td class="ln">33</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_read</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U32</span> len, <span class="ty">AW_U8</span>* dataBuff);</td><td class="note">从 addr 读 len 个 word。</td></tr>
+<tr><td class="ln">34</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_pack_read</span>(<span class="ty">AW_U32</span> u32Addr, <span class="ty">AW_U32</span> u32PackNum, <span class="ty">AW_U8</span>* byDataBuff, <span class="ty">AW_U32</span> u32ReadLen);</td><td class="note">读第 PackNum 个 64B 包。</td></tr>
+<tr><td class="ln">35</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">36</td><td class="code"><span class="kw">void</span> <span class="fn">delay_ms</span>(<span class="ty">AW_U32</span> xms);</td><td class="note">毫秒延时（底层 stub）。</td></tr>
+<tr><td class="ln">37</td><td class="code"><span class="kw">void</span> <span class="fn">aw_i2c_stop_uboot</span>(<span class="kw">void</span>);</td><td class="note">向 IC 发 0xAC 阻止其退出 UBOOT 模式（上电期间持续发）。</td></tr>
+<tr><td class="ln">38</td><td class="code"><span class="kw">void</span> <span class="fn">aw_i2c_write</span>(<span class="ty">AW_U8</span> *buff, <span class="ty">AW_U8</span> len);</td><td class="note">I2C 写底层（stub，移植时桥接到 BSP_I2C2_WriteReg）。</td></tr>
+<tr><td class="ln">39</td><td class="code"><span class="kw">void</span> <span class="fn">aw_i2c_read</span> (<span class="ty">AW_U8</span> *buff, <span class="ty">AW_U8</span> len);</td><td class="note">I2C 读底层（stub，移植时桥接到 BSP_I2C2_ReadReg）。</td></tr>
+<tr><td class="ln">40</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">41</td><td class="code"><span class="kw">#endif</span></td><td class="note">头文件保护宏结束。</td></tr>
+<tr><td class="ln">42</td><td class="code"> </td><td class="note empty">空行（文件末）。</td></tr>
+</table>
+
+<div class="callout warn">
+<span class="tag">问题</span>
+第 5 行的保护宏 <code>__AW_UBOOT_REGISTER_H</code> 与 bufbuilt.h 相同。当其它源文件同时 <code>#include</code> 两者时，第二个被忽略。集成时必须改名（例如 <code>__AW_UBOOT_ISP_H</code>）。
+</div>
+</section>
+
+<!-- ============================================== -->
+<section id="isp-c">
+<h2>5. aw_uboot_isp.c（467 行）</h2>
+<p>ISP 流程的全部实现。函数按依赖关系自底向上：I2C stub → 复位/进入 UBOOT → 顶层 download → 各子流程 → 握手。</p>
+
+<h3>5.1 文件头与 I2C 底层 stub（L1–L28）</h3>
+<table class="code-table">
+<tr><td class="ln">1</td><td class="code"><span class="cm">/*</span></td><td class="note">块注释开始。</td></tr>
+<tr><td class="ln">2</td><td class="code"><span class="cm">* Copyright © Shanghai Awinic Technology Co., Ltd. 2019 2019 . All rights reserved.</span></td><td class="note">版权声明。</td></tr>
+<tr><td class="ln">3</td><td class="code"><span class="cm">* Description: spi correlation function</span></td><td class="note">描述（同样不符——实际是 ISP 流程）。</td></tr>
+<tr><td class="ln">4</td><td class="code"><span class="cm">*/</span></td><td class="note">块注释结束。</td></tr>
+<tr><td class="ln">5</td><td class="code"><span class="kw">#include</span> <span class="str">"aw_uboot_isp.h"</span></td><td class="note">包含本模块头文件。</td></tr>
+<tr><td class="ln">6</td><td class="code"><span class="kw">#include</span> <span class="str">"string.h"</span></td><td class="note">引入 memcmp（用于应答校验）。</td></tr>
+<tr><td class="ln">7</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">8</td><td class="code"><span class="kw">void</span> <span class="fn">delay_ms</span>(<span class="ty">AW_U32</span> xms)</td><td class="note">毫秒延时 stub。</td></tr>
+<tr><td class="ln">9</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">10</td><td class="code">}</td><td class="note"><b>空实现</b>。移植时必须接 BSP_GetTick / 软件循环延时。</td></tr>
+<tr><td class="ln">11</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">12</td><td class="code"><span class="cm">//stay in UBOOT state (stop UBOOT)</span></td><td class="note">注释：让 IC 留在 UBOOT 状态。</td></tr>
+<tr><td class="ln">13</td><td class="code"><span class="cm">//It needs to be sent multiple times within 8ms when power on</span></td><td class="note">注释：上电后 8ms 内需要多次发送。</td></tr>
+<tr><td class="ln">14</td><td class="code"><span class="kw">void</span> <span class="fn">aw_i2c_stop_uboot</span>(<span class="kw">void</span>)</td><td class="note">阻止 IC 退出 UBOOT 的函数。</td></tr>
+<tr><td class="ln">15</td><td class="code">{</td><td class="note">函数体开始。</td></tr>
+<tr><td class="ln">16</td><td class="code">	<span class="ty">AW_U8</span> tmp = <span class="num">0xAC</span>;</td><td class="note">魔数 0xAC，AW 协议定义的"保持 UBOOT"特征字。</td></tr>
+<tr><td class="ln">17</td><td class="code">	<span class="fn">aw_i2c_write</span>(&amp;tmp, <span class="num">1</span>);</td><td class="note">向 IC 写 1 字节 0xAC。</td></tr>
+<tr><td class="ln">18</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+<tr><td class="ln">19</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">20</td><td class="code"><span class="cm">//The underlying interface</span></td><td class="note">注释：底层接口。</td></tr>
+<tr><td class="ln">21</td><td class="code"><span class="kw">void</span> <span class="fn">aw_i2c_write</span>(<span class="ty">AW_U8</span> *buff, <span class="ty">AW_U8</span> len)</td><td class="note">I2C 写函数。</td></tr>
+<tr><td class="ln">22</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">23</td><td class="code">}</td><td class="note"><b>空实现</b>，移植必填。</td></tr>
+<tr><td class="ln">24</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">25</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">26</td><td class="code"><span class="kw">void</span> <span class="fn">aw_i2c_read</span>(<span class="ty">AW_U8</span> *buff, <span class="ty">AW_U8</span> len)</td><td class="note">I2C 读函数。</td></tr>
+<tr><td class="ln">27</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">28</td><td class="code">}</td><td class="note"><b>空实现</b>，移植必填。</td></tr>
+</table>
+
+<h3>5.2 aw_reset_chip / aw_boot_control 伪代码段（L29–L104）</h3>
+<div class="callout warn">
+<span class="tag">严重</span>
+这两个函数是<strong>伪代码</strong>，不是可编译 C。形如 <code>0x6b, w, 0xff, 0xa3, 0x02,</code> 的行表达式中的 <code>w</code> / <code>r</code> 未定义（或解析为未定义符号），<code>delay_ms(2)</code> 后没有分号。逐行讲解每一行的"意图"——你需要把它翻译为真正的 <code>aw_i2c_write(...)</code> 调用。0x6B 与 0x6F 是两个 I2C 从机地址（PMU 控制侧 / UBOOT 通信侧）。
+</div>
+
+<table class="code-table">
+<tr><td class="ln">29</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">30</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_reset_chip</span>()</td><td class="note">复位 IC 函数原型。</td></tr>
+<tr><td class="ln">31</td><td class="code">{</td><td class="note">函数体开始。</td></tr>
+<tr><td class="ln">32</td><td class="code">	<span class="cm">// I2CSlaveAddr, Write, Data,</span></td><td class="note">注释说明下一行格式：从机地址、读/写、数据。</td></tr>
+<tr><td class="ln">33</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xa3</span>, <span class="num">0x02</span>,</td><td class="note">意图：向 0x6B 写 [0xFF, 0xA3, 0x02]（PMU 控制寄存器，触发复位前置）。<b>不是合法 C</b>。</td></tr>
+<tr><td class="ln">34</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">延时注释。</td></tr>
+<tr><td class="ln">35</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时 2ms，<b>缺分号</b>。</td></tr>
+<tr><td class="ln">36</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xb7</span>, <span class="num">0x5a</span>,</td><td class="note">意图：0x6B 写 [0xFF, 0xB7, 0x5A]（解锁口令）。</td></tr>
+<tr><td class="ln">37</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">延时注释。</td></tr>
+<tr><td class="ln">38</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时 2ms。</td></tr>
+<tr><td class="ln">39</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xb7</span>, <span class="num">0x00</span>,</td><td class="note">意图：0x6B 写 [0xFF, 0xB7, 0x00]（解锁口令第二步）。</td></tr>
+<tr><td class="ln">40</td><td class="code">	<span class="cm">// Delay 15 ms</span></td><td class="note">延时注释。</td></tr>
+<tr><td class="ln">41</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">15</span>)</td><td class="note">延时 15ms 等待 PMU 完成。</td></tr>
+<tr><td class="ln">42</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xf0</span>, <span class="num">0x20</span>, <span class="num">0x20</span>, <span class="num">0x02</span>, <span class="num">0x02</span>, <span class="num">0x19</span>, <span class="num">0x29</span>, <span class="num">0x19</span>, <span class="num">0x29</span>,</td><td class="note">意图：0x6B 写 [0xFF, 0xF0, 0x20, 0x20, 0x02, 0x02, 0x19, 0x29, 0x19, 0x29]（一次性配置多个连续寄存器）。</td></tr>
+<tr><td class="ln">43</td><td class="code">	<span class="num">0x6b</span>, r, <span class="num">0xff</span>, <span class="num">0xf0</span> = <span class="num">0x01</span>,</td><td class="note">意图：0x6B 读 [0xFF, 0xF0]，期望读出 0x01（状态轮询）。</td></tr>
+<tr><td class="ln">44</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">延时注释。</td></tr>
+<tr><td class="ln">45</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时 2ms。</td></tr>
+<tr><td class="ln">46</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xb4</span>, <span class="num">0x00</span>,</td><td class="note">意图：0x6B 写 [0xFF, 0xB4, 0x00]（清除某使能）。</td></tr>
+<tr><td class="ln">47</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">延时注释。</td></tr>
+<tr><td class="ln">48</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时 2ms。</td></tr>
+<tr><td class="ln">49</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xa3</span>, <span class="num">0x00</span>,</td><td class="note">意图：0x6B 写 [0xFF, 0xA3, 0x00]（清除 line 33 的设置）。</td></tr>
+<tr><td class="ln">50</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">延时注释。</td></tr>
+<tr><td class="ln">51</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时 2ms。</td></tr>
+<tr><td class="ln">52</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xb4</span>, <span class="num">0x01</span>,</td><td class="note">意图：0x6B 写 [0xFF, 0xB4, 0x01]（重新置位 line 46 的使能，触发复位生效）。</td></tr>
+<tr><td class="ln">53</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">54</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">15</span>)</td><td class="note">延时 15ms 等 IC 复位完成。</td></tr>
+<tr><td class="ln">55</td><td class="code">}</td><td class="note">函数结束。<b>未返回 ISP_STATUS_E</b>，函数声明类型是 ISP_STATUS_E 但缺少 return 语句。</td></tr>
+<tr><td class="ln">56</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">57</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_boot_control</span>()</td><td class="note">使 IC 进入 UBOOT 模式（实质 = aw_reset_chip 全套 + 上电期间持续发 0xAC）。</td></tr>
+<tr><td class="ln">58</td><td class="code">{</td><td class="note">函数体开始。</td></tr>
+<tr><td class="ln">59</td><td class="code">	<span class="cm">// I2CSlaveAddr, Write, Data,</span></td><td class="note">下一行格式注释。</td></tr>
+<tr><td class="ln">60</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xa3</span>, <span class="num">0x02</span>,</td><td class="note">同 L33：PMU 控制写。</td></tr>
+<tr><td class="ln">61</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">62</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时。</td></tr>
+<tr><td class="ln">63</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xb7</span>, <span class="num">0x5a</span>,</td><td class="note">解锁口令。</td></tr>
+<tr><td class="ln">64</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">65</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时。</td></tr>
+<tr><td class="ln">66</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xb7</span>, <span class="num">0x00</span>,</td><td class="note">解锁口令 2。</td></tr>
+<tr><td class="ln">67</td><td class="code">	<span class="cm">// Delay 15 ms</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">68</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">15</span>)</td><td class="note">延时。</td></tr>
+<tr><td class="ln">69</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xf0</span>, <span class="num">0x20</span>, <span class="num">0x20</span>, <span class="num">0x02</span>, <span class="num">0x02</span>, <span class="num">0x19</span>, <span class="num">0x29</span>, <span class="num">0x19</span>, <span class="num">0x29</span>,</td><td class="note">同 L42 批量寄存器写。</td></tr>
+<tr><td class="ln">70</td><td class="code">	<span class="num">0x6b</span>, r, <span class="num">0xff</span>, <span class="num">0xf0</span> = <span class="num">0x01</span>,</td><td class="note">状态读期望 0x01。</td></tr>
+<tr><td class="ln">71</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">72</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时。</td></tr>
+<tr><td class="ln">73</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xb4</span>, <span class="num">0x00</span>,</td><td class="note">清使能。</td></tr>
+<tr><td class="ln">74</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">75</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时。</td></tr>
+<tr><td class="ln">76</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xa3</span>, <span class="num">0x00</span>,</td><td class="note">清 a3 寄存器。</td></tr>
+<tr><td class="ln">77</td><td class="code">	<span class="cm">// Delay 2 ms</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">78</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>)</td><td class="note">延时。</td></tr>
+<tr><td class="ln">79</td><td class="code">	<span class="num">0x6b</span>, w, <span class="num">0xff</span>, <span class="num">0xb4</span>, <span class="num">0x01</span>,</td><td class="note">复位生效。</td></tr>
+<tr><td class="ln">80</td><td class="code">	<span class="cm">// Delay 7 ms</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">81</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">7</span>)</td><td class="note">延时 7ms 等 IC 刚从复位出来。</td></tr>
+<tr><td class="ln">82</td><td class="code">	<span class="cm">// I2CSlaveAddr, Write, Data,</span></td><td class="note">下面切换到 UBOOT 通信地址 0x6F。</td></tr>
+<tr><td class="ln">83</td><td class="code">	<span class="cm">// 20 times</span></td><td class="note">注释：以下 20 次。</td></tr>
+<tr><td class="ln">84</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">向 0x6F 写 0xAC，相当于调用 aw_i2c_stop_uboot()。</td></tr>
+<tr><td class="ln">85</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 2 次发 0xAC。</td></tr>
+<tr><td class="ln">86</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 3 次。</td></tr>
+<tr><td class="ln">87</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 4 次。</td></tr>
+<tr><td class="ln">88</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 5 次。</td></tr>
+<tr><td class="ln">89</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 6 次。</td></tr>
+<tr><td class="ln">90</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 7 次。</td></tr>
+<tr><td class="ln">91</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 8 次。</td></tr>
+<tr><td class="ln">92</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 9 次。</td></tr>
+<tr><td class="ln">93</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 10 次。</td></tr>
+<tr><td class="ln">94</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 11 次。</td></tr>
+<tr><td class="ln">95</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 12 次。</td></tr>
+<tr><td class="ln">96</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 13 次。</td></tr>
+<tr><td class="ln">97</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 14 次。</td></tr>
+<tr><td class="ln">98</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 15 次。</td></tr>
+<tr><td class="ln">99</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 16 次。</td></tr>
+<tr><td class="ln">100</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 17 次。</td></tr>
+<tr><td class="ln">101</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 18 次。</td></tr>
+<tr><td class="ln">102</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 19 次。连续 20 次的目的：在 IC 复位后 8ms 的"是否进 UBOOT"决策窗内确保 IC 看到 0xAC。</td></tr>
+<tr><td class="ln">103</td><td class="code">	<span class="num">0x6f</span>, w, <span class="num">0xac</span>,</td><td class="note">第 20 次。</td></tr>
+<tr><td class="ln">104</td><td class="code">}</td><td class="note">函数结束（无 return）。</td></tr>
+</table>
+
+<h3>5.3 顶层入口 aw_i2c_isp_download / aw_i2c_isp_upload（L105–L177）</h3>
+<table class="code-table">
+<tr><td class="ln">105</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">106</td><td class="code"><span class="cm">//len is the length of the word(4Byte)</span></td><td class="note">注释：len 单位是 word（4 字节）。</td></tr>
+<tr><td class="ln">107</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_i2c_isp_download</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U8</span> *bin_buf, <span class="ty">AW_U32</span> len)</td><td class="note"><b>主入口</b>：把 bin 烧入 IC Flash 并跳转执行。</td></tr>
+<tr><td class="ln">108</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">109</td><td class="code">	<span class="ty">ISP_STATUS_E</span> ret = ISP_OK;</td><td class="note">返回值，默认 OK。</td></tr>
+<tr><td class="ln">110</td><td class="code">	<span class="ty">AW_U32</span> space = <span class="num">0</span>;</td><td class="note">剩余 Flash 空间。</td></tr>
+<tr><td class="ln">111</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">112</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">113</td><td class="code">	<span class="cm">//bin_buff pointer check</span></td><td class="note">注释：bin 指针检查。</td></tr>
+<tr><td class="ln">114</td><td class="code">	<span class="kw">if</span> (bin_buf == (<span class="kw">void</span> *)<span class="num">0</span>) {</td><td class="note">如果 bin 指针为 NULL。</td></tr>
+<tr><td class="ln">115</td><td class="code">		<span class="kw">return</span> ISP_PBUF_ERROR;</td><td class="note">返回数据指针错误。</td></tr>
+<tr><td class="ln">116</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">117</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">118</td><td class="code">	<span class="cm">//isp download address check</span></td><td class="note">地址范围检查。</td></tr>
+<tr><td class="ln">119</td><td class="code">	<span class="kw">if</span> ((addr &lt; FLASH_BASE) || (addr &gt;= FLASH_TOP)) {</td><td class="note">addr 必须在 [FLASH_BASE, FLASH_TOP) 范围内。</td></tr>
+<tr><td class="ln">120</td><td class="code">		<span class="kw">return</span> ISP_ADDR_ERROR;</td><td class="note">越界返回 ADDR_ERROR。</td></tr>
+<tr><td class="ln">121</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">122</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">123</td><td class="code">	<span class="cm">//isp download space check</span></td><td class="note">空间足够性检查。</td></tr>
+<tr><td class="ln">124</td><td class="code">	space = FLASH_TOP - addr;</td><td class="note">计算 addr 到 Flash 顶端的剩余字节数。</td></tr>
+<tr><td class="ln">125</td><td class="code">	<span class="kw">if</span> (space &lt; len * <span class="num">4</span>) {</td><td class="note">需要 len*4 字节空间（因 len 单位是 word）。</td></tr>
+<tr><td class="ln">126</td><td class="code">		<span class="kw">return</span> ISP_SPACE_ERROR;</td><td class="note">空间不足返回 SPACE_ERROR。</td></tr>
+<tr><td class="ln">127</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">128</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">129</td><td class="code"><span class="cm">//Send a handshake frame to confirm that the chip works properly</span></td><td class="note">注释：发送握手帧确认 IC 通信正常。</td></tr>
+<tr><td class="ln">130</td><td class="code">	<span class="kw">if</span> (<span class="fn">aw_hank_connect_check</span>() != ISP_OK) {</td><td class="note">调用握手函数。</td></tr>
+<tr><td class="ln">131</td><td class="code">		<span class="kw">return</span> ISP_HANK_ERROR ;</td><td class="note">握手失败返回。</td></tr>
+<tr><td class="ln">132</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">133</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">134</td><td class="code"><span class="cm">//Download the program to flash ISP</span></td><td class="note">注释：把程序下载到 Flash。</td></tr>
+<tr><td class="ln">135</td><td class="code">	<span class="kw">if</span> (<span class="fn">aw_flash_download_check</span>(addr, bin_buf, len) != ISP_OK) {</td><td class="note">擦+写 Flash。</td></tr>
+<tr><td class="ln">136</td><td class="code">		<span class="kw">return</span> ISP_FLASH_ERROR ;</td><td class="note">失败返回 Flash 错误。</td></tr>
+<tr><td class="ln">137</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">138</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">139</td><td class="code"><span class="cm">//Jump to flash ISP</span></td><td class="note">注释：跳转到 Flash 执行。</td></tr>
+<tr><td class="ln">140</td><td class="code">	<span class="kw">if</span> (<span class="fn">aw_flash_jump_check</span>(addr) != ISP_OK) {</td><td class="note">命令 IC 跳转。</td></tr>
+<tr><td class="ln">141</td><td class="code">		<span class="kw">return</span> ISP_JUMP_ERROR ;</td><td class="note">跳转失败返回。</td></tr>
+<tr><td class="ln">142</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">143</td><td class="code">	<span class="kw">return</span> ret;</td><td class="note">全部成功返回 OK。</td></tr>
+<tr><td class="ln">144</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+<tr><td class="ln">145</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">146</td><td class="code"><span class="cm">//len is the length of the word(4Byte)</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">147</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_i2c_isp_upload</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U8</span> *bin_buf, <span class="ty">AW_U32</span> len)</td><td class="note">上传函数：从 IC Flash 读回 bin（<b>未在 .h 中声明</b>）。</td></tr>
+<tr><td class="ln">148</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">149</td><td class="code">	<span class="ty">ISP_STATUS_E</span> ret = ISP_OK;</td><td class="note">默认 OK。</td></tr>
+<tr><td class="ln">150</td><td class="code">	<span class="ty">AW_U32</span> space = <span class="num">0</span>;</td><td class="note">剩余空间。</td></tr>
+<tr><td class="ln">151</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">152</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">153</td><td class="code">	<span class="cm">//bin_buff pointer check</span></td><td class="note">空指针检查。</td></tr>
+<tr><td class="ln">154</td><td class="code">	<span class="kw">if</span> (bin_buf == (<span class="kw">void</span> *)<span class="num">0</span>) {</td><td class="note">检查 buf。</td></tr>
+<tr><td class="ln">155</td><td class="code">		<span class="kw">return</span> ISP_PBUF_ERROR;</td><td class="note">NULL 返回错误。</td></tr>
+<tr><td class="ln">156</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">157</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">158</td><td class="code">	<span class="cm">//isp download address check</span></td><td class="note">地址检查（注释复用了 download）。</td></tr>
+<tr><td class="ln">159</td><td class="code">	<span class="kw">if</span> ((addr &lt; FLASH_BASE) || (addr &gt;= FLASH_TOP)) {</td><td class="note">地址范围。</td></tr>
+<tr><td class="ln">160</td><td class="code">		<span class="kw">return</span> ISP_ADDR_ERROR;</td><td class="note">越界返回。</td></tr>
+<tr><td class="ln">161</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">162</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">163</td><td class="code">	<span class="cm">//isp download space check</span></td><td class="note">空间检查。</td></tr>
+<tr><td class="ln">164</td><td class="code">	space = FLASH_TOP - addr;</td><td class="note">计算剩余。</td></tr>
+<tr><td class="ln">165</td><td class="code">	<span class="kw">if</span> (space &lt; len * <span class="num">4</span>) {</td><td class="note">检查是否足够读出 len 个 word。</td></tr>
+<tr><td class="ln">166</td><td class="code">		<span class="kw">return</span> ISP_SPACE_ERROR;</td><td class="note">不够返回。</td></tr>
+<tr><td class="ln">167</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">168</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">169</td><td class="code"><span class="cm">//Send a handshake frame to confirm that the chip works properly</span></td><td class="note">握手。</td></tr>
+<tr><td class="ln">170</td><td class="code">	<span class="kw">if</span> (<span class="fn">aw_hank_connect_check</span>() != ISP_OK) {</td><td class="note">握手检查。</td></tr>
+<tr><td class="ln">171</td><td class="code">		<span class="kw">return</span> ISP_HANK_ERROR ;</td><td class="note">失败返回。</td></tr>
+<tr><td class="ln">172</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">173</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">174</td><td class="code">	<span class="kw">if</span>(<span class="fn">aw_flash_read</span>(addr, len, bin_buf)){</td><td class="note">读 Flash（注：判断错把 ret 反了——ISP_OK=0 应该是 == 0 才正确，这里写成非 0 表示失败的语义其实正确，因 OK=0）。</td></tr>
+<tr><td class="ln">175</td><td class="code">		<span class="kw">return</span> ISP_FLASH_ERROR ;</td><td class="note">读失败返回。</td></tr>
+<tr><td class="ln">176</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">177</td><td class="code">}</td><td class="note"><b>函数结束但没有 return 语句</b>——成功路径返回值未定义（GCC 会报警告）。</td></tr>
+</table>
+
+<h3>5.4 aw_flash_jump_check（L178–L221）</h3>
+<table class="code-table">
+<tr><td class="ln">178</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">179</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_jump_check</span>(<span class="ty">AW_U32</span> addr)</td><td class="note">命令 IC 跳转到 addr 执行。</td></tr>
+<tr><td class="ln">180</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">181</td><td class="code">	<span class="cm">/*ISP_STATUS_E ret = ISP_OK;</span></td><td class="note">下面一整块被注释掉了——是参考实现。</td></tr>
+<tr><td class="ln">182</td><td class="code">	<span class="cm">AW_U8 i = 0;</span></td><td class="note">循环变量。</td></tr>
+<tr><td class="ln">183</td><td class="code">	<span class="cm">AW_U8 tmp = 0;</span></td><td class="note">应答 memcmp 结果。</td></tr>
+<tr><td class="ln">184</td><td class="code">	<span class="cm">AW_U8 l_buff[4]  = {0};</span></td><td class="note">payload 缓冲：地址 4 字节。</td></tr>
+<tr><td class="ln">185</td><td class="code">	<span class="cm">AW_U8 w_buff[13] = {0};</span></td><td class="note">写帧缓冲：9 协议头 + 4 payload。</td></tr>
+<tr><td class="ln">186</td><td class="code">	<span class="cm">AW_U8 d_buff[1]  = {0};</span></td><td class="note">应答 payload：1 字节状态。</td></tr>
+<tr><td class="ln">187</td><td class="code">	<span class="cm">AW_U8 r_buff[10] = {0};</span></td><td class="note">读帧缓冲：9 头 + 1 payload。</td></tr>
+<tr><td class="ln">188</td><td class="code"> </td><td class="note empty">空行（注释内）。</td></tr>
+<tr><td class="ln">189</td><td class="code">	<span class="cm">for (i = 0; i &lt; 4; i++) {</span></td><td class="note">地址拆 4 字节（小端）。</td></tr>
+<tr><td class="ln">190</td><td class="code">	<span class="cm">	l_buff[i] = (AW_U8)(addr >> (i * 8));</span></td><td class="note">低字节先。</td></tr>
+<tr><td class="ln">191</td><td class="code">	<span class="cm">}</span></td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">192</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">193</td><td class="code">	<span class="cm">UBOOT_BUF_TYPE_S uboot_structure;</span></td><td class="note">局部协议描述。</td></tr>
+<tr><td class="ln">194</td><td class="code">	<span class="cm">uboot_structure.uboot_ways = UBOOT_I2C;</span></td><td class="note">I2C 模式。</td></tr>
+<tr><td class="ln">195</td><td class="code">	<span class="cm">uboot_structure.uboot_module = UBOOT_END;</span></td><td class="note">END 模块。</td></tr>
+<tr><td class="ln">196</td><td class="code">	<span class="cm">uboot_structure.uboot_event = END_FLASH_JUMP;</span></td><td class="note">事件：跳到 Flash。</td></tr>
+<tr><td class="ln">197</td><td class="code">	<span class="cm">uboot_structure.uboot_ack = UBOOT_CTL;</span></td><td class="note">控制帧。</td></tr>
+<tr><td class="ln">198</td><td class="code">	<span class="cm">uboot_structure.uboot_data_len = 4;</span></td><td class="note">payload 4 字节。</td></tr>
+<tr><td class="ln">199</td><td class="code">	<span class="cm">uboot_structure.p_uboot_data = l_buff;</span></td><td class="note">payload 指针。</td></tr>
+<tr><td class="ln">200</td><td class="code">	<span class="cm">aw_uboot_buff_built(w_buff, &amp;uboot_structure);</span></td><td class="note">打包。</td></tr>
+<tr><td class="ln">201</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">202</td><td class="code">	<span class="cm">aw_i2c_write(w_buff, 13);</span></td><td class="note">发送 13 字节。</td></tr>
+<tr><td class="ln">203</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">204</td><td class="code">	<span class="cm">delay_ms(10);</span></td><td class="note">等待 IC 处理。</td></tr>
+<tr><td class="ln">205</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">206</td><td class="code">	<span class="cm">aw_i2c_read(r_buff, 10);</span></td><td class="note">读 10 字节应答。</td></tr>
+<tr><td class="ln">207</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">208</td><td class="code">	<span class="cm">uboot_structure.uboot_event = END_FLASH_JUMP_ACK;</span></td><td class="note">构造期望应答帧。</td></tr>
+<tr><td class="ln">209</td><td class="code">	<span class="cm">uboot_structure.uboot_ack = UBOOT_ACK;</span></td><td class="note">ACK 方向。</td></tr>
+<tr><td class="ln">210</td><td class="code">	<span class="cm">uboot_structure.uboot_data_len = 1;</span></td><td class="note">应答 payload 1 字节。</td></tr>
+<tr><td class="ln">211</td><td class="code">	<span class="cm">uboot_structure.p_uboot_data = d_buff;</span></td><td class="note">d_buff[0]=0 期望状态。</td></tr>
+<tr><td class="ln">212</td><td class="code">	<span class="cm">aw_uboot_buff_built(w_buff, &amp;uboot_structure);</span></td><td class="note">打包期望应答到 w_buff。</td></tr>
+<tr><td class="ln">213</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">214</td><td class="code">	<span class="cm">tmp = (AW_U8)memcmp(w_buff, r_buff, 10);</span></td><td class="note">对比期望和实际应答 10 字节。</td></tr>
+<tr><td class="ln">215</td><td class="code">	<span class="cm">if (tmp != 0) {</span></td><td class="note">不一致：</td></tr>
+<tr><td class="ln">216</td><td class="code">	<span class="cm">	ret = ISP_JUMP_ERROR;</span></td><td class="note">标记错误。</td></tr>
+<tr><td class="ln">217</td><td class="code">	<span class="cm">	return ret;</span></td><td class="note">返回。</td></tr>
+<tr><td class="ln">218</td><td class="code">	<span class="cm">}</span></td><td class="note">if 结束。</td></tr>
+<tr><td class="ln">219</td><td class="code">	<span class="cm">return ret;*/</span></td><td class="note">注释段结束。</td></tr>
+<tr><td class="ln">220</td><td class="code">	<span class="kw">return</span> ISP_OK;</td><td class="note"><b>实际行为</b>：恒返回 OK——跳转校验被跳过，移植时必须解开注释或重新实现。</td></tr>
+<tr><td class="ln">221</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+</table>
+
+<h3>5.5 aw_flash_pack_read 读单包 64B（L222–L269）</h3>
+<table class="code-table">
+<tr><td class="ln">222</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">223</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_pack_read</span>(<span class="ty">AW_U32</span> u32Addr, <span class="ty">AW_U32</span> u32PackNum, <span class="ty">AW_U8</span>* byDataBuff, <span class="ty">AW_U32</span> u32ReadLen)</td><td class="note">读第 PackNum 个 64B 包，共 u32ReadLen 个 word（≤16）。</td></tr>
+<tr><td class="ln">224</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">225</td><td class="code">	<span class="ty">ISP_STATUS_E</span> ret = ISP_OK;</td><td class="note">返回值。</td></tr>
+<tr><td class="ln">226</td><td class="code">	<span class="ty">AW_U8</span> l_buff[<span class="num">6</span>] = { <span class="num">0</span> };</td><td class="note">payload：2 字节长度 + 4 字节地址 = 6 字节。</td></tr>
+<tr><td class="ln">227</td><td class="code">	<span class="ty">AW_U8</span> w_buff[<span class="num">78</span>] = { <span class="num">0</span> };</td><td class="note">写帧 buffer（够大）。</td></tr>
+<tr><td class="ln">228</td><td class="code">	<span class="ty">AW_U8</span> r_buff[<span class="num">69</span>] = { <span class="num">0</span> };</td><td class="note">读帧 buffer：9 头 + 1 状态 + 4 地址 + 64 数据 = 78，定义为 69 偏小但实际 ReadLen*4+14 受 ReadLen≤16 控。</td></tr>
+<tr><td class="ln">229</td><td class="code">	<span class="ty">AW_U8</span> d_buff[<span class="num">69</span>] = { <span class="num">0</span> };</td><td class="note">期望应答构造区。</td></tr>
+<tr><td class="ln">230</td><td class="code">	<span class="ty">AW_U32</span> i = <span class="num">0</span>;</td><td class="note">循环变量。</td></tr>
+<tr><td class="ln">231</td><td class="code">	<span class="ty">AW_U8</span> tmp = -<span class="num">1</span>;</td><td class="note">应答检查初值（unsigned 类型用 -1 实际是 0xFF，足够表示"未通过"）。</td></tr>
+<tr><td class="ln">232</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">233</td><td class="code">	<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; <span class="num">2</span>; i++) {</td><td class="note">填 payload 前 2 字节：要读取的字节数（小端）。</td></tr>
+<tr><td class="ln">234</td><td class="code">		l_buff[i] = (<span class="ty">AW_U8</span>)((u32ReadLen * <span class="num">4</span>) &gt;&gt; (i * <span class="num">8</span>));</td><td class="note">ReadLen 单位 word → ×4 转字节，按字节拆。</td></tr>
+<tr><td class="ln">235</td><td class="code">	}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">236</td><td class="code">	<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; <span class="num">4</span>; i++) {</td><td class="note">填 payload 后 4 字节：本包起始地址 = u32Addr + PackNum*64。</td></tr>
+<tr><td class="ln">237</td><td class="code">		l_buff[i + <span class="num">2</span>] = (<span class="ty">AW_U8</span>)((u32Addr + u32PackNum * <span class="num">64</span>) &gt;&gt; (i * <span class="num">8</span>));</td><td class="note">地址拆 4 字节（小端）。</td></tr>
+<tr><td class="ln">238</td><td class="code">	}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">239</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">240</td><td class="code">	<span class="ty">UBOOT_BUF_TYPE_S</span> uboot_struct;</td><td class="note">协议描述。</td></tr>
+<tr><td class="ln">241</td><td class="code">	uboot_struct.uboot_ways = UBOOT_I2C;</td><td class="note">I2C。</td></tr>
+<tr><td class="ln">242</td><td class="code">	uboot_struct.uboot_module = UBOOT_FLASH;</td><td class="note">FLASH 模块。</td></tr>
+<tr><td class="ln">243</td><td class="code">	uboot_struct.uboot_event = FLASH_READ;</td><td class="note">读事件 0x11。</td></tr>
+<tr><td class="ln">244</td><td class="code">	uboot_struct.uboot_ack = UBOOT_CTL;</td><td class="note">控制帧。</td></tr>
+<tr><td class="ln">245</td><td class="code">	uboot_struct.uboot_data_len = <span class="num">6</span>;</td><td class="note">payload 6 字节。</td></tr>
+<tr><td class="ln">246</td><td class="code">	uboot_struct.p_uboot_data = l_buff;</td><td class="note">payload 指针。</td></tr>
+<tr><td class="ln">247</td><td class="code">	<span class="fn">aw_uboot_buff_built</span>(w_buff, &amp;uboot_struct);</td><td class="note">打包。</td></tr>
+<tr><td class="ln">248</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">249</td><td class="code">	<span class="fn">aw_i2c_write</span>(w_buff, <span class="num">15</span>);</td><td class="note">发送 15 字节：9 头 + 6 payload。</td></tr>
+<tr><td class="ln">250</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">251</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">1</span>);</td><td class="note">等待 IC 准备数据。</td></tr>
+<tr><td class="ln">252</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">253</td><td class="code">	<span class="fn">aw_i2c_read</span>(r_buff, u32ReadLen * <span class="num">4</span> + <span class="num">1</span> + <span class="num">4</span> + <span class="num">9</span>);</td><td class="note">读应答：9 头 + 1 状态 + 4 地址回送 + ReadLen*4 数据。</td></tr>
+<tr><td class="ln">254</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">255</td><td class="code">	<span class="kw">if</span> (r_buff[<span class="num">9</span>] == <span class="num">0</span>) {</td><td class="note">第 10 字节（status）== 0 表示读成功。</td></tr>
+<tr><td class="ln">256</td><td class="code">		tmp = <span class="num">0</span>;</td><td class="note">标记通过。</td></tr>
+<tr><td class="ln">257</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">258</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">259</td><td class="code">	<span class="kw">if</span> (tmp != <span class="num">0</span>) {</td><td class="note">没通过：</td></tr>
+<tr><td class="ln">260</td><td class="code">		ret = ISP_FLASH_ERROR;</td><td class="note">置错。</td></tr>
+<tr><td class="ln">261</td><td class="code">		<span class="kw">return</span> ret;</td><td class="note">返回。</td></tr>
+<tr><td class="ln">262</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">263</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">264</td><td class="code">	<span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i &lt; u32ReadLen * <span class="num">4</span>; i++) {</td><td class="note">复制读回的 ReadLen*4 字节数据到 byDataBuff（按包号偏移 PackNum*64）。</td></tr>
+<tr><td class="ln">265</td><td class="code">		byDataBuff[u32PackNum * <span class="num">64</span> + i] = r_buff[<span class="num">14</span> + i];</td><td class="note">r_buff 偏移 14 = 9 头 + 1 状态 + 4 地址回送之后才是数据。</td></tr>
+<tr><td class="ln">266</td><td class="code">	}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">267</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">268</td><td class="code">	<span class="kw">return</span> ret;</td><td class="note">返回 OK。</td></tr>
+<tr><td class="ln">269</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+</table>
+
+<h3>5.6 aw_flash_read 整体读（L270–L302）</h3>
+<table class="code-table">
+<tr><td class="ln">270</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">271</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_read</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U32</span> len, <span class="ty">AW_U8</span>* dataBuff)</td><td class="note">读 len 个 word 到 dataBuff，自动分包。</td></tr>
+<tr><td class="ln">272</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">273</td><td class="code">	<span class="ty">ISP_STATUS_E</span> ret = ISP_OK;</td><td class="note">返回值。</td></tr>
+<tr><td class="ln">274</td><td class="code">	<span class="ty">AW_U32</span> divisor = <span class="num">0</span>;</td><td class="note">整 16-word（64B）包数。</td></tr>
+<tr><td class="ln">275</td><td class="code">	<span class="ty">AW_U32</span> block_cnt = <span class="num">0</span>;</td><td class="note">block 数（未使用）。</td></tr>
+<tr><td class="ln">276</td><td class="code">	<span class="ty">AW_U8</span> remaind = <span class="num">0</span>;</td><td class="note">尾部不足 16 word 的余数（单位 word）。</td></tr>
+<tr><td class="ln">277</td><td class="code">	<span class="ty">AW_U32</span> i = <span class="num">0</span>;</td><td class="note">循环变量。</td></tr>
+<tr><td class="ln">278</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">279</td><td class="code">	<span class="kw">if</span> (dataBuff == (<span class="kw">void</span>*)<span class="num">0</span>) {</td><td class="note">空指针检查。</td></tr>
+<tr><td class="ln">280</td><td class="code">		ret = ISP_PBUF_ERROR;</td><td class="note">置错。</td></tr>
+<tr><td class="ln">281</td><td class="code">		<span class="kw">return</span> ret;</td><td class="note">返回。</td></tr>
+<tr><td class="ln">282</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">283</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">284</td><td class="code">	divisor = len / <span class="num">16</span>;</td><td class="note">整 16-word 包数。</td></tr>
+<tr><td class="ln">285</td><td class="code">	remaind = len % <span class="num">16</span>;</td><td class="note">余数。</td></tr>
+<tr><td class="ln">286</td><td class="code">	block_cnt = len / <span class="num">1024</span> + ((len % <span class="num">1024</span>) ? <span class="num">1</span> : <span class="num">0</span>);</td><td class="note">block 数（1024 word/block，未实际使用——dead code）。</td></tr>
+<tr><td class="ln">287</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">288</td><td class="code">	<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; divisor; i++) {</td><td class="note">读完整包。</td></tr>
+<tr><td class="ln">289</td><td class="code">		<span class="kw">if</span> (<span class="fn">aw_flash_pack_read</span>(addr, i, dataBuff, <span class="num">16</span>) != ISP_OK) {</td><td class="note">每包 16 word。</td></tr>
+<tr><td class="ln">290</td><td class="code">			ret = ISP_FLASH_ERROR;</td><td class="note">失败置错。</td></tr>
+<tr><td class="ln">291</td><td class="code">			<span class="kw">return</span> ret;</td><td class="note">立即返回。</td></tr>
+<tr><td class="ln">292</td><td class="code">		}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">293</td><td class="code">	}</td><td class="note">for 结束。注意 i 出循环后等于 divisor，下一行复用。</td></tr>
+<tr><td class="ln">294</td><td class="code">	<span class="kw">if</span> (remaind != <span class="num">0</span>) {</td><td class="note">还有尾部余数：</td></tr>
+<tr><td class="ln">295</td><td class="code">		<span class="kw">if</span> (<span class="fn">aw_flash_pack_read</span>(addr, i, dataBuff, remaind) != ISP_OK) {</td><td class="note">读最后一包（不足 16 word）。</td></tr>
+<tr><td class="ln">296</td><td class="code">			ret = ISP_FLASH_ERROR;</td><td class="note">失败置错。</td></tr>
+<tr><td class="ln">297</td><td class="code">			<span class="kw">return</span> ret;</td><td class="note">返回。</td></tr>
+<tr><td class="ln">298</td><td class="code">		}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">299</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">300</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">301</td><td class="code">	<span class="kw">return</span> ret;</td><td class="note">全部成功返回 OK。</td></tr>
+<tr><td class="ln">302</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+</table>
+
+<h3>5.7 aw_flash_block_erase_check 擦块（L303–L349）</h3>
+<table class="code-table">
+<tr><td class="ln">303</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">304</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_block_erase_check</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U32</span> len)</td><td class="note">擦除从 addr 起的 len 个 sector。</td></tr>
+<tr><td class="ln">305</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">306</td><td class="code">	<span class="ty">ISP_STATUS_E</span> ret = ISP_OK;</td><td class="note">返回值。</td></tr>
+<tr><td class="ln">307</td><td class="code">	<span class="ty">AW_U8</span> i = <span class="num">0</span>;</td><td class="note">循环。</td></tr>
+<tr><td class="ln">308</td><td class="code">	<span class="ty">AW_U8</span> tmp = <span class="num">0</span>;</td><td class="note">memcmp 结果。</td></tr>
+<tr><td class="ln">309</td><td class="code">	<span class="ty">AW_U8</span> l_buff[<span class="num">6</span>]  = {<span class="num">0</span>};</td><td class="note">payload：2 字节 len + 4 字节 addr = 6。</td></tr>
+<tr><td class="ln">310</td><td class="code">	<span class="ty">AW_U8</span> w_buff[<span class="num">15</span>] = {<span class="num">0</span>};</td><td class="note">写帧：9 头 + 6 = 15。</td></tr>
+<tr><td class="ln">311</td><td class="code">	<span class="ty">AW_U8</span> d_buff[<span class="num">1</span>]  = {<span class="num">0</span>};</td><td class="note">期望应答 payload：1 字节状态 = 0。</td></tr>
+<tr><td class="ln">312</td><td class="code">	<span class="ty">AW_U8</span> r_buff[<span class="num">10</span>] = {<span class="num">0</span>};</td><td class="note">读帧：9 头 + 1 = 10。</td></tr>
+<tr><td class="ln">313</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">314</td><td class="code">	l_buff[<span class="num">0</span>] = (<span class="ty">AW_U8</span>)len;</td><td class="note">擦除数量低字节。</td></tr>
+<tr><td class="ln">315</td><td class="code">	l_buff[<span class="num">1</span>] = <span class="num">0x00</span>;</td><td class="note">擦除数量高字节固定 0（len ≤ 255）。</td></tr>
+<tr><td class="ln">316</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">317</td><td class="code">	<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; <span class="num">4</span>; i++) {</td><td class="note">填 addr 4 字节（小端）。</td></tr>
+<tr><td class="ln">318</td><td class="code">		l_buff[i + <span class="num">2</span>] = (<span class="ty">AW_U8</span>)(addr &gt;&gt; (i * <span class="num">8</span>));</td><td class="note">拆字节。</td></tr>
+<tr><td class="ln">319</td><td class="code">	}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">320</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">321</td><td class="code">	<span class="ty">UBOOT_BUF_TYPE_S</span> uboot_structure;</td><td class="note">协议描述。</td></tr>
+<tr><td class="ln">322</td><td class="code">	uboot_structure.uboot_ways = UBOOT_I2C;</td><td class="note">I2C。</td></tr>
+<tr><td class="ln">323</td><td class="code">	uboot_structure.uboot_module = UBOOT_FLASH;</td><td class="note">FLASH 模块。</td></tr>
+<tr><td class="ln">324</td><td class="code">	uboot_structure.uboot_event = FLASH_ERASE_BLOCK;</td><td class="note">擦块事件 0x21。</td></tr>
+<tr><td class="ln">325</td><td class="code">	uboot_structure.uboot_ack = UBOOT_CTL;</td><td class="note">控制帧。</td></tr>
+<tr><td class="ln">326</td><td class="code">	uboot_structure.uboot_data_len = <span class="num">6</span>;</td><td class="note">payload 6 字节。</td></tr>
+<tr><td class="ln">327</td><td class="code">	uboot_structure.p_uboot_data = l_buff;</td><td class="note">payload 指针。</td></tr>
+<tr><td class="ln">328</td><td class="code">	<span class="fn">aw_uboot_buff_built</span>(w_buff, &amp;uboot_structure);</td><td class="note">打包。</td></tr>
+<tr><td class="ln">329</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">330</td><td class="code">	<span class="fn">aw_i2c_write</span>(w_buff, <span class="num">15</span>);</td><td class="note">发送。</td></tr>
+<tr><td class="ln">331</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">332</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">25</span> * len);</td><td class="note"><b>关键</b>：每擦 1 sector 等 25ms，len=20 → 500ms（阻塞）。本项目集成时注意心跳。</td></tr>
+<tr><td class="ln">333</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">334</td><td class="code">	<span class="fn">aw_i2c_read</span>(r_buff, <span class="num">10</span>);</td><td class="note">读 10 字节应答。</td></tr>
+<tr><td class="ln">335</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">336</td><td class="code">	uboot_structure.uboot_event = FLASH_ERASE_BLOCK_ACK;</td><td class="note">构造期望应答帧。</td></tr>
+<tr><td class="ln">337</td><td class="code">	uboot_structure.uboot_ack = UBOOT_ACK;</td><td class="note">ACK 方向。</td></tr>
+<tr><td class="ln">338</td><td class="code">	uboot_structure.uboot_data_len = <span class="num">1</span>;</td><td class="note">应答 1 字节。</td></tr>
+<tr><td class="ln">339</td><td class="code">	uboot_structure.p_uboot_data = d_buff;</td><td class="note">d_buff[0]=0 表示成功。</td></tr>
+<tr><td class="ln">340</td><td class="code">	<span class="fn">aw_uboot_buff_built</span>(w_buff, &amp;uboot_structure);</td><td class="note">把期望应答打包到 w_buff。</td></tr>
+<tr><td class="ln">341</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">342</td><td class="code">	tmp = (<span class="ty">AW_U8</span>)<span class="fn">memcmp</span>(w_buff, r_buff, <span class="num">10</span>);</td><td class="note">对比 10 字节（注意：包含 checksum/sum，应答端的 sum 通常和写端不同，<b>潜在 bug</b>）。</td></tr>
+<tr><td class="ln">343</td><td class="code">	<span class="kw">if</span> (tmp != <span class="num">0</span>) {</td><td class="note">不一致：</td></tr>
+<tr><td class="ln">344</td><td class="code">		ret = ISP_FLASH_ERROR;</td><td class="note">置错。</td></tr>
+<tr><td class="ln">345</td><td class="code">		<span class="kw">return</span> ret;</td><td class="note">返回。</td></tr>
+<tr><td class="ln">346</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">347</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">348</td><td class="code">	<span class="kw">return</span> ret;</td><td class="note">返回 OK。</td></tr>
+<tr><td class="ln">349</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+</table>
+
+<h3>5.8 aw_flash_block_write_ckeck 写单块（L350–L396）</h3>
+<table class="code-table">
+<tr><td class="ln">350</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">351</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_block_write_ckeck</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U32</span> block_num, <span class="ty">AW_U8</span> *bin_buf, <span class="ty">AW_U32</span> len)</td><td class="note">写第 block_num 个 64B 块（len ≤ 16 word）。</td></tr>
+<tr><td class="ln">352</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">353</td><td class="code">	<span class="ty">ISP_STATUS_E</span> ret = ISP_OK;</td><td class="note">返回值。</td></tr>
+<tr><td class="ln">354</td><td class="code">	<span class="ty">AW_U8</span> i = <span class="num">0</span>;</td><td class="note">循环。</td></tr>
+<tr><td class="ln">355</td><td class="code">	<span class="ty">AW_U8</span> tmp = <span class="num">0</span>;</td><td class="note">memcmp 结果。</td></tr>
+<tr><td class="ln">356</td><td class="code">	<span class="ty">AW_U8</span> l_buff[<span class="num">68</span>]  = {<span class="num">0</span>};</td><td class="note">payload：4 字节 addr + 64 字节数据 = 68。</td></tr>
+<tr><td class="ln">357</td><td class="code">	<span class="ty">AW_U8</span> w_buff[<span class="num">77</span>] = {<span class="num">0</span>};</td><td class="note">写帧：9 头 + 68 = 77。</td></tr>
+<tr><td class="ln">358</td><td class="code">	<span class="ty">AW_U8</span> d_buff[<span class="num">1</span>]  = {<span class="num">0</span>};</td><td class="note">期望应答 payload。</td></tr>
+<tr><td class="ln">359</td><td class="code">	<span class="ty">AW_U8</span> r_buff[<span class="num">10</span>] = {<span class="num">0</span>};</td><td class="note">读帧 10 字节。</td></tr>
+<tr><td class="ln">360</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">361</td><td class="code">	<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; <span class="num">4</span>; i++) {</td><td class="note">填 payload 前 4 字节：本块起始地址（addr + block_num*64）。</td></tr>
+<tr><td class="ln">362</td><td class="code">		l_buff[i] = (<span class="ty">AW_U8</span>)((addr + block_num * <span class="num">64</span>) &gt;&gt; (i * <span class="num">8</span>));</td><td class="note">拆字节。</td></tr>
+<tr><td class="ln">363</td><td class="code">	}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">364</td><td class="code">	<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; (len * <span class="num">4</span>); i++) {</td><td class="note">填 payload 后 len*4 字节：本块数据，从 bin_buf 偏移 block_num*64 处复制。</td></tr>
+<tr><td class="ln">365</td><td class="code">		l_buff[i + <span class="num">4</span>] = (bin_buf + block_num * <span class="num">64</span>)[i];</td><td class="note">复制。</td></tr>
+<tr><td class="ln">366</td><td class="code">	}</td><td class="note">for 结束。</td></tr>
+<tr><td class="ln">367</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">368</td><td class="code">	<span class="ty">UBOOT_BUF_TYPE_S</span> uboot_structure;</td><td class="note">协议描述。</td></tr>
+<tr><td class="ln">369</td><td class="code">	uboot_structure.uboot_ways = UBOOT_I2C;</td><td class="note">I2C。</td></tr>
+<tr><td class="ln">370</td><td class="code">	uboot_structure.uboot_module = UBOOT_FLASH;</td><td class="note">FLASH 模块。</td></tr>
+<tr><td class="ln">371</td><td class="code">	uboot_structure.uboot_event = FLASH_WRITE;</td><td class="note">写事件 0x01。</td></tr>
+<tr><td class="ln">372</td><td class="code">	uboot_structure.uboot_ack = UBOOT_CTL;</td><td class="note">控制帧。</td></tr>
+<tr><td class="ln">373</td><td class="code">	uboot_structure.uboot_data_len = (<span class="ty">AW_U8</span>)(<span class="num">4</span> + <span class="num">4</span> * len);</td><td class="note">payload 长度 = 4 地址 + 4*len 数据。</td></tr>
+<tr><td class="ln">374</td><td class="code">	uboot_structure.p_uboot_data = l_buff;</td><td class="note">payload 指针。</td></tr>
+<tr><td class="ln">375</td><td class="code">	<span class="fn">aw_uboot_buff_built</span>(w_buff, &amp;uboot_structure);</td><td class="note">打包。</td></tr>
+<tr><td class="ln">376</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">377</td><td class="code">	<span class="fn">aw_i2c_write</span>(w_buff, (<span class="ty">AW_U8</span>)(<span class="num">13</span> + <span class="num">4</span> * len));</td><td class="note">发送：9 头 + 4 + 4*len 字节（注：len=16 时 = 77，正好用满 w_buff）。</td></tr>
+<tr><td class="ln">378</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">379</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">1</span>);</td><td class="note">等待 IC 写 Flash（典型 1ms/块）。</td></tr>
+<tr><td class="ln">380</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">381</td><td class="code">	<span class="fn">aw_i2c_read</span>(r_buff, <span class="num">10</span>);</td><td class="note">读应答。</td></tr>
+<tr><td class="ln">382</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">383</td><td class="code">	uboot_structure.uboot_event = FLASH_WRITE_ACK;</td><td class="note">构造期望应答。</td></tr>
+<tr><td class="ln">384</td><td class="code">	uboot_structure.uboot_ack = UBOOT_ACK;</td><td class="note">ACK 方向。</td></tr>
+<tr><td class="ln">385</td><td class="code">	uboot_structure.uboot_data_len = <span class="num">1</span>;</td><td class="note">应答 1 字节。</td></tr>
+<tr><td class="ln">386</td><td class="code">	uboot_structure.p_uboot_data = d_buff;</td><td class="note">d_buff[0]=0 表示成功。</td></tr>
+<tr><td class="ln">387</td><td class="code">	<span class="fn">aw_uboot_buff_built</span>(w_buff, &amp;uboot_structure);</td><td class="note">打包到 w_buff。</td></tr>
+<tr><td class="ln">388</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">389</td><td class="code">	tmp = (<span class="ty">AW_U8</span>)<span class="fn">memcmp</span>(w_buff, r_buff, <span class="num">10</span>);</td><td class="note">对比应答。</td></tr>
+<tr><td class="ln">390</td><td class="code">	<span class="kw">if</span> (tmp != <span class="num">0</span>) {</td><td class="note">不一致：</td></tr>
+<tr><td class="ln">391</td><td class="code">		ret = ISP_FLASH_ERROR;</td><td class="note">置错。</td></tr>
+<tr><td class="ln">392</td><td class="code">		<span class="kw">return</span> ret;</td><td class="note">返回。</td></tr>
+<tr><td class="ln">393</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">394</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">395</td><td class="code">	<span class="kw">return</span> ret;</td><td class="note">返回 OK。</td></tr>
+<tr><td class="ln">396</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+</table>
+
+<h3>5.9 aw_flash_download_check 擦+写整段（L397–L430）</h3>
+<table class="code-table">
+<tr><td class="ln">397</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">398</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">399</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_flash_download_check</span>(<span class="ty">AW_U32</span> addr, <span class="ty">AW_U8</span> *bin_buf, <span class="ty">AW_U32</span> len)</td><td class="note">擦除 + 分块写入整个 bin。</td></tr>
+<tr><td class="ln">400</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">401</td><td class="code">	<span class="ty">ISP_STATUS_E</span> ret = ISP_OK;</td><td class="note">返回值。</td></tr>
+<tr><td class="ln">402</td><td class="code">	<span class="ty">AW_U8</span> remaind = <span class="num">0</span>;</td><td class="note">尾部余数（单位 word）。</td></tr>
+<tr><td class="ln">403</td><td class="code">	<span class="ty">AW_U32</span> block_cnt = <span class="num">0</span>;</td><td class="note">需擦除的 sector 数。</td></tr>
+<tr><td class="ln">404</td><td class="code">	<span class="ty">AW_U32</span> i = <span class="num">0</span>;</td><td class="note">循环。</td></tr>
+<tr><td class="ln">405</td><td class="code">	<span class="ty">AW_U32</span> divisor = <span class="num">0</span>;</td><td class="note">整 16-word 包数。</td></tr>
+<tr><td class="ln">406</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">407</td><td class="code">	divisor = len / <span class="num">16</span>;</td><td class="note">整包数。</td></tr>
+<tr><td class="ln">408</td><td class="code">	remaind = len % <span class="num">16</span>;</td><td class="note">余数。</td></tr>
+<tr><td class="ln">409</td><td class="code">	block_cnt = len / <span class="num">1024</span> + ((len % <span class="num">1024</span>)? <span class="num">1</span> : <span class="num">0</span>);</td><td class="note">sector 数 = ceil(len/1024)（1 sector = 1024 word = 4096 字节，AW IC 标称）。</td></tr>
+<tr><td class="ln">410</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">411</td><td class="code">	<span class="cm">//Erases sectors that need to be used</span></td><td class="note">注释：擦除所需 sector。</td></tr>
+<tr><td class="ln">412</td><td class="code">	<span class="kw">if</span> (<span class="fn">aw_flash_block_erase_check</span>(addr, block_cnt) != ISP_OK) {</td><td class="note">一次擦完所有 sector。</td></tr>
+<tr><td class="ln">413</td><td class="code">		<span class="kw">return</span> ISP_FLASH_ERROR;</td><td class="note">失败返回。</td></tr>
+<tr><td class="ln">414</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">415</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">416</td><td class="code">	<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; divisor; i++) {</td><td class="note">写完整 64B 块。</td></tr>
+<tr><td class="ln">417</td><td class="code">		<span class="cm">//Data is written to the FLASH sector and checked</span></td><td class="note">注释：写并校验。</td></tr>
+<tr><td class="ln">418</td><td class="code">		<span class="kw">if</span> (<span class="fn">aw_flash_block_write_ckeck</span>(addr, i, bin_buf,<span class="num">16</span>) != ISP_OK) {</td><td class="note">每块 16 word。</td></tr>
+<tr><td class="ln">419</td><td class="code">			<span class="kw">return</span> ISP_FLASH_ERROR;</td><td class="note">失败返回。</td></tr>
+<tr><td class="ln">420</td><td class="code">		}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">421</td><td class="code">	}</td><td class="note">for 结束。i 出循环 = divisor。</td></tr>
+<tr><td class="ln">422</td><td class="code">	<span class="kw">if</span> (remaind != <span class="num">0</span>) {</td><td class="note">有尾部：</td></tr>
+<tr><td class="ln">423</td><td class="code">		<span class="cm">//Data is written to the FLASH sector and checked</span></td><td class="note">注释。</td></tr>
+<tr><td class="ln">424</td><td class="code">		<span class="kw">if</span> (<span class="fn">aw_flash_block_write_ckeck</span>(addr, i, bin_buf, remaind) != ISP_OK) {</td><td class="note">写最后不足 16 word 的块。</td></tr>
+<tr><td class="ln">425</td><td class="code">			<span class="kw">return</span> ISP_FLASH_ERROR;</td><td class="note">失败返回。</td></tr>
+<tr><td class="ln">426</td><td class="code">		}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">427</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">428</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">429</td><td class="code">	<span class="kw">return</span> ret;</td><td class="note">全部成功。</td></tr>
+<tr><td class="ln">430</td><td class="code">}</td><td class="note">函数结束。</td></tr>
+</table>
+
+<h3>5.10 aw_hank_connect_check 握手（L431–L467）</h3>
+<table class="code-table">
+<tr><td class="ln">431</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">432</td><td class="code"><span class="ty">ISP_STATUS_E</span> <span class="fn">aw_hank_connect_check</span>(<span class="kw">void</span>)</td><td class="note">握手：确认 IC 已进入 UBOOT 模式且通信正常。</td></tr>
+<tr><td class="ln">433</td><td class="code">{</td><td class="note">函数体。</td></tr>
+<tr><td class="ln">434</td><td class="code">	<span class="ty">ISP_STATUS_E</span> ret = ISP_OK;</td><td class="note">返回值。</td></tr>
+<tr><td class="ln">435</td><td class="code">	<span class="ty">AW_U8</span> tmp = <span class="num">0</span>;</td><td class="note">memcmp 结果。</td></tr>
+<tr><td class="ln">436</td><td class="code">	<span class="ty">AW_U8</span> w_buff[<span class="num">255</span>] = {<span class="num">0</span>};</td><td class="note">写帧 buffer（开 255 字节余量大）。</td></tr>
+<tr><td class="ln">437</td><td class="code">	<span class="ty">AW_U8</span> r_buff[<span class="num">255</span>] = {<span class="num">0</span>};</td><td class="note">读帧 buffer。</td></tr>
+<tr><td class="ln">438</td><td class="code">	<span class="ty">AW_U8</span> d_buff[<span class="num">5</span>]   = {<span class="num">0x00</span>, <span class="num">0x01</span>,<span class="num">0x00</span>, <span class="num">0x00</span>, <span class="num">0x00</span>};</td><td class="note">期望握手应答 payload：5 字节 [0x00, 0x01, 0x00, 0x00, 0x00]（"识别码"）。</td></tr>
+<tr><td class="ln">439</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">440</td><td class="code">	<span class="ty">UBOOT_BUF_TYPE_S</span> uboot_structure;</td><td class="note">协议描述。</td></tr>
+<tr><td class="ln">441</td><td class="code">	uboot_structure.uboot_ways = UBOOT_I2C;</td><td class="note">I2C。</td></tr>
+<tr><td class="ln">442</td><td class="code">	uboot_structure.uboot_ack = UBOOT_CTL;</td><td class="note">控制帧。</td></tr>
+<tr><td class="ln">443</td><td class="code">	uboot_structure.uboot_module = UBOOT_HANK;</td><td class="note">HANK 模块。</td></tr>
+<tr><td class="ln">444</td><td class="code">	uboot_structure.uboot_event = HANK_CONNECT;</td><td class="note">连接事件 0x01。</td></tr>
+<tr><td class="ln">445</td><td class="code">	uboot_structure.uboot_data_len = <span class="num">0</span>;</td><td class="note">握手命令无 payload。</td></tr>
+<tr><td class="ln">446</td><td class="code">	uboot_structure.p_uboot_data =  <span class="num">0</span>;</td><td class="note">payload 指针 NULL。</td></tr>
+<tr><td class="ln">447</td><td class="code">	<span class="fn">aw_uboot_buff_built</span>(w_buff, &amp;uboot_structure);</td><td class="note">打包：仅 9 字节协议头。</td></tr>
+<tr><td class="ln">448</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">449</td><td class="code">	<span class="fn">aw_i2c_write</span>(w_buff, <span class="num">9</span>);</td><td class="note">发 9 字节。</td></tr>
+<tr><td class="ln">450</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">451</td><td class="code">	<span class="fn">delay_ms</span>(<span class="num">2</span>);</td><td class="note">等待 IC 准备应答。</td></tr>
+<tr><td class="ln">452</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">453</td><td class="code">	<span class="fn">aw_i2c_read</span>(r_buff, <span class="num">14</span>);</td><td class="note">读 14 字节：9 头 + 5 payload。</td></tr>
+<tr><td class="ln">454</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">455</td><td class="code">	uboot_structure.uboot_event = HANK_CONNECT_ACK;</td><td class="note">构造期望应答。</td></tr>
+<tr><td class="ln">456</td><td class="code">	uboot_structure.uboot_ack = UBOOT_ACK;</td><td class="note">ACK 方向。</td></tr>
+<tr><td class="ln">457</td><td class="code">	uboot_structure.uboot_data_len = <span class="num">5</span>;</td><td class="note">应答 5 字节。</td></tr>
+<tr><td class="ln">458</td><td class="code">	uboot_structure.p_uboot_data = d_buff;</td><td class="note">期望识别码。</td></tr>
+<tr><td class="ln">459</td><td class="code">	<span class="fn">aw_uboot_buff_built</span>(w_buff, &amp;uboot_structure);</td><td class="note">把期望应答打包到 w_buff。</td></tr>
+<tr><td class="ln">460</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">461</td><td class="code">	tmp = (<span class="ty">AW_U8</span>)<span class="fn">memcmp</span>(w_buff, r_buff, <span class="num">14</span>);</td><td class="note">对比 14 字节。</td></tr>
+<tr><td class="ln">462</td><td class="code">	<span class="kw">if</span> (tmp != <span class="num">0</span>) {</td><td class="note">不一致：</td></tr>
+<tr><td class="ln">463</td><td class="code">		ret = ISP_HANK_ERROR;</td><td class="note">置错（不像其它函数立即 return，这里继续走到 L466 才返回）。</td></tr>
+<tr><td class="ln">464</td><td class="code">	}</td><td class="note">结束。</td></tr>
+<tr><td class="ln">465</td><td class="code"> </td><td class="note empty">空行。</td></tr>
+<tr><td class="ln">466</td><td class="code">	<span class="kw">return</span> ret;</td><td class="note">返回 OK 或 HANK_ERROR。</td></tr>
+<tr><td class="ln">467</td><td class="code">}</td><td class="note">函数结束（文件末）。</td></tr>
+</table>
+</section>
+
+<!-- ============================================== -->
+<section id="flow">
+<h2>6. 完整 ISP 烧录流程图</h2>
+
+<div class="flow">
+<div class="flow-step warn">
+  <span class="step-no">A</span><b>上电阶段</b>　主控调用 <code>aw_boot_control()</code>：先用 0x6B 复位 PMU，再在 8ms 窗口内连续 20 次向 0x6F 发 0xAC，使 IC 停在 UBOOT 模式。
+</div>
+<div class="flow-arrow">↓</div>
+<div class="flow-step">
+  <span class="step-no">1</span><b>aw_i2c_isp_download(addr, bin, len)</b>　顶层入口
+</div>
+<div class="flow-arrow">↓</div>
+<div class="flow-step">
+  <span class="step-no">2</span><b>参数检查</b>　bin_buf 非空 / addr 在 Flash 范围 / 空间足够
+</div>
+<div class="flow-arrow">↓</div>
+<div class="flow-step">
+  <span class="step-no">3</span><b>aw_hank_connect_check()</b>　发 HANK_CONNECT(0x01)，等 2ms，校验 14 字节应答（含 [0x00,0x01,0x00,0x00,0x00] 识别码）
+</div>
+<div class="flow-arrow">↓</div>
+<div class="flow-step">
+  <span class="step-no">4</span><b>aw_flash_download_check(addr, bin, len)</b>
+  <div style="margin-left:30px; margin-top:8px;">
+    4a. <code>aw_flash_block_erase_check(addr, ceil(len/1024))</code> → 一次擦完所需 sector（每 sector 25ms）<br>
+    4b. for i in 0..(len/16): <code>aw_flash_block_write_ckeck(addr, i, bin, 16)</code> → 写 64B 块（每块 1ms）<br>
+    4c. 若 len%16 != 0：<code>aw_flash_block_write_ckeck(addr, divisor, bin, remaind)</code> → 写尾部
+  </div>
+</div>
+<div class="flow-arrow">↓</div>
+<div class="flow-step warn">
+  <span class="step-no">5</span><b>aw_flash_jump_check(addr)</b>　发 END_FLASH_JUMP(0x11)，IC 跳到 Flash 执行。<b>当前实现为空，必须重写。</b>
+</div>
+<div class="flow-arrow">↓</div>
+<div class="flow-step">
+  <span class="step-no">6</span>烧录完成 → 返回 ISP_OK
+</div>
+</div>
+
+<h3>读取流程（aw_i2c_isp_upload / aw_flash_read）</h3>
+<div class="flow">
+<div class="flow-step">参数检查 → aw_hank_connect_check()</div>
+<div class="flow-arrow">↓</div>
+<div class="flow-step">aw_flash_read(addr, len, buf)：按 16 word/包循环调用 aw_flash_pack_read，逐包累积到 buf</div>
+<div class="flow-arrow">↓</div>
+<div class="flow-step">每个 aw_flash_pack_read 发 FLASH_READ(0x11)，应答含 9 头 + 1 状态 + 4 地址 + 64 数据</div>
+</div>
+</section>
+
+<!-- ============================================== -->
+<section id="issues">
+<h2>7. 问题汇总（移植集成必须修正）</h2>
+
+<div class="callout warn">
+<span class="tag">1</span> <b>aw_reset_chip / aw_boot_control 是伪代码</b>（isp.c L30, L57）——逐行翻译为 <code>aw_i2c_write(0x6B 或 0x6F, ...)</code> 调用，并区分两个 I2C 从机地址。
+</div>
+
+<div class="callout warn">
+<span class="tag">2</span> <b>底层 I2C 四函数全空</b>（isp.c L8, L14, L21, L26）——桥接到本项目 <code>BSP_I2C2_WriteReg/ReadReg</code> 与 <code>BSP_GetTick</code>。
+</div>
+
+<div class="callout warn">
+<span class="tag">3</span> <b>aw_flash_jump_check 主体被注释</b>（isp.c L181–L219）——恒返回 OK，跳转校验失效。
+</div>
+
+<div class="callout warn">
+<span class="tag">4</span> <b>aw_i2c_isp_upload 缺 return</b>（isp.c L177）+ 未在 .h 中声明。
+</div>
+
+<div class="callout warn">
+<span class="tag">5</span> <b>两个 .h 用同一保护宏 <code>__AW_UBOOT_REGISTER_H</code></b>（bufbuilt.h L5 与 isp.h L5）——同时包含时第二个被吞。改 isp.h 的宏名为 <code>__AW_UBOOT_ISP_H</code>。
+</div>
+
+<div class="callout warn">
+<span class="tag">6</span> <b>AW_U8 / AW_U32 类型未定义</b>——必须在 main.h 或新建 aw_types.h 中补 typedef。
+</div>
+
+<div class="callout warn">
+<span class="tag">7</span> <b>memcmp 校验前 10/14 字节包含 checksum/sum</b>——应答端 sum 与写端通常不同，可能恒 NACK。建议改为只比较关键字段（module/event/ack/payload）。
+</div>
+
+<div class="callout warn">
+<span class="tag">8</span> <b>aw_flash_block_erase_check 阻塞 25ms × len</b>（isp.c L332）——可能打断本项目协议心跳，集成时需在专用 routine 内执行并暂停 TIM6 采样（参考 CLAUDE.md TODO 中的 H1）。
+</div>
+
+<div class="callout warn">
+<span class="tag">9</span> <b>aw_uboot_buff_built 使用文件级静态 protocol_struct</b>（bufbuilt.c L8）——非可重入。多线程或 ISR 调用会破坏帧。
+</div>
+
+<div class="callout warn">
+<span class="tag">10</span> <b>data_len 字段 uint8 限制 payload 最大 255 字节</b>——但写入命令最大 4 + 4*16 = 68 字节，未超限；读包最大 64 字节 + 4 地址 = 68 字节，也未超。设计裕量已用尽，不要再扩。
+</div>
+
+<div class="callout ok">
+<span class="tag">建议集成路径</span>
+1) 在 BSP/App 层新建适配文件实现 4 个底层 stub<br>
+2) 修复上面 10 个问题<br>
+3) 协议层新增上位机命令（建议 0x40 段："进入 boot"、"download"、"jump"）<br>
+4) 在 app_protocol.c 中分发，调用 aw_i2c_isp_download 完成烧录
+</div>
+</section>
+
+</main>
+</body>
+</html>

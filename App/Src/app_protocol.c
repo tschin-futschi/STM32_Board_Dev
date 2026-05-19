@@ -18,6 +18,7 @@
 #include "bsp_pmic.h"
 #include "app_motor.h"
 #include "app_sample.h"
+#include "aw_flash.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -81,6 +82,31 @@ static uint8_t       s_rxBuf[BSP_UART_RX_BUF_SIZE];
 static uint8_t       s_bulkReadActive;         /* 1 = inside HandleBulkRead  */
 
 static const uint16_t k_crc16Init = 0xFFFFU; /* CRC16 initial value         */
+
+/*--------------------------------------------------------------------------*/
+/*                AW local ISP flash (0x32~0x37) state                      */
+/*--------------------------------------------------------------------------*/
+
+#define FLASH_BUF_SIZE        (64U * 1024U)   /* 64 KB SRAM1 firmware staging buffer */
+#define FLASH_TARGET_ADDR_MIN 0x01000000U     /* = AW_FLASH_BASE */
+#define FLASH_TARGET_ADDR_MAX 0x01020000U     /* = AW_FLASH_TOP  */
+
+typedef enum
+{
+    FLASH_STATE_IDLE = 0,        /* 没 session                          */
+    FLASH_STATE_RECEIVING,       /* 已 BEGIN，正在接收 DATA              */
+    FLASH_STATE_READY,           /* 数据全部到位，等 EXEC                */
+    FLASH_STATE_EXECUTING,       /* EXEC 阻塞中（外部几乎观察不到此态）  */
+    FLASH_STATE_DONE,            /* EXEC 成功                           */
+    FLASH_STATE_ERROR,           /* 任意子步骤失败，等 CANCEL 重置       */
+} Flash_State_t;
+
+static uint8_t       s_fwBuf[FLASH_BUF_SIZE];
+static uint32_t      s_fwAddr;
+static uint32_t      s_fwTotalBytes;
+static uint32_t      s_fwRxOffset;
+static uint16_t      s_fwNextSeq;
+static uint8_t       s_fwState = FLASH_STATE_IDLE;
 
 /*--------------------------------------------------------------------------*/
 /*                   CRC16 (poly 0x8005, right-shift)                       */
@@ -883,6 +909,152 @@ static void HandleStartSawtoothGen(const Proto_Frame_t *pFrame)
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_SAWTOOTH_GEN, NULL, 0U);
 }
 
+/*--------------------------------------------------------------------------*/
+/*               0x32~0x37 — AW local ISP flash handlers                    */
+/*--------------------------------------------------------------------------*/
+
+/* 0x32 FLASH_BEGIN — 启动新 session，校验参数，清空缓冲游标 */
+static void HandleFlashBegin(const Proto_Frame_t *pFrame)
+{
+    uint32_t addr;
+    uint32_t totalBytes;
+
+    if (pFrame->len != 8U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    addr = ((uint32_t)pFrame->data[0])
+         | ((uint32_t)pFrame->data[1] << 8)
+         | ((uint32_t)pFrame->data[2] << 16)
+         | ((uint32_t)pFrame->data[3] << 24);
+    totalBytes = ((uint32_t)pFrame->data[4])
+               | ((uint32_t)pFrame->data[5] << 8)
+               | ((uint32_t)pFrame->data[6] << 16)
+               | ((uint32_t)pFrame->data[7] << 24);
+
+    if ((addr < FLASH_TARGET_ADDR_MIN) || (addr >= FLASH_TARGET_ADDR_MAX) ||
+        (totalBytes == 0U) || ((totalBytes & 0x3U) != 0U) ||
+        (totalBytes > FLASH_BUF_SIZE) ||
+        ((addr + totalBytes) > FLASH_TARGET_ADDR_MAX))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    s_fwAddr       = addr;
+    s_fwTotalBytes = totalBytes;
+    s_fwRxOffset   = 0U;
+    s_fwNextSeq    = 0U;
+    s_fwState      = (uint8_t)FLASH_STATE_RECEIVING;
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_BEGIN, NULL, 0U);
+}
+
+/* 0x33 FLASH_DATA — 追加数据块到缓冲，返回下一个 expected seq */
+static void HandleFlashData(const Proto_Frame_t *pFrame)
+{
+    uint16_t pktSeq;
+    uint8_t  chunkLen;
+    uint8_t  resp[2];
+
+    if (s_fwState != (uint8_t)FLASH_STATE_RECEIVING)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    if (pFrame->len < 2U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    pktSeq   = (uint16_t)pFrame->data[0] | ((uint16_t)pFrame->data[1] << 8);
+    chunkLen = (uint8_t)(pFrame->len - 2U);
+
+    if ((pktSeq != s_fwNextSeq) ||
+        ((s_fwRxOffset + (uint32_t)chunkLen) > s_fwTotalBytes))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    if (chunkLen > 0U)
+    {
+        (void)memcpy(&s_fwBuf[s_fwRxOffset], &pFrame->data[2], chunkLen);
+        s_fwRxOffset += (uint32_t)chunkLen;
+    }
+    s_fwNextSeq++;
+
+    if (s_fwRxOffset == s_fwTotalBytes)
+    {
+        s_fwState = (uint8_t)FLASH_STATE_READY;
+    }
+
+    resp[0] = (uint8_t)(s_fwNextSeq & 0xFFU);
+    resp[1] = (uint8_t)((s_fwNextSeq >> 8) & 0xFFU);
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_DATA, resp, 2U);
+}
+
+/* 0x34 FLASH_EXEC — 调 AW_86008_86100_Flash_Run 真烧录（阻塞 ~5-10s）*/
+static void HandleFlashExec(const Proto_Frame_t *pFrame)
+{
+    ISP_STATUS_E ret;
+    uint8_t resp[1];
+
+    if (s_fwState != (uint8_t)FLASH_STATE_READY)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    s_fwState = (uint8_t)FLASH_STATE_EXECUTING;
+    ret = AW_86008_86100_Flash_Run(s_fwAddr, s_fwBuf, s_fwTotalBytes / 4U);
+    s_fwState = (ret == ISP_OK) ? (uint8_t)FLASH_STATE_DONE : (uint8_t)FLASH_STATE_ERROR;
+
+    resp[0] = (uint8_t)ret;
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_EXEC, resp, 1U);
+}
+
+/* 0x35 FLASH_STATUS — 任意时刻可查；返回当前 state + 进度 */
+static void HandleFlashStatus(const Proto_Frame_t *pFrame)
+{
+    uint8_t resp[9];
+
+    resp[0] = s_fwState;
+    resp[1] = (uint8_t)(s_fwRxOffset & 0xFFU);
+    resp[2] = (uint8_t)((s_fwRxOffset >> 8) & 0xFFU);
+    resp[3] = (uint8_t)((s_fwRxOffset >> 16) & 0xFFU);
+    resp[4] = (uint8_t)((s_fwRxOffset >> 24) & 0xFFU);
+    resp[5] = (uint8_t)(s_fwTotalBytes & 0xFFU);
+    resp[6] = (uint8_t)((s_fwTotalBytes >> 8) & 0xFFU);
+    resp[7] = (uint8_t)((s_fwTotalBytes >> 16) & 0xFFU);
+    resp[8] = (uint8_t)((s_fwTotalBytes >> 24) & 0xFFU);
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STATUS, resp, 9U);
+}
+
+/* 0x36 FLASH_CANCEL — 重置 session 到 IDLE，任意状态下可调 */
+static void HandleFlashCancel(const Proto_Frame_t *pFrame)
+{
+    s_fwAddr       = 0U;
+    s_fwTotalBytes = 0U;
+    s_fwRxOffset   = 0U;
+    s_fwNextSeq    = 0U;
+    s_fwState      = (uint8_t)FLASH_STATE_IDLE;
+
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_CANCEL, NULL, 0U);
+}
+
+/* 0x37 FLASH_RESET_CHIP — 单独调 aw_reset_chip()，不动 session 状态 */
+static void HandleFlashResetChip(const Proto_Frame_t *pFrame)
+{
+    ISP_STATUS_E ret = aw_reset_chip();
+    uint8_t resp[1] = { (uint8_t)ret };
+    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_RESET_CHIP, resp, 1U);
+}
+
 static void DispatchFrame(const Proto_Frame_t *pFrame)
 {
     /* During bulk read, only respond to heartbeat — ignore all other commands */
@@ -934,6 +1106,24 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
             break;
         case PROTO_CMD_I2C_PASS_READ:
             HandleI2cPassRead(pFrame);
+            break;
+        case PROTO_CMD_FLASH_BEGIN:
+            HandleFlashBegin(pFrame);
+            break;
+        case PROTO_CMD_FLASH_DATA:
+            HandleFlashData(pFrame);
+            break;
+        case PROTO_CMD_FLASH_EXEC:
+            HandleFlashExec(pFrame);
+            break;
+        case PROTO_CMD_FLASH_STATUS:
+            HandleFlashStatus(pFrame);
+            break;
+        case PROTO_CMD_FLASH_CANCEL:
+            HandleFlashCancel(pFrame);
+            break;
+        case PROTO_CMD_FLASH_RESET_CHIP:
+            HandleFlashResetChip(pFrame);
             break;
         case PROTO_CMD_START_SAMPLE:
             HandleStartSample(pFrame);
