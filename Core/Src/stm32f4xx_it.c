@@ -9,6 +9,11 @@
 #include "bsp_pmic.h"
 #include "bsp_tim.h"
 
+/* HardFault LED blink delay: ~50 ms at 180 MHz with -Og.
+ * Pure CPU loop because SysTick may be inconsistent during fault.
+ * Frequency chosen to be distinct from startup-failure blinks (100~1600 ms). */
+#define HARDFAULT_BLINK_LOOPS  300000U
+
 /*--------------------------------------------------------------------------*/
 /*                    Cortex-M4 Processor Exception Handlers                */
 /*--------------------------------------------------------------------------*/
@@ -31,11 +36,11 @@ void HardFault_Handler(void)
     GPIOF->MODER |=  (1U << (13 * 2));
     GPIOF->OTYPER &= ~(1U << 13);
 
-    /* Fast blink ~100ms interval — unmistakable fault indicator */
+    /* Blink at ~50ms — unmistakable fault indicator, distinct from startup blinks */
     while (1)
     {
         GPIOF->ODR ^= (1U << 13);
-        for (i = 0; i < 600000; i++) {}
+        for (i = 0; i < HARDFAULT_BLINK_LOOPS; i++) {}
     }
 }
 
@@ -104,7 +109,7 @@ void EXTI4_IRQHandler(void)
     {
         EXTI_ClearITPendingBit(BSP_PMIC_HWEN_EXTI_LINE);
 
-        /* Only set flag if HWEN is still high (basic debounce) */
+        /* Re-sample to filter spurious edges (EMI glitch); not true debounce */
         if (GPIO_ReadInputDataBit(BSP_PMIC_HWEN_GPIO_PORT, BSP_PMIC_HWEN_PIN) != RESET)
         {
             g_pmicHwenFlag = 1U;

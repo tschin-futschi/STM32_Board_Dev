@@ -115,6 +115,27 @@ static void uart_dma_init(void)
     DMA_ITConfig(BSP_UART_DMA_STREAM, DMA_IT_TC, ENABLE);
 }
 
+#define BSP_UART_DMA_DISABLE_TIMEOUT_MS  10U
+
+/**
+ * @brief Wait for DMA TX stream EN bit to clear after Cmd(DISABLE).
+ *        If timeout (DMA stuck), force DeInit + re-init to recover.
+ *        Silent recover (no debug frame, since debug uses same DMA path).
+ */
+static void wait_dma_disable_or_recover(void)
+{
+    uint32_t t0 = BSP_GetTick();
+    while (DMA_GetCmdStatus(BSP_UART_DMA_STREAM) != DISABLE)
+    {
+        if ((BSP_GetTick() - t0) >= BSP_UART_DMA_DISABLE_TIMEOUT_MS)
+        {
+            DMA_DeInit(BSP_UART_DMA_STREAM);
+            uart_dma_init();
+            return;
+        }
+    }
+}
+
 /*--------------------------------------------------------------------------*/
 /*                          Public API                                      */
 /*--------------------------------------------------------------------------*/
@@ -147,8 +168,8 @@ ErrorStatus BSP_UART_Transmit(const uint8_t *pData, uint16_t len)
 
     /* Step 1: disable stream */
     DMA_Cmd(BSP_UART_DMA_STREAM, DISABLE);
-    /* Step 2: wait for EN to clear (RM0090 §10.3.17) */
-    while (DMA_GetCmdStatus(BSP_UART_DMA_STREAM) != DISABLE) {}
+    /* Step 2: wait for EN to clear (RM0090 §10.3.17), 10 ms timeout → recover */
+    wait_dma_disable_or_recover();
     /* Step 3: clear all DMA2 Stream7 flags (FEIF7/DMEIF7/TEIF7/HTIF7/TCIF7) */
     DMA_ClearFlag(BSP_UART_DMA_STREAM, BSP_UART_TX_DMA_FLAGS);
     /* Step 4: reset memory address and transfer size */
@@ -168,9 +189,9 @@ ErrorStatus BSP_UART_SetBaudrate(uint32_t baudrate)
     /* 2. Disable USART DMA TX request */
     USART_DMACmd(BSP_UART_PERIPH, USART_DMAReq_Tx, DISABLE);
 
-    /* 3. Disable DMA TX stream and wait for it to become idle */
+    /* 3. Disable DMA TX stream and wait for it to become idle (10 ms timeout) */
     DMA_Cmd(BSP_UART_DMA_STREAM, DISABLE);
-    while (DMA_GetCmdStatus(BSP_UART_DMA_STREAM) != DISABLE) {}
+    wait_dma_disable_or_recover();
 
     /* 4. Clear DMA stream status flags */
     DMA_ClearFlag(BSP_UART_DMA_STREAM, BSP_UART_TX_DMA_FLAGS);

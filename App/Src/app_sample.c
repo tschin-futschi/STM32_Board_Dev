@@ -344,7 +344,7 @@ static void SendStreamFrame(uint8_t effectiveMask, const volatile uint16_t *pDat
         s_i2cFailCount++;
         if (s_i2cFailCount >= I2C_FAIL_STOP_THRESHOLD)
         {
-            App_Protocol_SendErrorResp(0x00U, PROTO_ERR_EXEC_FAIL);
+            App_Protocol_SendErrorResp(PROTO_CRC_ERR_SEQ, PROTO_ERR_EXEC_FAIL);
             App_Protocol_SendDebugInfo("I2C bus stuck, sampling auto-stopped");
             App_Sample_Stop();
             return;

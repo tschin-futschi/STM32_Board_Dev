@@ -28,7 +28,7 @@
 #define PROTO_FRAME_OVERHEAD    7U      /* SOF1+SOF2+SEQ+CMD+LEN+CRC_H+CRC_L */
 #define PROTO_MAX_FRAME_LEN     (PROTO_FRAME_OVERHEAD + PROTO_MAX_DATA_LEN)
 
-#define PROTO_CRC_ERR_SEQ       0xFFU   /* SEQ value when CRC fails (seq untrusted) */
+#define PROTO_CRC_ERR_SEQ       0xFFU   /* SEQ for STM32-initiated frames (CRC err / debug / auto-stop) */
 
 /*--------------------------------------------------------------------------*/
 /*                           Command codes                                  */

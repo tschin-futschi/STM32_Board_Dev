@@ -24,7 +24,21 @@
 #include "test_i2c_scan.h"
 #endif
 
-#define HEARTBEAT_INTERVAL_MS   100U
+#define HEARTBEAT_INTERVAL_MS   500U
+
+/**
+  * @brief  启动失败时永远闪 LED1，用闪烁周期区分失败模块。
+  *         倍增梯度便于目测：100/200/400/800/1600 ms。
+  */
+static void HaltBlinkAt(uint16_t intervalMs)
+{
+    while (1)
+    {
+        uint32_t t0 = BSP_GetTick();
+        while ((BSP_GetTick() - t0) < intervalMs) { ; }
+        BSP_LED1_Toggle();
+    }
+}
 
 int main(void)
 {
@@ -43,25 +57,25 @@ int main(void)
     /* I2C1 (INA power/current measurement) */
     if (BSP_I2C1_Init() != SUCCESS)
     {
-        while (1) { ; }   /* Bus stuck — halt for debug */
+        HaltBlinkAt(100U);   /* 100 ms = I2C1 init failed */
     }
 
     /* I2C2 (motor IC) */
     if (BSP_I2C2_Init() != SUCCESS)
     {
-        while (1) { ; }   /* Bus stuck — halt for debug */
+        HaltBlinkAt(200U);   /* 200 ms = I2C2 init failed */
     }
 
     /* I2C3 (PMIC) */
     if (BSP_I2C3_Init() != SUCCESS)
     {
-        while (1) { ; }   /* Bus stuck — halt for debug */
+        HaltBlinkAt(400U);   /* 400 ms = I2C3 init failed */
     }
 
     /* PMIC RT5112WSC: power sequencing */
     if (BSP_PMIC_Init() != SUCCESS)
     {
-        while (1) { ; }   /* PMIC init failed — halt for debug */
+        HaltBlinkAt(800U);   /* 800 ms = PMIC init failed */
     }
 
     /* HWEN interrupt — enable after PMIC init to avoid spurious re-init */
@@ -70,7 +84,7 @@ int main(void)
     /* AW ISP callback registration — must be after BSP I2C2 + Tick are up */
     if (aw_isp_init(&g_awOpsStm32) != ISP_OK)
     {
-        while (1) { ; }   /* ops 表中有 NULL 成员 = 固件 bug — halt for debug */
+        HaltBlinkAt(1600U);  /* 1600 ms = AW ISP callback registration failed */
     }
 
     /* App */

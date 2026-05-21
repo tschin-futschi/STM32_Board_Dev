@@ -192,7 +192,7 @@ void App_Protocol_SendDebugInfo(const char *msg)
 {
     if (!msg) { return; }
     uint8_t len = (uint8_t)strlen(msg);
-    (void)SendFrame(0x00U, (uint8_t)PROTO_CMD_DEBUG_INFO,
+    (void)SendFrame(PROTO_CRC_ERR_SEQ, (uint8_t)PROTO_CMD_DEBUG_INFO,
                     (const uint8_t *)msg, len);
 }
 
@@ -1034,6 +1034,10 @@ static void HandleFlashExec(const Proto_Frame_t *pFrame)
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
+
+    /* 主动告知 PC 即将进入 5-10s 阻塞期 — PC 据此扩大心跳超时窗口 */
+    App_Protocol_SendDebugInfo("FLASH_EXEC START");
+    BSP_UART_TxWait();
 
     s_fwState = (uint8_t)FLASH_STATE_EXECUTING;
     ret = AW_86008_86100_Flash_Run(s_fwAddr, s_fwBuf, s_fwTotalBytes / 4U);
