@@ -9,7 +9,7 @@
   *   XOR: effective_mask XOR LEN XOR all data bytes
   *
   * Defaults:
-  *   Interval index : 4  (1000 us, 1 kHz)
+  *   Interval index : 3  (400 us, 2500 Hz)
   *   Channel mask   : 0x01 (channel 0 only)
   *   Reg map        : all 0xFFFF (unmapped)
   */

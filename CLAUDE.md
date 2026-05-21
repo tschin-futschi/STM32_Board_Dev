@@ -287,6 +287,7 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 | 4.3 | 寄存器读写命令（`0x20~0x22`，新建 `app_motor.c`） | 读写 PMIC/INA 寄存器验证 | **完成** |
 | 4.4 | 采样控制命令（`0x50~0x54`，新建 `app_sample.c`） | 上位机能看到持续 `0xBB` 数据流 | **完成** |
 | 4.5 | AW Firmware I2C 透传读写（`0x30`/`0x31`，扩展 `bsp_i2c2.c` + `app_protocol.c`） | 上位机可对任意 DevId / 任意 AddrSize（含 0）/ 任意 DataLen 完成读写透传，服务 AW SDK DLL 回调 | **完成** |
+| 4.6 | AW86008/AW86100 本地 ISP 烧录（`0x32~0x37`，新建 `Flash/AW/`） | EXEC 端到端 5-10s 完成，芯片可运行新固件 | **待调试** |
 
 ---
 
