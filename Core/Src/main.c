@@ -24,18 +24,22 @@
 #include "test_i2c_scan.h"
 #endif
 
-#define HEARTBEAT_INTERVAL_MS   500U
+#define HEARTBEAT_INTERVAL_MS         500U
+#define HALT_BLINK_INTERVAL_MS        100U   /* 启动失败统一快闪频率 = "系统卡死，看串口诊断" */
 
 /**
-  * @brief  启动失败时永远闪 LED1，用闪烁周期区分失败模块。
-  *         倍增梯度便于目测：100/200/400/800/1600 ms。
+  * @brief  启动失败时：先经串口发 0x0B BOOT_STATUS 帧告知 PC 具体模块，
+  *         等 TX DMA 完成，再进入 LED 快闪死循环。
+  *         快闪频率统一（100 ms），LED 仅作"卡死指示"，模块识别走串口。
   */
-static void HaltBlinkAt(uint16_t intervalMs)
+static void HaltOnInitFail(Proto_BootStatus_t status)
 {
+    App_Protocol_SendBootStatus(status);
+    BSP_UART_TxWait();
     while (1)
     {
         uint32_t t0 = BSP_GetTick();
-        while ((BSP_GetTick() - t0) < intervalMs) { ; }
+        while ((BSP_GetTick() - t0) < HALT_BLINK_INTERVAL_MS) { ; }
         BSP_LED1_Toggle();
     }
 }
@@ -57,25 +61,25 @@ int main(void)
     /* I2C1 (INA power/current measurement) */
     if (BSP_I2C1_Init() != SUCCESS)
     {
-        HaltBlinkAt(100U);   /* 100 ms = I2C1 init failed */
+        HaltOnInitFail(PROTO_INIT_FAIL_I2C1);
     }
 
     /* I2C2 (motor IC) */
     if (BSP_I2C2_Init() != SUCCESS)
     {
-        HaltBlinkAt(200U);   /* 200 ms = I2C2 init failed */
+        HaltOnInitFail(PROTO_INIT_FAIL_I2C2);
     }
 
     /* I2C3 (PMIC) */
     if (BSP_I2C3_Init() != SUCCESS)
     {
-        HaltBlinkAt(400U);   /* 400 ms = I2C3 init failed */
+        HaltOnInitFail(PROTO_INIT_FAIL_I2C3);
     }
 
     /* PMIC RT5112WSC: power sequencing */
     if (BSP_PMIC_Init() != SUCCESS)
     {
-        HaltBlinkAt(800U);   /* 800 ms = PMIC init failed */
+        HaltOnInitFail(PROTO_INIT_FAIL_PMIC);
     }
 
     /* HWEN interrupt — enable after PMIC init to avoid spurious re-init */
@@ -84,7 +88,7 @@ int main(void)
     /* AW ISP callback registration — must be after BSP I2C2 + Tick are up */
     if (aw_isp_init(&g_awOpsStm32) != ISP_OK)
     {
-        HaltBlinkAt(1600U);  /* 1600 ms = AW ISP callback registration failed */
+        HaltOnInitFail(PROTO_INIT_FAIL_AWISP);
     }
 
     /* App */
@@ -99,6 +103,9 @@ int main(void)
     }
     Test_I2C_Scan_Run();
 #endif
+
+    /* 全部初始化通过，告知 PC 系统就绪 */
+    App_Protocol_SendBootStatus(PROTO_BOOT_OK);
 
     uint32_t prevTick = BSP_GetTick();
 

@@ -220,6 +220,15 @@ void App_Protocol_SendDebugInfo(const char *msg)
                               (const uint8_t *)msg, len);
 }
 
+/* Send a 0x0B BOOT_STATUS frame. Safe to call at startup before
+ * App_Protocol_Init() — all dependent statics are zero-initialized via bss. */
+void App_Protocol_SendBootStatus(Proto_BootStatus_t status)
+{
+    uint8_t statusByte = (uint8_t)status;
+    (void)SendFrame(PROTO_CRC_ERR_SEQ, (uint8_t)PROTO_CMD_BOOT_STATUS,
+                    &statusByte, 1U);
+}
+
 /*--------------------------------------------------------------------------*/
 /*                   Command handlers & dispatcher                          */
 /*--------------------------------------------------------------------------*/

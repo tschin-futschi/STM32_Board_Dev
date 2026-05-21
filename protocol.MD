@@ -274,6 +274,51 @@
 
 ---
 
+#### `0x0B` 启动状态报告 (BOOT_STATUS)
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | **STM32→PC**（主动发送，无 PC 请求） |
+| SEQ | 固定 `0xFF`（STM32 主动发送约定，同 0x01 / 0x06） |
+| 数据段 | 1 字节状态码（见下表） |
+| 触发时机 | BSP/App 初始化各阶段成功结束时（一次 `BOOT_OK`），或某阶段失败时（一次对应 `INIT_FAIL_*`） |
+| PC 响应 | 无需响应；PC 收到即更新启动状态显示 |
+
+**状态码定义：**
+
+| 状态码 | 名称 | 含义 | 触发位置 |
+|--------|------|------|---------|
+| `0x00` | `BOOT_OK` | 全部模块初始化完成，主循环即将启动 | `App_Sample_Init()` 之后，进入 `while(1)` 之前 |
+| `0x01` | `INIT_FAIL_I2C1` | I2C1（INA 电流测量）初始化失败 | `BSP_I2C1_Init() != SUCCESS` |
+| `0x02` | `INIT_FAIL_I2C2` | I2C2（电机 IC 软件 bit-bang）初始化失败 | `BSP_I2C2_Init() != SUCCESS` |
+| `0x03` | `INIT_FAIL_I2C3` | I2C3（PMIC）初始化失败 | `BSP_I2C3_Init() != SUCCESS` |
+| `0x04` | `INIT_FAIL_PMIC` | PMIC RT5112WSC 电压预设失败（I2C 通信失败） | `BSP_PMIC_Init() != SUCCESS` |
+| `0x05` | `INIT_FAIL_AWISP` | AW ISP 回调表注册失败（ops 表 NULL 成员 = 固件 bug） | `aw_isp_init() != ISP_OK` |
+| `0x06~0xFF` | （保留） | 留给未来新增模块（如 SD 卡 / Flash / EEPROM 自检） | — |
+
+**PC 端预期行为：**
+
+| PC 收到的帧 | PC 行为 |
+|------------|--------|
+| `0x0B 0x00` (BOOT_OK) | 显示 "STM32 就绪"，可开始下发业务命令 |
+| `0x0B 0x01` (I2C1 失败) | 显示 "INA 电流测量初始化失败，检查 PB6/PB7 上拉" |
+| `0x0B 0x02` (I2C2 失败) | 显示 "电机 IC 总线失败，检查 PB10/PB11" |
+| `0x0B 0x03` (I2C3 失败) | 显示 "PMIC 总线失败，检查 PA8/PC9" |
+| `0x0B 0x04` (PMIC 失败) | 显示 "PMIC 初始化失败，检查电源" |
+| `0x0B 0x05` (AW ISP 失败) | 显示 "AW SDK 注册失败 - 固件 bug" |
+| **(无任何帧，≥2s 超时)** | 显示 "STM32 无响应，检查复位/串口连接/上电" |
+
+**失败行为：** STM32 发出 `INIT_FAIL_*` 帧后进入 LED 快闪死循环（不返回主循环），后续任何命令都收不到响应。PC 端遇到 INIT_FAIL 应停止下发命令并提示用户处理硬件问题。
+
+**实际帧示例：**
+
+```
+BOOT_OK 帧（8 字节）：       AA 55 FF 0B 01 00 [CRC_H] [CRC_L]
+INIT_FAIL_I2C2 帧（8 字节）： AA 55 FF 0B 01 02 [CRC_H] [CRC_L]
+```
+
+---
+
 ### 4.3 寄存器读写组（0x20~0x4F）
 
 #### `0x20` 读单个寄存器
@@ -768,3 +813,4 @@ T_sample ≥ max( T_i2c + T_main,  T_uart,  T_i2c / k )
 | v2.5 | 2026-05-12 | 0x31 章节新增 **AW SDK 场景约定** 段落（对称 0x30 v2.4），明确：`pFunc_I2C_Read` 回调签名含 AddrSize（由 DLL 决定，常见 1 或 2，AddrSize=0 是否实际调用属 OPEN 待供应商确认）；AddrBytes 按 `pAddr` 索引顺序对应总线发送顺序，STM32 端不得翻转字节序。同步在 0x30 段补充 WrData 字节顺序与总线发送顺序的对应说明 |
 | v2.6 | 2026-05-19 | AW86006 / AW86100 烧录方案变更：废弃「PC 端 AW DLL → 0x30/0x31 透传」链路，改为 STM32 本地 ISP 烧录。原因：DLL 透传对 USB 转串口（如 FT232）的 Latency Timer 等通讯设置敏感，导致烧录程序不通用。0x30/0x31 保留为通用 I2C 透传 debug 工具不删除；新增 `0x32` ~ `0x37` 命令号预留给本地 ISP 烧录，字段后续补齐 |
 | v2.7 | 2026-05-19 | AW 本地 ISP 烧录 6 条命令字段定义完成：`0x32` BEGIN（`[addr][totalBytes]`）/ `0x33` DATA（`[pktSeq][chunk]` → `[nextSeq]`）/ `0x34` EXEC（→ `[ispStatus]`，阻塞 5-10s）/ `0x35` STATUS（→ `[state][rxOffset][totalBytes]`）/ `0x36` CANCEL / `0x37` RESET_CHIP。固件 max 64 KB（受 SRAM1 单缓冲限制）；`0x34` 阻塞期间 PC 须临时禁用心跳 |
+| v2.8 | 2026-05-21 | 新增 `0x0B BOOT_STATUS` 启动状态报告帧（STM32→PC 主动发送，SEQ=0xFF，LEN=1）。状态码：`0x00` BOOT_OK（全部模块初始化完成）/ `0x01` INIT_FAIL_I2C1 / `0x02` INIT_FAIL_I2C2 / `0x03` INIT_FAIL_I2C3 / `0x04` INIT_FAIL_PMIC / `0x05` INIT_FAIL_AWISP。用串口诊断替代原 LED 频率码（100/200/400/800/1600ms 区分模块的方案），LED 退化为二元"健康/卡死"指示。PC 上电连接后 ≥2s 未收到任何 0x0B 帧应判定 STM32 异常 |

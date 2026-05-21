@@ -48,6 +48,7 @@ typedef enum
     PROTO_CMD_PMIC_ENABLE    = 0x08U,   /* PC->STM32, data empty, enable LDO sequence   */
     PROTO_CMD_PMIC_SET_VOLT  = 0x09U,   /* PC->STM32, data = 6 bytes [DRVVDD_H/L][IOVDD_H/L][VCMVDD_H/L] */
     PROTO_CMD_PMIC_DISABLE   = 0x0AU,   /* PC->STM32, data empty, disable LDO sequence  */
+    PROTO_CMD_BOOT_STATUS    = 0x0BU,   /* STM32->PC, data = 1 byte Proto_BootStatus_t; SEQ=0xFF */
 
     /* Register read/write group (0x20~0x4F) */
     PROTO_CMD_READ_REG       = 0x20U,   /* PC->STM32, data = 2 bytes [regH][regL]                   */
@@ -88,6 +89,20 @@ typedef enum
 } Proto_ErrCode_t;
 
 /*--------------------------------------------------------------------------*/
+/*                       Boot status codes (0x0B payload)                   */
+/*--------------------------------------------------------------------------*/
+
+typedef enum
+{
+    PROTO_BOOT_OK            = 0x00U,   /* All BSP/App init succeeded, entering main loop */
+    PROTO_INIT_FAIL_I2C1     = 0x01U,   /* BSP_I2C1_Init failed (INA current measurement)  */
+    PROTO_INIT_FAIL_I2C2     = 0x02U,   /* BSP_I2C2_Init failed (motor IC software bit-bang) */
+    PROTO_INIT_FAIL_I2C3     = 0x03U,   /* BSP_I2C3_Init failed (PMIC)                     */
+    PROTO_INIT_FAIL_PMIC     = 0x04U,   /* BSP_PMIC_Init failed (voltage preset)            */
+    PROTO_INIT_FAIL_AWISP    = 0x05U,   /* aw_isp_init failed (callback ops table NULL)    */
+} Proto_BootStatus_t;
+
+/*--------------------------------------------------------------------------*/
 /*                           Frame structure                                */
 /*--------------------------------------------------------------------------*/
 
@@ -107,5 +122,8 @@ void App_Protocol_Init(void);
 void App_Protocol_Poll(void);
 void App_Protocol_SendDebugInfo(const char *msg);
 void App_Protocol_SendErrorResp(uint8_t seq, Proto_ErrCode_t err);
+/* Send a 0x0B BOOT_STATUS frame (SEQ=0xFF, LEN=1). May be called BEFORE
+ * App_Protocol_Init() — only depends on BSP_UART being initialized. */
+void App_Protocol_SendBootStatus(Proto_BootStatus_t status);
 
 #endif /* __APP_PROTOCOL_H */
