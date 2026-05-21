@@ -57,7 +57,7 @@ typedef enum
     PROTO_CMD_I2C_PASS_READ  = 0x31U,   /* PC->STM32, AW Firmware I2C 读指令; data = [DevId][AddrSize][AddrBytes...][ReadLen] */
 
     /* AW local ISP flash group (0x32~0x37) — AW86008/AW86100 本地烧录 */
-    PROTO_CMD_FLASH_BEGIN      = 0x32U, /* PC->STM32, data = [addr(4 LE)][totalBytes(4 LE)]                         */
+    PROTO_CMD_FLASH_BEGIN      = 0x32U, /* PC->STM32, data = [addr(4 LE)][totalBytes(4 LE)]; totalBytes <= 64 KB (受 STM32 staging buffer 限制) */
     PROTO_CMD_FLASH_DATA       = 0x33U, /* PC->STM32, data = [pktSeq(2 LE)][chunk(N)]; resp = [nextSeq(2 LE)]       */
     PROTO_CMD_FLASH_EXEC       = 0x34U, /* PC->STM32, data empty; resp = [ispStatus(1)]; 阻塞 ~5-10s                */
     PROTO_CMD_FLASH_STATUS     = 0x35U, /* PC->STM32, data empty; resp = [state(1)][rxOffset(4)][totalBytes(4)]     */

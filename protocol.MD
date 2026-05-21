@@ -400,6 +400,7 @@ PC 端在发 `0x34` 之前必须临时关闭心跳检测或扩大超时窗口。
 | 失败响应 | 错误响应帧，错误码 `0x03`（state 不对）；或正常 resp 中 `ispStatus != 0`（烧录本身失败） |
 | **阻塞时间** | **~5-10 秒**，期间 STM32 不响应任何命令（含心跳）。**PC 端在发 0x34 前必须把心跳超时窗口扩到 ≥15 秒，或临时禁用心跳。**STM32 在 EXEC 真正开始前会主动发一帧 `0x06 DEBUG_INFO "FLASH_EXEC START"` 作为开始信号（SEQ=0xFF），PC 收到该帧后可关闭心跳监测，等 EXEC 响应到达再恢复 |
 | 副作用 | 烧录完成后 state → DONE（成功）或 ERROR（失败），s_flashSessionActive 解除 |
+| **校验局限** | **`ispStatus == ISP_OK` 仅表示 erase + write 子步骤都 ACK 了，不等于新固件已成功运行**。固件内部 `aw_flash_jump_check` 是 vendor stub，永远返回 OK，无法验证 jump。**PC 端必须用"烧录后回读 Flash 校验"或"0x37 RESET_CHIP + 后续操作可达性测试"二次确认**。 |
 
 #### `0x35` 烧录 STATUS
 
@@ -429,6 +430,7 @@ PC 端在发 `0x34` 之前必须临时关闭心跳检测或扩大超时窗口。
 | 成功响应 | 同 CMD+SEQ，数据段 `[ispStatus(1)]` |
 | 用途 | 单独调 `aw_reset_chip()`，用于：芯片卡死手动复位、测试 reset 单独 OK；**不动 session 状态** |
 | **阻塞时间** | **~50 ms**（wake 序列 + 15 ms 收尾） |
+| **实际行为** | 名义上是 "reset chip"，实际为 wake-out-of-uboot 序列（7 写 + 1 读校验 + 15ms 收尾），**非硬件 reset**。对 AW86008/AW86100 等价于"让芯片从 Flash 运行用户固件"。沿用 vendor 命名以保持 API 兼容。 |
 
 ---
 

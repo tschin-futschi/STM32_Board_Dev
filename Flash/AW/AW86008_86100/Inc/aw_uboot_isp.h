@@ -11,6 +11,8 @@
  *              从公开 .h 移除（aw_i2c_stop_uboot 仍保留 extern）
  *  2026-05-19  vendor 宏 AW_FLASH_BASE / AW_FLASH_SIZE / AW_FLASH_TOP 加 AW_ 前缀，
  *              避免与 STM32 CMSIS stm32f4xx.h 中 AW_FLASH_BASE (0x08000000) 重名冲突
+ *  2026-05-21  aw_reset_chip 函数声明加 NOTE 注释，说明实际是 wake-out-of-uboot
+ *              （非硬件 reset），沿用 vendor 命名以保持 API 兼容
  * ============================================================================
  */
 
@@ -43,6 +45,7 @@ enum isp_status{
 typedef enum isp_status ISP_STATUS_E;
 
 ISP_STATUS_E aw_boot_control();
+/* NOTE: 实为 wake-out-of-uboot 序列，非硬件 reset。沿用 vendor 命名。 */
 ISP_STATUS_E aw_reset_chip();
 ISP_STATUS_E aw_i2c_isp_download(uint32_t addr, uint8_t *bin_buf, uint32_t len);
 ISP_STATUS_E aw_flash_download_check(uint32_t addr, uint8_t *bin_buf, uint32_t len);

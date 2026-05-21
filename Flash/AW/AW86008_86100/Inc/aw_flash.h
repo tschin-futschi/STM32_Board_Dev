@@ -18,6 +18,8 @@
   * @param  len      固件长度，单位为字 (word = 4 字节)，不是字节
   * @retval ISP_OK 全部成功；其它返回值为失败子流程的错误码（见 enum isp_status）
   * @note   调用前必须已 aw_isp_init(&g_awOpsStm32) 注册回调，否则返 ISP_NOT_INITED
+  * @note   bin_buf 须 ≥ len*4 字节；本项目协议层用 64 KB staging buffer（s_fwBuf），
+  *         单次 session 最大烧 64 KB；若需烧满 AW_FLASH_SIZE (128 KB) 分两次 session
   */
 ISP_STATUS_E AW_86008_86100_Flash_Run(uint32_t addr, uint8_t *bin_buf, uint32_t len);
 

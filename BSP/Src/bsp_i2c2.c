@@ -389,6 +389,17 @@ error:
 
 /*--------------------------------------------------------------------------*/
 
+ErrorStatus BSP_I2C2_ProbeAddr(uint8_t devAddr)
+{
+    uint8_t ack;
+    I2C_Start();
+    ack = SendByte((uint8_t)(devAddr << 1U));
+    I2C_Stop();
+    return (ack != 0U) ? SUCCESS : ERROR;
+}
+
+/*--------------------------------------------------------------------------*/
+
 ErrorStatus BSP_I2C2_Scan(uint8_t *pAddrList, uint8_t *pCount)
 {
     uint8_t addr;
@@ -396,12 +407,10 @@ ErrorStatus BSP_I2C2_Scan(uint8_t *pAddrList, uint8_t *pCount)
 
     for (addr = 1U; addr <= 126U; addr++)
     {
-        I2C_Start();
-        if (SendByte((uint8_t)(addr << 1U)))
+        if (BSP_I2C2_ProbeAddr(addr) == SUCCESS)
         {
             pAddrList[(*pCount)++] = addr;
         }
-        I2C_Stop();
     }
 
     return SUCCESS;

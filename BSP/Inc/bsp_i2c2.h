@@ -54,6 +54,9 @@ ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint16_t reg,
 ErrorStatus BSP_I2C2_ReadRegs(uint8_t devAddr, uint16_t startReg,
                                uint8_t *pData, uint16_t len);
 ErrorStatus BSP_I2C2_Scan(uint8_t *pAddrList, uint8_t *pCount);
+/* ACK-only probe：发 START + addr|W + 看 ACK + STOP，不读任何寄存器。
+ * 不依赖从机支持读 reg 0，适合判断指定地址 IC 是否在线。 */
+ErrorStatus BSP_I2C2_ProbeAddr(uint8_t devAddr);
 void        BSP_I2C2_RecoverBus(void);
 uint8_t     BSP_I2C2_GetAndClearRecoveryFlag(void);
 

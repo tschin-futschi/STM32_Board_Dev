@@ -19,6 +19,10 @@
  *              + aw_flash_jump_check 加 (void)addr; 标记参数暂未用
  *              + aw_flash_pack_read 删除未用变量 d_buff；内层 for 改用外层 i 消除 shadow + sign-compare
  *              + aw_flash_read 删除未用变量 block_cnt 及其赋值
+ *  2026-05-21  aw_flash_jump_check 函数体内加 IMPORTANT 警告注释，
+ *              说明 stub 行为：始终返回 ISP_OK，jump 后是否真正运行新固件无法判断；
+ *              aw_reset_chip 函数体内加注释说明实际是 wake-out-of-uboot
+ *              （非硬件 reset），沿用 vendor 命名以保持 API 兼容
  * ============================================================================
  */
 
@@ -133,6 +137,9 @@ static ISP_STATUS_E AwWakeSequence(void)
 
 ISP_STATUS_E aw_reset_chip(void)
 {
+	/* 实际是 wake-out-of-uboot 序列（7 写 + 1 读校验 + 15ms 收尾），非硬件 reset。
+	 * 对 AW86008/AW86100 等价于"让芯片从 Flash 运行用户固件"。
+	 * 沿用 vendor 命名以保持 API 兼容；改名会破坏 vendor SDK 升级合并。 */
 	ISP_STATUS_E ret = AwWakeSequence();
 	if (ret != ISP_OK) {
 		return ret;
@@ -241,7 +248,13 @@ ISP_STATUS_E aw_i2c_isp_upload(uint32_t addr, uint8_t *bin_buf, uint32_t len)
 
 ISP_STATUS_E aw_flash_jump_check(uint32_t addr)
 {
-	(void)addr;   /* 真实现已注释；当前 stub，addr 暂未使用 */
+	/* IMPORTANT: 此函数永远返回 ISP_OK。vendor 真实现（下方注释块）未集成
+	 * — jump 后是否真正运行新固件无法在此层判断。调用此函数后
+	 * aw_i2c_isp_download 返回 ISP_OK 仅等于 "erase + write 子步骤都 ACK 了"，
+	 * 不等于新固件已运行。PC 端必须用"烧录后回读 Flash 校验"或"0x37 RESET_CHIP
+	 * + 后续操作可达性测试"二次确认烧录结果。联调阶段确认 vendor 真实现的
+	 * ACK 格式后再启用。 */
+	(void)addr;   /* stub：addr 暂未使用 */
 
 	/*ISP_STATUS_E ret = ISP_OK;
 	uint8_t i = 0;

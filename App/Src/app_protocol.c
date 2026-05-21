@@ -87,7 +87,12 @@ static const uint16_t k_crc16Init = 0xFFFFU; /* CRC16 initial value         */
 /*                AW local ISP flash (0x32~0x37) state                      */
 /*--------------------------------------------------------------------------*/
 
-#define FLASH_BUF_SIZE        (64U * 1024U)   /* 64 KB SRAM1 firmware staging buffer */
+/* 64 KB SRAM1 firmware staging buffer.
+ * 限制：单次 session 最大 64 KB，< AW_FLASH_SIZE(128 KB)。
+ * 若需烧满 128 KB，PC 端分两次 session（各 64 KB）：
+ *   session 1: BEGIN(addr=0x01000000, 64KB) → DATA → EXEC → CANCEL
+ *   session 2: BEGIN(addr=0x01010000, 64KB) → DATA → EXEC → CANCEL */
+#define FLASH_BUF_SIZE        (64U * 1024U)
 #define FLASH_TARGET_ADDR_MIN 0x01000000U     /* = AW_FLASH_BASE */
 #define FLASH_TARGET_ADDR_MAX 0x01020000U     /* = AW_FLASH_TOP  */
 
@@ -101,6 +106,8 @@ typedef enum
     FLASH_STATE_ERROR,           /* 任意子步骤失败，等 CANCEL 重置       */
 } Flash_State_t;
 
+/* WARN: 64 KB / 112 KB SRAM1 = 57% 占用；剩 ~43 KB 给其他 bss + 2 KB 栈。
+ * 新增 >30 KB 的全局/静态会爆 SRAM。 */
 static uint8_t           s_fwBuf[FLASH_BUF_SIZE];
 static uint32_t          s_fwAddr;
 static uint32_t          s_fwTotalBytes;
@@ -175,10 +182,27 @@ static ErrorStatus SendFrame(uint8_t seq, uint8_t cmd,
     return BSP_UART_Transmit(s_txBuf, idx);
 }
 
+/**
+ * @brief  SendFrame with 1 retry on BSP busy: TX DMA may still be sending the
+ *         previous frame; wait for it then retry once. Subsequent failure is
+ *         silently dropped (PC's 100ms timeout + 2× retry mechanism tolerates).
+ */
+static ErrorStatus SendFrameWithRetry(uint8_t seq, uint8_t cmd,
+                                       const uint8_t *pData, uint8_t len)
+{
+    ErrorStatus s = SendFrame(seq, cmd, pData, len);
+    if (s != SUCCESS)
+    {
+        BSP_UART_TxWait();
+        s = SendFrame(seq, cmd, pData, len);
+    }
+    return s;
+}
+
 void App_Protocol_SendErrorResp(uint8_t seq, Proto_ErrCode_t err)
 {
     uint8_t errByte = (uint8_t)err;
-    (void)SendFrame(seq, (uint8_t)PROTO_CMD_ERROR_RESP, &errByte, 1U);
+    (void)SendFrameWithRetry(seq, (uint8_t)PROTO_CMD_ERROR_RESP, &errByte, 1U);
 }
 
 /* Internal shorthand kept for existing callers within this file */
@@ -192,8 +216,8 @@ void App_Protocol_SendDebugInfo(const char *msg)
 {
     if (!msg) { return; }
     uint8_t len = (uint8_t)strlen(msg);
-    (void)SendFrame(PROTO_CRC_ERR_SEQ, (uint8_t)PROTO_CMD_DEBUG_INFO,
-                    (const uint8_t *)msg, len);
+    (void)SendFrameWithRetry(PROTO_CRC_ERR_SEQ, (uint8_t)PROTO_CMD_DEBUG_INFO,
+                              (const uint8_t *)msg, len);
 }
 
 /*--------------------------------------------------------------------------*/
@@ -201,18 +225,17 @@ void App_Protocol_SendDebugInfo(const char *msg)
 /*--------------------------------------------------------------------------*/
 
 /*
- * Probe a 7-bit I2C address on the motor bus by attempting a 1-byte read.
- * Returns SUCCESS if device ACKs, ERROR otherwise.
+ * Probe a 7-bit I2C address on the motor bus via ACK-only check
+ * (START + addr|W + STOP). Does NOT depend on the slave supporting reg 0 read.
  */
 static ErrorStatus ProbeMotorIc(uint8_t addr)
 {
-    uint8_t dummy;
-    return BSP_I2C2_ReadReg(addr, 0x00U, &dummy, 1U);
+    return BSP_I2C2_ProbeAddr(addr);
 }
 
 static void HandleHeartbeat(const Proto_Frame_t *pFrame)
 {
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_HEARTBEAT, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_HEARTBEAT, NULL, 0U);
 }
 
 /* 0x02 — Set motor IC I2C address */
@@ -243,7 +266,7 @@ static void HandleSetMotorAddr(const Proto_Frame_t *pFrame)
     }
 
     g_motorIcAddr = addr;
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_SET_MOTOR_ADDR, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_SET_MOTOR_ADDR, NULL, 0U);
 }
 
 /* 0x03 — Set UART baudrate */
@@ -265,7 +288,8 @@ static void HandleSetBaudrate(const Proto_Frame_t *pFrame)
         return;
     }
 
-    /* Echo with current (old) baudrate first, then wait for DMA to finish */
+    /* Echo with current (old) baudrate first, then wait for DMA to finish.
+     * SendFrame (not WithRetry) — TxWait below already handles BUSY case. */
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_SET_BAUDRATE, NULL, 0U);
     BSP_UART_TxWait();
     BSP_UART_SetBaudrate(k_baudrateTable[idx]);
@@ -278,7 +302,7 @@ static void HandleSetBaudrate(const Proto_Frame_t *pFrame)
 static void HandleReset(const Proto_Frame_t *pFrame)
 {
     /* Echo before reset, wait for DMA to finish so PC receives the ACK */
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_RESET, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_RESET, NULL, 0U);
     BSP_UART_TxWait();
     NVIC_SystemReset();
 }
@@ -298,7 +322,7 @@ static void HandleMotorPing(const Proto_Frame_t *pFrame)
         return;
     }
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_MOTOR_PING, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_MOTOR_PING, NULL, 0U);
 }
 
 /* 0x07 — Scan I2C bus and return device address list */
@@ -338,7 +362,7 @@ static void HandleI2CScan(const Proto_Frame_t *pFrame)
         respBuf[1U + i] = addrList[i];
     }
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_SCAN, respBuf, 1U + count);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_I2C_SCAN, respBuf, 1U + count);
 }
 
 /* 0x08 — PMIC LDO enable sequence */
@@ -349,7 +373,7 @@ static void HandlePmicEnable(const Proto_Frame_t *pFrame)
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_ENABLE, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_ENABLE, NULL, 0U);
 }
 
 /* 0x09 — Set PMIC voltages (DRVVDD / IOVDD / VCMVDD) */
@@ -382,7 +406,7 @@ static void HandlePmicSetVolt(const Proto_Frame_t *pFrame)
     g_pmicVoltage.ioVdd  = ioVdd;
     g_pmicVoltage.vcmVdd = vcmVdd;
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_SET_VOLT, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_SET_VOLT, NULL, 0U);
 }
 
 /* 0x0A — PMIC LDO disable sequence */
@@ -393,7 +417,7 @@ static void HandlePmicDisable(const Proto_Frame_t *pFrame)
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_DISABLE, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_PMIC_DISABLE, NULL, 0U);
 }
 
 /* 0x20 — Read single register */
@@ -425,7 +449,7 @@ static void HandleReadReg(const Proto_Frame_t *pFrame)
     /* Return 2 bytes big-endian */
     resp[0] = (uint8_t)(val >> 8U);
     resp[1] = (uint8_t)(val & 0xFFU);
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_READ_REG, resp, 2U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_READ_REG, resp, 2U);
 }
 
 /* 0x21 — Write single register */
@@ -455,7 +479,7 @@ static void HandleWriteReg(const Proto_Frame_t *pFrame)
         return;
     }
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_WRITE_REG, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_WRITE_REG, NULL, 0U);
 }
 
 /* 0x22 — Bulk read registers (multi-packet response) */
@@ -534,7 +558,7 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
         /* Wait for previous TX to complete, then send this packet */
         BSP_UART_TxWait();
 
-        (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_BULK_READ,
+        (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_BULK_READ,
                         s_pktBuf, dataLen);
 
         regIdx += regsThisPkt;
@@ -592,7 +616,7 @@ static void HandleI2cPassWrite(const Proto_Frame_t *pFrame)
         return;
     }
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_WRITE, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_WRITE, NULL, 0U);
 }
 
 /* 0x31 — AW Firmware I2C 读指令（透传）
@@ -643,7 +667,7 @@ static void HandleI2cPassRead(const Proto_Frame_t *pFrame)
         return;
     }
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_READ, s_passReadBuf, readLen);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_I2C_PASS_READ, s_passReadBuf, readLen);
 }
 
 /*--------------------------------------------------------------------------*/
@@ -710,14 +734,14 @@ static void HandleStartSample(const Proto_Frame_t *pFrame)
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_SAMPLE, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_START_SAMPLE, NULL, 0U);
 }
 
 /* 0x51 — Stop sampling */
 static void HandleStopSample(const Proto_Frame_t *pFrame)
 {
     App_Sample_Stop();
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_STOP_SAMPLE, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_STOP_SAMPLE, NULL, 0U);
 }
 
 /* 0x52 — Set sampling interval */
@@ -733,7 +757,7 @@ static void HandleSetInterval(const Proto_Frame_t *pFrame)
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_SET_INTERVAL, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_SET_INTERVAL, NULL, 0U);
 }
 
 /* 0x53 — Set sampling channel mask */
@@ -749,7 +773,7 @@ static void HandleSetChannel(const Proto_Frame_t *pFrame)
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_SET_CHANNEL, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_SET_CHANNEL, NULL, 0U);
 }
 
 /* 0x54 — Set channel register mapping */
@@ -761,7 +785,7 @@ static void HandleSetRegMap(const Proto_Frame_t *pFrame)
         return;
     }
     App_Sample_SetRegMap(pFrame->data);
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_SET_REG_MAP, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_SET_REG_MAP, NULL, 0U);
 }
 
 /* 0x55 — Start linear generator */
@@ -806,7 +830,7 @@ static void HandleStartLinearGen(const Proto_Frame_t *pFrame)
         return;
     }
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_LINEAR_GEN, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_START_LINEAR_GEN, NULL, 0U);
 }
 
 /* 0x56 — Start cosine generator */
@@ -869,14 +893,14 @@ static void HandleStartCosineGen(const Proto_Frame_t *pFrame)
         return;
     }
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_COSINE_GEN, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_START_COSINE_GEN, NULL, 0U);
 }
 
 /* 0x57 — Stop generator */
 static void HandleStopGenerator(const Proto_Frame_t *pFrame)
 {
     App_Generator_Stop();
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_STOP_GENERATOR, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_STOP_GENERATOR, NULL, 0U);
 }
 
 /* 0x58 — Start sawtooth (triangle) generator, every tick */
@@ -919,7 +943,7 @@ static void HandleStartSawtoothGen(const Proto_Frame_t *pFrame)
         return;
     }
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_START_SAWTOOTH_GEN, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_START_SAWTOOTH_GEN, NULL, 0U);
 }
 
 /*--------------------------------------------------------------------------*/
@@ -963,7 +987,7 @@ static void HandleFlashBegin(const Proto_Frame_t *pFrame)
     s_fwState            = (uint8_t)FLASH_STATE_RECEIVING;
     s_flashSessionActive = 1U;
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_BEGIN, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_BEGIN, NULL, 0U);
 }
 
 /* 0x33 FLASH_DATA — 追加数据块到缓冲，返回下一个 expected seq */
@@ -1009,7 +1033,7 @@ static void HandleFlashData(const Proto_Frame_t *pFrame)
 
     resp[0] = (uint8_t)(s_fwNextSeq & 0xFFU);
     resp[1] = (uint8_t)((s_fwNextSeq >> 8) & 0xFFU);
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_DATA, resp, 2U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_DATA, resp, 2U);
 }
 
 /* 0x34 FLASH_EXEC — 调 AW_86008_86100_Flash_Run 真烧录（阻塞 ~5-10s）
@@ -1045,7 +1069,7 @@ static void HandleFlashExec(const Proto_Frame_t *pFrame)
     s_flashSessionActive = 0U;   /* EXEC 完成（任何结果）即解除互斥 */
 
     resp[0] = (uint8_t)ret;
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_EXEC, resp, 1U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_EXEC, resp, 1U);
 }
 
 /* 0x35 FLASH_STATUS — 任意时刻可查；返回当前 state + 进度 */
@@ -1062,7 +1086,7 @@ static void HandleFlashStatus(const Proto_Frame_t *pFrame)
     resp[6] = (uint8_t)((s_fwTotalBytes >> 8) & 0xFFU);
     resp[7] = (uint8_t)((s_fwTotalBytes >> 16) & 0xFFU);
     resp[8] = (uint8_t)((s_fwTotalBytes >> 24) & 0xFFU);
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STATUS, resp, 9U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STATUS, resp, 9U);
 }
 
 /* 0x36 FLASH_CANCEL — 重置 session 到 IDLE，任意状态下可调 */
@@ -1075,7 +1099,7 @@ static void HandleFlashCancel(const Proto_Frame_t *pFrame)
     s_fwState            = (uint8_t)FLASH_STATE_IDLE;
     s_flashSessionActive = 0U;
 
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_CANCEL, NULL, 0U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_CANCEL, NULL, 0U);
 }
 
 /* 0x37 FLASH_RESET_CHIP — 单独调 aw_reset_chip()，不动 session 状态 */
@@ -1083,7 +1107,7 @@ static void HandleFlashResetChip(const Proto_Frame_t *pFrame)
 {
     ISP_STATUS_E ret = aw_reset_chip();
     uint8_t resp[1] = { (uint8_t)ret };
-    (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_RESET_CHIP, resp, 1U);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_RESET_CHIP, resp, 1U);
 }
 
 static void DispatchFrame(const Proto_Frame_t *pFrame)
