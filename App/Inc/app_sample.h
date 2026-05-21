@@ -44,6 +44,12 @@ void        App_Sample_SetRegMap(const uint8_t *pData);
 uint8_t     App_Sample_IsActive(void);
 uint8_t     App_Sample_GetEffectiveMask(void);
 
+/* I2C2 bus lock — masks TIM6 IRQ to prevent ISR sampling from preempting
+ * a main-loop I2C transaction (0x20/0x21 register read/write).
+ * Acquire/Release must come in pairs; nesting is NOT supported. */
+void        App_Sample_AcquireBus(void);
+void        App_Sample_ReleaseBus(void);
+
 /*--------------------------------------------------------------------------*/
 /*                        Generator API                                    */
 /*--------------------------------------------------------------------------*/

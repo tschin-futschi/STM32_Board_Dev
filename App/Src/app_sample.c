@@ -521,6 +521,26 @@ uint8_t App_Sample_IsActive(void)
     return s_sampling;
 }
 
+/**
+  * @brief  Acquire exclusive I2C2 bus access by masking TIM6 IRQ.
+  *         After return, sampling/generator ISR cannot preempt.
+  *         Pending TIM6 update flag during mask collapses to 1 ISR on release.
+  */
+void App_Sample_AcquireBus(void)
+{
+    NVIC_DisableIRQ(TIM6_DAC_IRQn);
+    __DSB();
+    __ISB();
+}
+
+/**
+  * @brief  Release I2C2 bus; any pending TIM6 IRQ fires immediately.
+  */
+void App_Sample_ReleaseBus(void)
+{
+    NVIC_EnableIRQ(TIM6_DAC_IRQn);
+}
+
 uint8_t App_Sample_GetEffectiveMask(void)
 {
     uint8_t mask = 0U;

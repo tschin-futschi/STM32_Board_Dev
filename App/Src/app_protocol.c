@@ -101,12 +101,15 @@ typedef enum
     FLASH_STATE_ERROR,           /* 任意子步骤失败，等 CANCEL 重置       */
 } Flash_State_t;
 
-static uint8_t       s_fwBuf[FLASH_BUF_SIZE];
-static uint32_t      s_fwAddr;
-static uint32_t      s_fwTotalBytes;
-static uint32_t      s_fwRxOffset;
-static uint16_t      s_fwNextSeq;
-static uint8_t       s_fwState = FLASH_STATE_IDLE;
+static uint8_t           s_fwBuf[FLASH_BUF_SIZE];
+static uint32_t          s_fwAddr;
+static uint32_t          s_fwTotalBytes;
+static uint32_t          s_fwRxOffset;
+static uint16_t          s_fwNextSeq;
+static uint8_t           s_fwState = FLASH_STATE_IDLE;
+/* 1 = flash session 进行中（BEGIN → EXEC 完成 / CANCEL 之间）。
+ * 期间 DispatchFrame 仅接受 0x33~0x37 + 心跳，其他命令回 EXEC_FAIL。 */
+static volatile uint8_t  s_flashSessionActive = 0U;
 
 /*--------------------------------------------------------------------------*/
 /*                   CRC16 (poly 0x8005, right-shift)                       */
@@ -408,7 +411,12 @@ static void HandleReadReg(const Proto_Frame_t *pFrame)
 
     reg = ((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1];
 
-    if (App_Motor_ReadReg(reg, &val) != SUCCESS)
+    /* Bus lock: prevent TIM6 ISR (sampling) from preempting mid-transaction */
+    App_Sample_AcquireBus();
+    ErrorStatus s = App_Motor_ReadReg(reg, &val);
+    App_Sample_ReleaseBus();
+
+    if (s != SUCCESS)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
@@ -436,7 +444,12 @@ static void HandleWriteReg(const Proto_Frame_t *pFrame)
     reg = ((uint16_t)pFrame->data[0] << 8U) | (uint16_t)pFrame->data[1];
     val = ((uint16_t)pFrame->data[2] << 8U) | (uint16_t)pFrame->data[3];
 
-    if (App_Motor_WriteReg(reg, val) != SUCCESS)
+    /* Bus lock: prevent TIM6 ISR (sampling) from preempting mid-transaction */
+    App_Sample_AcquireBus();
+    ErrorStatus s = App_Motor_WriteReg(reg, val);
+    App_Sample_ReleaseBus();
+
+    if (s != SUCCESS)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
@@ -943,11 +956,12 @@ static void HandleFlashBegin(const Proto_Frame_t *pFrame)
         return;
     }
 
-    s_fwAddr       = addr;
-    s_fwTotalBytes = totalBytes;
-    s_fwRxOffset   = 0U;
-    s_fwNextSeq    = 0U;
-    s_fwState      = (uint8_t)FLASH_STATE_RECEIVING;
+    s_fwAddr             = addr;
+    s_fwTotalBytes       = totalBytes;
+    s_fwRxOffset         = 0U;
+    s_fwNextSeq          = 0U;
+    s_fwState            = (uint8_t)FLASH_STATE_RECEIVING;
+    s_flashSessionActive = 1U;
 
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_BEGIN, NULL, 0U);
 }
@@ -998,7 +1012,9 @@ static void HandleFlashData(const Proto_Frame_t *pFrame)
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_DATA, resp, 2U);
 }
 
-/* 0x34 FLASH_EXEC — 调 AW_86008_86100_Flash_Run 真烧录（阻塞 ~5-10s）*/
+/* 0x34 FLASH_EXEC — 调 AW_86008_86100_Flash_Run 真烧录（阻塞 ~5-10s）
+ * 入口拒绝条件：state != READY，或 sampling/generator/bulk_read 正在运行。
+ * EXEC 期间整个主循环阻塞，结束后清 s_flashSessionActive。 */
 static void HandleFlashExec(const Proto_Frame_t *pFrame)
 {
     ISP_STATUS_E ret;
@@ -1010,9 +1026,19 @@ static void HandleFlashExec(const Proto_Frame_t *pFrame)
         return;
     }
 
+    /* I2C2 与 sampling/generator 共用，烧录中绝不能并发 */
+    if ((App_Sample_IsActive() != 0U) ||
+        (App_Generator_IsRunning() != 0U) ||
+        (s_bulkReadActive != 0U))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
     s_fwState = (uint8_t)FLASH_STATE_EXECUTING;
     ret = AW_86008_86100_Flash_Run(s_fwAddr, s_fwBuf, s_fwTotalBytes / 4U);
     s_fwState = (ret == ISP_OK) ? (uint8_t)FLASH_STATE_DONE : (uint8_t)FLASH_STATE_ERROR;
+    s_flashSessionActive = 0U;   /* EXEC 完成（任何结果）即解除互斥 */
 
     resp[0] = (uint8_t)ret;
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_EXEC, resp, 1U);
@@ -1038,11 +1064,12 @@ static void HandleFlashStatus(const Proto_Frame_t *pFrame)
 /* 0x36 FLASH_CANCEL — 重置 session 到 IDLE，任意状态下可调 */
 static void HandleFlashCancel(const Proto_Frame_t *pFrame)
 {
-    s_fwAddr       = 0U;
-    s_fwTotalBytes = 0U;
-    s_fwRxOffset   = 0U;
-    s_fwNextSeq    = 0U;
-    s_fwState      = (uint8_t)FLASH_STATE_IDLE;
+    s_fwAddr             = 0U;
+    s_fwTotalBytes       = 0U;
+    s_fwRxOffset         = 0U;
+    s_fwNextSeq          = 0U;
+    s_fwState            = (uint8_t)FLASH_STATE_IDLE;
+    s_flashSessionActive = 0U;
 
     (void)SendFrame(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_CANCEL, NULL, 0U);
 }
@@ -1060,6 +1087,32 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
     /* During bulk read, only respond to heartbeat — ignore all other commands */
     if (s_bulkReadActive && (pFrame->cmd != PROTO_CMD_HEARTBEAT))
     {
+        return;
+    }
+
+    /* During flash session (BEGIN..EXEC/CANCEL), only flash group + heartbeat
+     * are accepted. Other commands rejected with EXEC_FAIL so PC knows it was
+     * intentional, not a comms failure. */
+    if ((s_flashSessionActive != 0U) &&
+        (pFrame->cmd != PROTO_CMD_HEARTBEAT) &&
+        (pFrame->cmd != PROTO_CMD_FLASH_DATA) &&
+        (pFrame->cmd != PROTO_CMD_FLASH_EXEC) &&
+        (pFrame->cmd != PROTO_CMD_FLASH_STATUS) &&
+        (pFrame->cmd != PROTO_CMD_FLASH_CANCEL) &&
+        (pFrame->cmd != PROTO_CMD_FLASH_RESET_CHIP))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    /* I2C passthrough (0x30/0x31) shares I2C2 with sampling and cannot be
+     * protected by AcquireBus (max 252B payload would mask ISR for ~3ms).
+     * Reject during sampling; PC must STOP_SAMPLE first. */
+    if ((App_Sample_IsActive() != 0U) &&
+        ((pFrame->cmd == PROTO_CMD_I2C_PASS_WRITE) ||
+         (pFrame->cmd == PROTO_CMD_I2C_PASS_READ)))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
     }
 
@@ -1245,11 +1298,12 @@ static void ProcessByte(uint8_t byte)
 
 void App_Protocol_Init(void)
 {
-    s_state          = STATE_WAIT_SOF1;
-    s_dataIdx        = 0U;
-    s_rxCrcHigh      = 0U;
-    s_rxCrcAccum     = 0U;
-    s_bulkReadActive = 0U;
+    s_state              = STATE_WAIT_SOF1;
+    s_dataIdx            = 0U;
+    s_rxCrcHigh          = 0U;
+    s_rxCrcAccum         = 0U;
+    s_bulkReadActive     = 0U;
+    s_flashSessionActive = 0U;
 }
 
 void App_Protocol_Poll(void)
