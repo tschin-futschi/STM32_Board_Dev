@@ -24,8 +24,8 @@
 #include "test_i2c_scan.h"
 #endif
 
-#define HEARTBEAT_INTERVAL_MS         500U
-#define HALT_BLINK_INTERVAL_MS        100U   /* 启动失败统一快闪频率 = "系统卡死，看串口诊断" */
+#define HEARTBEAT_INTERVAL_MS         100U
+#define HALT_BLINK_INTERVAL_MS        100U   /* 启动失败统一快闪频率（与心跳同频，诊断走串口 0x0B 帧） */
 
 /**
   * @brief  启动失败时：先经串口发 0x0B BOOT_STATUS 帧告知 PC 具体模块，
