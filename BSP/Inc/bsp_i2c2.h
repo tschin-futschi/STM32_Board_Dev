@@ -32,15 +32,15 @@
 #define BSP_I2C2_SW_I2C_HZ          1000000U
 #define BSP_I2C2_SW_HALF_CYCLE      (BSP_I2C2_SW_SYSCLK_HZ / BSP_I2C2_SW_I2C_HZ / 2U) /* 90 cycles = 500 ns */
 #define BSP_I2C2_SW_SCL_LOW_ADJ     6U          /* GPIO ops compensation    */
-#define BSP_I2C2_SW_STRETCH_TIMEOUT 1800000U    /* 10 ms clock stretching   */
+#define BSP_I2C2_SW_STRETCH_TIMEOUT 36000U      /* 200 us clock stretching  */
 #define BSP_I2C2_SW_RECOVER_PULSES  9U          /* Bus recovery SCL pulses  */
 
 /*--------------------------------------------------------------------------*/
 /*                          Motor IC runtime config                         */
 /*--------------------------------------------------------------------------*/
 
-extern uint8_t  g_motorIcAddr;      /* 7-bit I2C address, set by protocol   */
-extern char     g_motorIcName[16];  /* Human-readable name, set by protocol  */
+extern volatile uint8_t  g_motorIcAddr;      /* 7-bit I2C address, set by protocol   */
+extern volatile char     g_motorIcName[16];  /* Human-readable name, set by protocol  */
 
 /*--------------------------------------------------------------------------*/
 /*                               API                                        */

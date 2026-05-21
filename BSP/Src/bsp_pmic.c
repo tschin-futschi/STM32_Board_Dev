@@ -19,7 +19,7 @@
 
 volatile uint8_t g_pmicHwenFlag = 0U;
 
-PMIC_Voltage_t g_pmicVoltage = {
+volatile PMIC_Voltage_t g_pmicVoltage = {
     .drvVdd  = BSP_PMIC_DEFAULT_DRVVDD,    /* LDO2, 1.80V */
     .ioVdd   = BSP_PMIC_DEFAULT_IOVDD,     /* LDO1, 2.80V */
     .vcmVdd  = BSP_PMIC_DEFAULT_VCMVDD,    /* LDO3, 3.20V */

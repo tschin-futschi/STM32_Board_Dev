@@ -16,8 +16,8 @@
 /*                        Motor IC runtime config                           */
 /*--------------------------------------------------------------------------*/
 
-uint8_t g_motorIcAddr     = 0x00U;
-char    g_motorIcName[16] = "UNKNOWN";
+volatile uint8_t g_motorIcAddr     = 0x00U;
+volatile char    g_motorIcName[16] = "UNKNOWN";
 
 /*--------------------------------------------------------------------------*/
 /*                          Recovery flag                                   */

@@ -335,8 +335,11 @@ static void SendStreamFrame(uint8_t effectiveMask, const volatile uint16_t *pDat
         }
     }
 
-    /* I2C fault detection: track consecutive all-channel failures */
-    if (failCount >= totalCount)
+    /* I2C fault detection: track consecutive all-channel failures.
+     * Guard totalCount > 0 to avoid 0 >= 0 false trigger when reg map is empty
+     * (e.g. 0x54 SET_REG_MAP cleared all channels). The mask==0 path in
+     * App_Sample_Poll already calls Stop(); this guard hardens the ISR side. */
+    if ((totalCount > 0U) && (failCount >= totalCount))
     {
         s_i2cFailCount++;
         if (s_i2cFailCount >= I2C_FAIL_STOP_THRESHOLD)

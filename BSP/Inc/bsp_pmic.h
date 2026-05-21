@@ -91,7 +91,7 @@ typedef struct
     uint16_t vcmVdd;    /* LDO3 voltage, V × 100 */
 } PMIC_Voltage_t;
 
-extern PMIC_Voltage_t g_pmicVoltage;
+extern volatile PMIC_Voltage_t g_pmicVoltage;
 
 /*--------------------------------------------------------------------------*/
 /*                  Power-on inter-step delays (ms)                         */
