@@ -34,6 +34,7 @@
 #define BSP_I2C2_SW_SCL_LOW_ADJ     6U          /* GPIO ops compensation    */
 #define BSP_I2C2_SW_STRETCH_TIMEOUT 36000U      /* 200 us clock stretching  */
 #define BSP_I2C2_SW_RECOVER_PULSES  9U          /* Bus recovery SCL pulses  */
+#define BSP_I2C2_SW_INIT_SETTLE_CYCLES 180000U  /* ~1 ms pull-up RC settle  */
 
 /*--------------------------------------------------------------------------*/
 /*                          Motor IC runtime config                         */
@@ -41,6 +42,9 @@
 
 extern volatile uint8_t  g_motorIcAddr;      /* 7-bit I2C address, set by protocol   */
 extern volatile char     g_motorIcName[16];  /* Human-readable name, set by protocol  */
+
+/* DIAGNOSTIC: init failure code (1 = SDA+SCL both stuck low, 2 = SDA stuck, SCL high) */
+extern uint8_t  g_i2c2InitDiag;
 
 /*--------------------------------------------------------------------------*/
 /*                               API                                        */
