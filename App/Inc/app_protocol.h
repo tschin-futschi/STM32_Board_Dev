@@ -100,6 +100,7 @@ typedef enum
     PROTO_INIT_FAIL_I2C3     = 0x03U,   /* BSP_I2C3_Init failed (PMIC)                     */
     PROTO_INIT_FAIL_PMIC     = 0x04U,   /* BSP_PMIC_Init failed (voltage preset)            */
     PROTO_INIT_FAIL_AWISP    = 0x05U,   /* aw_isp_init failed (callback ops table NULL)    */
+    PROTO_INIT_FAIL_PMIC_EN  = 0x06U,   /* BSP_PMIC_EnableSequence failed (LDO turn-on)     */
 } Proto_BootStatus_t;
 
 /*--------------------------------------------------------------------------*/

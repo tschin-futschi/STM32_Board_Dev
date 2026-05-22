@@ -19,6 +19,9 @@
 volatile uint8_t g_motorIcAddr     = 0x00U;
 volatile char    g_motorIcName[16] = "UNKNOWN";
 
+/* DIAGNOSTIC: filled by BSP_I2C2_Init on failure */
+uint8_t g_i2c2InitDiag = 0U;
+
 /*--------------------------------------------------------------------------*/
 /*                          Recovery flag                                   */
 /*--------------------------------------------------------------------------*/
@@ -232,11 +235,21 @@ ErrorStatus BSP_I2C2_Init(void)
     /* 4. Enable DWT cycle counter */
     DWT_Init();
 
-    /* 5. Check bus stuck (SDA held low) and recover */
+    /* 5. Wait for external pull-up to settle bus capacitance (RC charge) */
+    {
+        uint32_t t0 = DWT->CYCCNT;
+        DWT_DelayFrom(t0, BSP_I2C2_SW_INIT_SETTLE_CYCLES);
+    }
+
+    /* 6. Check bus stuck (SDA held low) and recover */
     if (!SDA_READ())
     {
         BSP_I2C2_RecoverBus();
-        if (!SDA_READ()) { return ERROR; }
+        if (!SDA_READ())
+        {
+            g_i2c2InitDiag = SCL_READ() ? 2U : 1U;
+            return ERROR;
+        }
     }
 
     return SUCCESS;

@@ -64,26 +64,32 @@ int main(void)
         HaltOnInitFail(PROTO_INIT_FAIL_I2C1);
     }
 
-    /* I2C2 (motor IC) */
-    if (BSP_I2C2_Init() != SUCCESS)
-    {
-        HaltOnInitFail(PROTO_INIT_FAIL_I2C2);
-    }
-
-    /* I2C3 (PMIC) */
+    /* I2C3 (PMIC) — must run BEFORE I2C2 so PMIC can power up motor IC pull-ups */
     if (BSP_I2C3_Init() != SUCCESS)
     {
         HaltOnInitFail(PROTO_INIT_FAIL_I2C3);
     }
 
-    /* PMIC RT5112WSC: power sequencing */
+    /* PMIC RT5112WSC: pre-set voltages (LDOs not yet enabled) */
     if (BSP_PMIC_Init() != SUCCESS)
     {
         HaltOnInitFail(PROTO_INIT_FAIL_PMIC);
     }
 
-    /* HWEN interrupt — enable after PMIC init to avoid spurious re-init */
+    /* PMIC: enable LDO outputs so IOVDD powers up motor IC SDA/SCL pull-ups */
+    if (BSP_PMIC_EnableSequence() != SUCCESS)
+    {
+        HaltOnInitFail(PROTO_INIT_FAIL_PMIC_EN);
+    }
+
+    /* HWEN interrupt — arm after PMIC fully up to avoid spurious re-init */
     BSP_PMIC_HwenInit();
+
+    /* I2C2 (motor IC) — after PMIC LDOs so IOVDD has powered up SDA/SCL pull-ups */
+    if (BSP_I2C2_Init() != SUCCESS)
+    {
+        HaltOnInitFail(PROTO_INIT_FAIL_I2C2);
+    }
 
     /* AW ISP callback registration — must be after BSP I2C2 + Tick are up */
     if (aw_isp_init(&g_awOpsStm32) != ISP_OK)
