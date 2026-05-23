@@ -23,6 +23,11 @@
  *              说明 stub 行为：始终返回 ISP_OK，jump 后是否真正运行新固件无法判断；
  *              aw_reset_chip 函数体内加注释说明实际是 wake-out-of-uboot
  *              （非硬件 reset），沿用 vendor 命名以保持 API 兼容
+ *  2026-05-23  aw_flash_block_write_ckeck 内 delay_ms(1) → delay_ms(25)。
+ *              根因：I2C 抓包证实 vendor 原 1ms 太短，AW Flash 物理写未完成
+ *              master 已发起 read，读回全 0x00，memcmp 必失败返 ISP_FLASH_ERROR。
+ *              对比 erase 用 25*len ms/调用，write 仅 1ms 显然不对称；
+ *              取 25ms 与 erase 每块对等。烧 8506 字（~532 包）累计增延 ~12.8s。
  * ============================================================================
  */
 
@@ -451,7 +456,10 @@ ISP_STATUS_E aw_flash_block_write_ckeck(uint32_t addr, uint32_t block_num, uint8
 
 	(void)aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, (uint8_t)(13 + 4 * len), w_buff);
 
-	delay_ms(1);
+	/* 2026-05-23 本地改动：vendor 原 delay_ms(1) 太短，AW 物理 Flash 写完成前
+	 * master 已发起 read，读回全 0x00，memcmp 失败返 ISP_FLASH_ERROR。
+	 * 改 25ms 与 erase 每块延时对等（aw_flash_block_erase_check 用 25*len ms）。 */
+	delay_ms(25);
 
 	(void)aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, 10U, r_buff);
 

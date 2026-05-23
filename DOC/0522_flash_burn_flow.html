@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AW86008/AW86100 烧录流程分析 — 2026-05-22</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; max-width: 1100px; margin: 24px auto; padding: 0 16px; color: #222; line-height: 1.55; }
+  h1 { border-bottom: 2px solid #2563eb; padding-bottom: 6px; }
+  h2 { color: #1e40af; border-left: 4px solid #2563eb; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #334155; margin-top: 22px; }
+  code, pre { font-family: "Consolas", "Cascadia Code", "Fira Code", monospace; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 12px 16px; border-radius: 6px; overflow-x: auto; font-size: 0.85em; line-height: 1.5; }
+  pre .k { color: #93c5fd; }       /* keyword */
+  pre .c { color: #94a3b8; font-style: italic; } /* comment */
+  pre .s { color: #fcd34d; }       /* string/literal */
+  pre .f { color: #86efac; }       /* function */
+  pre .n { color: #f9a8d4; }       /* number */
+  table { border-collapse: collapse; margin: 10px 0; width: 100%; font-size: 0.92em; }
+  th, td { border: 1px solid #cbd5e1; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #e2e8f0; }
+  .warn { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 14px; margin: 12px 0; border-radius: 4px; }
+  .danger { background: #fee2e2; border-left: 4px solid #dc2626; padding: 10px 14px; margin: 12px 0; border-radius: 4px; }
+  .info { background: #dbeafe; border-left: 4px solid #2563eb; padding: 10px 14px; margin: 12px 0; border-radius: 4px; }
+  .flow { background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-family: monospace; white-space: pre; font-size: 0.85em; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.78em; font-weight: 600; margin-left: 4px; }
+  .badge.ok   { background: #bbf7d0; color: #14532d; }
+  .badge.warn { background: #fef08a; color: #713f12; }
+  .badge.bad  { background: #fecaca; color: #7f1d1d; }
+  .filepath { color: #6d28d9; font-weight: 500; font-family: monospace; font-size: 0.9em; }
+  ol li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<h1>AW86008/AW86100 本地 ISP 烧录流程分析</h1>
+<p><b>日期：</b> 2026-05-22 ｜ <b>对应路线图：</b> 4.6 (待调试) ｜ <b>命令码：</b> 0x32 ~ 0x37</p>
+
+<div class="info">
+<b>顶层视角。</b> PC 把固件分块经 UART 灌进 STM32 SRAM1 staging buffer，攒齐后 STM32 阻塞调用一次 <code>AW_86008_86100_Flash_Run()</code>，把固件通过 I2C2（软件 bit-banging）烧进 AW 芯片，再让芯片跳出 UBOOT 运行新固件。<b>整个 EXEC 阶段主循环停摆 5-10s。</b>
+</div>
+
+<h2>5 层抽象</h2>
+
+<table>
+<thead><tr><th>层</th><th>文件</th><th>职责</th><th>状态</th></tr></thead>
+<tbody>
+<tr><td>① 协议层 (PC ↔ STM32)</td><td><span class="filepath">App/Src/app_protocol.c</span></td><td>状态机 + 64 KB staging</td><td><span class="badge ok">完成</span></td></tr>
+<tr><td>② 顶层封装 (3 步流程)</td><td><span class="filepath">Flash/AW/AW86008_86100/Src/aw_flash.c</span></td><td>boot → download → reset</td><td><span class="badge ok">完成</span></td></tr>
+<tr><td>③ ISP 协议层 (vendor)</td><td><span class="filepath">Flash/AW/AW86008_86100/Src/aw_uboot_isp.c</span></td><td>UBOOT 帧协议 + Flash 操作</td><td><span class="badge warn">jump_check 是 stub</span></td></tr>
+<tr><td>④ Port 适配 (回调表)</td><td><span class="filepath">Flash/AW/AW86008_86100/Src/aw_port_stm32.c</span></td><td>vendor 签名 ↔ BSP 签名</td><td><span class="badge ok">完成</span></td></tr>
+<tr><td>⑤ I2C2 BSP (软件 I2C)</td><td><span class="filepath">BSP/Src/bsp_i2c2.c</span></td><td>bit-banging（HW 达不到 1 MHz）</td><td><span class="badge ok">完成</span></td></tr>
+</tbody>
+</table>
+
+<h2>Layer 1 ── 协议状态机（PC ↔ STM32）</h2>
+
+<h3>状态转移</h3>
+<div class="flow">
+                BEGIN(0x32)            DATA(0x33)×N         EXEC(0x34)
+   IDLE  ─────────────────►  RECEIVING ─────────────►  READY  ─────────►  EXECUTING
+    ▲                                                                          │
+    │                                       ret = ISP_OK / 失败                │
+    │                                                                          ▼
+    │                                                              DONE  /  ERROR
+    │                                                                  │
+    │                       CANCEL(0x36) — 任意状态可调                │
+    └──────────────────────────────────────────────────────────────────┘
+</div>
+
+<h3>每条命令</h3>
+<table>
+<thead><tr><th>CMD</th><th>名</th><th>data 段</th><th>resp</th><th>关键校验</th></tr></thead>
+<tbody>
+<tr><td>0x32</td><td>FLASH_BEGIN</td><td>[addr(4 LE)][totalBytes(4 LE)]</td><td>空</td>
+    <td>addr ∈ [0x01000000, 0x01020000)；totalBytes 4 字节对齐且 ≤ 64 KB；addr+totalBytes 不越界</td></tr>
+<tr><td>0x33</td><td>FLASH_DATA</td><td>[pktSeq(2 LE)][chunk(N)]</td><td>[nextSeq(2 LE)]</td>
+    <td>state==RECEIVING；pktSeq 与 s_fwNextSeq 严格相等（不允许乱序）；累计不溢出</td></tr>
+<tr><td>0x34</td><td>FLASH_EXEC</td><td>空</td><td>[ispStatus(1)]</td>
+    <td>state==READY；sampling/generator/bulk_read 全部 idle（共用 I2C2 互斥）</td></tr>
+<tr><td>0x35</td><td>FLASH_STATUS</td><td>空</td><td>[state(1)][rxOffset(4)][totalBytes(4)]</td><td>任意时刻可查</td></tr>
+<tr><td>0x36</td><td>FLASH_CANCEL</td><td>空</td><td>空</td><td>无条件 → IDLE</td></tr>
+<tr><td>0x37</td><td>FLASH_RESET_CHIP</td><td>空</td><td>[ispStatus(1)]</td><td>独立调 aw_reset_chip，不动 session</td></tr>
+</tbody>
+</table>
+
+<h3>HandleFlashExec 关键代码</h3>
+<pre><span class="c">/* app_protocol.c:1051 */</span>
+<span class="k">static void</span> <span class="f">HandleFlashExec</span>(<span class="k">const</span> Proto_Frame_t *pFrame)
+{
+    ISP_STATUS_E ret;
+    uint8_t resp[1];
+
+    <span class="c">/* 入口互斥 1：状态必须是 READY */</span>
+    <span class="k">if</span> (s_fwState != (uint8_t)FLASH_STATE_READY) {
+        <span class="f">SendErrorResp</span>(pFrame->seq, PROTO_ERR_EXEC_FAIL); <span class="k">return</span>;
+    }
+
+    <span class="c">/* 入口互斥 2：I2C2 共用资源 — 采样 / 生成器 / 批量读都不能在跑 */</span>
+    <span class="k">if</span> ((<span class="f">App_Sample_IsActive</span>() != 0U) ||
+        (<span class="f">App_Generator_IsRunning</span>() != 0U) ||
+        (s_bulkReadActive != 0U)) {
+        <span class="f">SendErrorResp</span>(pFrame->seq, PROTO_ERR_EXEC_FAIL); <span class="k">return</span>;
+    }
+
+    <span class="c">/* 主动告知 PC：5-10s 阻塞窗口开启，请扩大心跳超时 */</span>
+    <span class="f">App_Protocol_SendDebugInfo</span>(<span class="s">"FLASH_EXEC START"</span>);
+    <span class="f">BSP_UART_TxWait</span>();
+
+    s_fwState = (uint8_t)FLASH_STATE_EXECUTING;
+    ret = <span class="f">AW_86008_86100_Flash_Run</span>(s_fwAddr, s_fwBuf, s_fwTotalBytes / <span class="n">4U</span>);   <span class="c">/* &lt;&lt;&lt; 阻塞 5-10s */</span>
+    s_fwState = (ret == ISP_OK) ? (uint8_t)FLASH_STATE_DONE : (uint8_t)FLASH_STATE_ERROR;
+    s_flashSessionActive = <span class="n">0U</span>;
+
+    resp[0] = (uint8_t)ret;
+    (<span class="k">void</span>)<span class="f">SendFrameWithRetry</span>(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_EXEC, resp, <span class="n">1U</span>);
+}</pre>
+
+<div class="warn">
+<b>注意。</b> <code>s_fwBuf[64KB]</code> 静态分配在 SRAM1，已经占了 SRAM1 总容量 112 KB 的 57%。后续若新增大对象需精打细算。
+</div>
+
+<h2>Layer 2 ── 顶层封装（aw_flash.c）</h2>
+
+<pre><span class="c">/* aw_flash.c:8 — 一站式入口 */</span>
+ISP_STATUS_E <span class="f">AW_86008_86100_Flash_Run</span>(uint32_t addr, uint8_t *bin_buf, uint32_t len)
+{
+    ISP_STATUS_E ret;
+
+    <span class="c">/* Step 1: 进 UBOOT + stay-in-uboot */</span>
+    ret = <span class="f">aw_boot_control</span>();
+    <span class="k">if</span> (ret != ISP_OK) <span class="k">return</span> ret;
+
+    <span class="c">/* Step 2: 擦 + 写 + jump_check (stub) */</span>
+    ret = <span class="f">aw_i2c_isp_download</span>(addr, bin_buf, len);
+    <span class="k">if</span> (ret != ISP_OK) <span class="k">return</span> ret;
+
+    <span class="c">/* Step 3: wake-out-of-uboot 跑新固件 */</span>
+    ret = <span class="f">aw_reset_chip</span>();
+    <span class="k">if</span> (ret != ISP_OK) <span class="k">return</span> ret;
+
+    <span class="k">return</span> ISP_OK;
+}</pre>
+
+<p><b>注意：</b><code>len</code> 单位是 <b>字（4 字节），不是字节</b>。HandleFlashExec 传参时做了 <code>s_fwTotalBytes / 4U</code> 的转换。</p>
+
+<h2>Layer 3 ── ISP 协议层（vendor，aw_uboot_isp.c）</h2>
+
+<h3>3.1 共享子函数：AwWakeSequence</h3>
+
+<p>boot_control 和 reset_chip 共用此 7 写 + 1 读校验序列：</p>
+<pre><span class="c">/* aw_uboot_isp.c:108 */</span>
+<span class="k">static</span> ISP_STATUS_E <span class="f">AwWakeSequence</span>(<span class="k">void</span>)
+{
+    <span class="c">/* 7 步级 I2C 写 (DevAddr=0x6B = AW_CHIP_I2C_ADDR) */</span>
+    aw_i2c_write(<span class="n">0x6B</span>, <span class="n">0</span>, NULL, <span class="n">3</span>, {<span class="n">0xff</span>, <span class="n">0xa3</span>, <span class="n">0x02</span>}); delay_ms(<span class="n">2</span>);
+    aw_i2c_write(<span class="n">0x6B</span>, <span class="n">0</span>, NULL, <span class="n">3</span>, {<span class="n">0xff</span>, <span class="n">0xb7</span>, <span class="n">0x5a</span>}); delay_ms(<span class="n">2</span>);
+    aw_i2c_write(<span class="n">0x6B</span>, <span class="n">0</span>, NULL, <span class="n">3</span>, {<span class="n">0xff</span>, <span class="n">0xb7</span>, <span class="n">0x00</span>}); delay_ms(<span class="n">15</span>);
+    aw_i2c_write(<span class="n">0x6B</span>, <span class="n">0</span>, NULL, <span class="n">10</span>,{<span class="n">0xff</span>,<span class="n">0xf0</span>,<span class="n">0x20</span>,<span class="n">0x20</span>,<span class="n">0x02</span>,<span class="n">0x02</span>,<span class="n">0x19</span>,<span class="n">0x29</span>,<span class="n">0x19</span>,<span class="n">0x29</span>});
+
+    <span class="c">/* 1 步读：[0xff,0xf0] 期望 0x01 — 整个序列的唯一硬校验 */</span>
+    uint8_t rdval = <span class="n">0</span>;
+    aw_i2c_read(<span class="n">0x6B</span>, <span class="n">2</span>, {<span class="n">0xff</span>,<span class="n">0xf0</span>}, <span class="n">1</span>, &rdval);
+    <span class="k">if</span> (rdval != <span class="n">0x01</span>) <span class="k">return</span> ISP_FLASH_ERROR;   <span class="c">/* &lt;&lt;&lt; 校验失败的唯一入口 */</span>
+    delay_ms(<span class="n">2</span>);
+
+    aw_i2c_write(<span class="n">0x6B</span>, <span class="n">0</span>, NULL, <span class="n">3</span>, {<span class="n">0xff</span>, <span class="n">0xb4</span>, <span class="n">0x00</span>}); delay_ms(<span class="n">2</span>);
+    aw_i2c_write(<span class="n">0x6B</span>, <span class="n">0</span>, NULL, <span class="n">3</span>, {<span class="n">0xff</span>, <span class="n">0xa3</span>, <span class="n">0x00</span>}); delay_ms(<span class="n">2</span>);
+    aw_i2c_write(<span class="n">0x6B</span>, <span class="n">0</span>, NULL, <span class="n">3</span>, {<span class="n">0xff</span>, <span class="n">0xb4</span>, <span class="n">0x01</span>});
+
+    <span class="k">return</span> ISP_OK;
+}</pre>
+
+<h3>3.2 aw_boot_control = AwWakeSequence + 20× stay-in-uboot</h3>
+
+<pre>ISP_STATUS_E <span class="f">aw_boot_control</span>(<span class="k">void</span>)
+{
+    ISP_STATUS_E ret = <span class="f">AwWakeSequence</span>();
+    <span class="k">if</span> (ret != ISP_OK) <span class="k">return</span> ret;
+    delay_ms(<span class="n">7</span>);
+
+    <span class="c">/* stay-in-uboot：写 0xAC 到 0x6F (=AW_UBOOT_I2C_ADDR)，连续 20 次，每次 1ms */</span>
+    <span class="c">/* 必须在芯片上电后 8ms 窗口内完成，否则会跑出 UBOOT 进入用户固件 */</span>
+    <span class="k">for</span> (uint8_t i = <span class="n">0</span>; i &lt; <span class="n">20</span>; i++) {
+        <span class="f">aw_i2c_stop_uboot</span>();    <span class="c">/* 一字节 0xAC 写到 0x6F */</span>
+        delay_ms(<span class="n">1</span>);
+    }
+    <span class="k">return</span> ISP_OK;
+}</pre>
+
+<h3>3.3 aw_i2c_isp_download — 实际烧录</h3>
+
+<pre>ISP_STATUS_E <span class="f">aw_i2c_isp_download</span>(uint32_t addr, uint8_t *bin_buf, uint32_t len)
+{
+    <span class="c">/* 4 步前置校验：ops 注册、bin_buf 非空、addr 在区间、Flash 空间够 */</span>
+    <span class="k">if</span> (s_ops == NULL)                     <span class="k">return</span> ISP_NOT_INITED;
+    <span class="k">if</span> (bin_buf == <span class="n">0</span>)                     <span class="k">return</span> ISP_PBUF_ERROR;
+    <span class="k">if</span> (addr &lt; <span class="n">0x01000000</span> || addr &gt;= <span class="n">0x01020000</span>) <span class="k">return</span> ISP_ADDR_ERROR;
+    <span class="k">if</span> ((<span class="n">0x01020000</span> - addr) &lt; len*<span class="n">4</span>)   <span class="k">return</span> ISP_SPACE_ERROR;
+
+    <span class="c">/* 3 步真烧录： */</span>
+    <span class="k">if</span> (<span class="f">aw_hank_connect_check</span>()             != ISP_OK) <span class="k">return</span> ISP_HANK_ERROR;   <span class="c">/* 握手帧到 0x6F */</span>
+    <span class="k">if</span> (<span class="f">aw_flash_download_check</span>(addr,bin_buf,len) != ISP_OK) <span class="k">return</span> ISP_FLASH_ERROR;  <span class="c">/* 擦+写 */</span>
+    <span class="k">if</span> (<span class="f">aw_flash_jump_check</span>(addr)           != ISP_OK) <span class="k">return</span> ISP_JUMP_ERROR;   <span class="c">/* &lt;&lt;&lt; stub! */</span>
+
+    <span class="k">return</span> ISP_OK;
+}</pre>
+
+<h3>3.4 aw_flash_download_check — 擦 + 写 拆块策略</h3>
+
+<pre><span class="c">/* aw_uboot_isp.c:474 */</span>
+ISP_STATUS_E <span class="f">aw_flash_download_check</span>(uint32_t addr, uint8_t *bin_buf, uint32_t len)
+{
+    <span class="c">/* 拆块（单位：字）：每 16 字 = 64 字节写一块；每 1024 字 = 4 KB 擦一块 */</span>
+    uint32_t divisor   = len / <span class="n">16</span>;            <span class="c">/* 完整 16-字 写块数 */</span>
+    uint8_t  remaind   = len % <span class="n">16</span>;            <span class="c">/* 尾部不足 16 字的字数 */</span>
+    uint32_t block_cnt = len / <span class="n">1024</span> + ((len % <span class="n">1024</span>) ? <span class="n">1</span> : <span class="n">0</span>);  <span class="c">/* 1024-字擦块数 */</span>
+
+    <span class="c">/* Step A: 擦除（一次性按 1024 字 = 4 KB 块擦完所有要用的区域） */</span>
+    <span class="k">if</span> (<span class="f">aw_flash_block_erase_check</span>(addr, block_cnt) != ISP_OK) <span class="k">return</span> ISP_FLASH_ERROR;
+
+    <span class="c">/* Step B: 整 16-字块循环写入 */</span>
+    <span class="k">for</span> (i = <span class="n">0</span>; i &lt; divisor; i++) {
+        <span class="k">if</span> (<span class="f">aw_flash_block_write_ckeck</span>(addr, i, bin_buf, <span class="n">16</span>) != ISP_OK) <span class="k">return</span> ISP_FLASH_ERROR;
+    }
+
+    <span class="c">/* Step C: 写不足 16 字的尾巴（如果有） */</span>
+    <span class="k">if</span> (remaind != <span class="n">0</span>) {
+        <span class="k">if</span> (<span class="f">aw_flash_block_write_ckeck</span>(addr, i, bin_buf, remaind) != ISP_OK) <span class="k">return</span> ISP_FLASH_ERROR;
+    }
+    <span class="k">return</span> ISP_OK;
+}</pre>
+
+<table>
+<thead><tr><th>子操作</th><th>UBOOT 帧 event</th><th>写帧长</th><th>读 ACK 长</th><th>延时</th></tr></thead>
+<tbody>
+<tr><td>hank_connect</td><td>HANK_CONNECT (0x01)</td><td>9 B</td><td>14 B</td><td>2 ms</td></tr>
+<tr><td>block_erase (1 块)</td><td>FLASH_ERASE_BLOCK (0x21)</td><td>15 B</td><td>10 B</td><td><b>25 × len ms</b>（按擦块数线性放大）</td></tr>
+<tr><td>block_write (1 块)</td><td>FLASH_WRITE (0x01)</td><td>13+4·len B</td><td>10 B</td><td>1 ms</td></tr>
+<tr><td>jump_check</td><td>—</td><td colspan="3"><b>stub，无 I2C 操作，直接 return ISP_OK</b></td></tr>
+</tbody>
+</table>
+
+<div class="danger">
+<b>关键风险 R1 ── jump_check 是 stub。</b><br>
+源码 <code>aw_uboot_isp.c:249-298</code> 注释明确写：
+<blockquote>"此函数永远返回 ISP_OK。jump 后是否真正运行新固件无法在此层判断。调用此函数后 aw_i2c_isp_download 返回 ISP_OK 仅等于 'erase + write 子步骤都 ACK 了'，<b>不等于新固件已运行</b>。PC 端必须用'烧录后回读 Flash 校验'或 '0x37 RESET_CHIP + 后续操作可达性测试' 二次确认烧录结果。"</blockquote>
+联调阶段如发现"EXEC 返 OK 但芯片没跑新固件"，第一嫌疑就是这里。
+</div>
+
+<h3>3.5 aw_reset_chip ── 实为 wake-out-of-uboot</h3>
+
+<pre>ISP_STATUS_E <span class="f">aw_reset_chip</span>(<span class="k">void</span>)
+{
+    <span class="c">/* 复用 boot_control 的 wake 序列，但 *不* 接 stay-in-uboot 循环 */</span>
+    <span class="c">/* 等价于"让芯片从 Flash 0x01000000 跑用户固件" — 不是硬件 reset，沿用 vendor 命名 */</span>
+    ISP_STATUS_E ret = <span class="f">AwWakeSequence</span>();
+    <span class="k">if</span> (ret != ISP_OK) <span class="k">return</span> ret;
+    delay_ms(<span class="n">15</span>);
+    <span class="k">return</span> ISP_OK;
+}</pre>
+
+<h2>Layer 4 ── Port 适配（aw_port_stm32.c）</h2>
+
+<p>通过 <code>aw_isp_ops_t</code> 回调表把 vendor 调用翻译到 BSP，由 <code>main.c</code> 在初始化时 <code>aw_isp_init(&g_awOpsStm32)</code> 注入：</p>
+
+<pre><span class="k">const</span> aw_isp_ops_t g_awOpsStm32 = {
+    .delay_ms  = AwPort_DelayMs,    <span class="c">/* → BSP_GetTick() 忙等 */</span>
+    .i2c_write = AwPort_I2cWrite,   <span class="c">/* → BSP_I2C2_TransparentWrite */</span>
+    .i2c_read  = AwPort_I2cRead,    <span class="c">/* → BSP_I2C2_TransparentRead  */</span>
+};</pre>
+
+<p><b>Signature 翻译细节：</b></p>
+<ul>
+<li>参数顺序：AW <code>(DevId, AddrSize, pAddr, Size, Data)</code> ↔ BSP <code>(devAddr, pAddr, addrSize, pData, dataLen)</code></li>
+<li>返回类型：AW <code>int (0=OK)</code> ↔ BSP <code>ErrorStatus (SUCCESS/ERROR)</code></li>
+<li>长度：AW <code>uint8_t</code> ↔ BSP <code>uint16_t</code>（隐式提升，无损）</li>
+</ul>
+
+<h2>Layer 5 ── I2C2 软件 bit-banging</h2>
+
+<p>I2C2（PB10/PB11）<b>软件实现</b>而非硬件外设，因为 AW UBOOT 协议需要 ~1 MHz 时钟，而 STM32F4 硬件 I2C 上限 400 kHz。所有底层字节收发走 <code>BSP_I2C2_TransparentWrite/Read</code> 的 GPIO 模拟。</p>
+
+<h2>端到端时序示意</h2>
+<div class="flow">
+PC                                                STM32                          AW86xxx
+ │  0x32 BEGIN(addr,total)  ─────────────────────► │                                  │
+ │  ◄────────────────────────  resp(空)            │                                  │
+ │  0x33 DATA(seq=0, chunk) ─────────────────────► │ memcpy→s_fwBuf[0..]              │
+ │  ◄────────────────────────  resp(nextSeq=1)     │                                  │
+ │  ...  (N 次循环 ...) ...                        │                                  │
+ │  0x33 DATA(seq=N-1, ...) ─────────────────────► │ state→READY                      │
+ │  ◄────────────────────────  resp(nextSeq=N)     │                                  │
+ │  0x34 EXEC               ─────────────────────► │                                  │
+ │  ◄──  "FLASH_EXEC START" (debug info 0x06)      │ ───── AwWakeSequence ─────────► │
+ │                                                 │ ──── 20× stop_uboot (1ms) ────► │
+ │   (5-10s 阻塞窗口；主循环停转；                  │ ──── hank_connect ────────────► │
+ │    LED 心跳停，采样停，串口收发停)               │ ──── erase (25ms/块) ─────────► │
+ │                                                 │ ──── write 16字×N ────────────► │
+ │                                                 │ ──── jump_check (stub) ────     │
+ │                                                 │ ──── AwWakeSequence (reset) ──► │
+ │  ◄────────────────────────  resp(ISP_OK)        │ state→DONE                       │
+ │  0x36 CANCEL             ─────────────────────► │ state→IDLE                       │
+ │  ◄────────────────────────  resp(空)            │                                  │
+</div>
+
+<h2>关键风险点（联调必查）</h2>
+
+<table>
+<thead><tr><th>#</th><th>风险</th><th>表现</th><th>规避</th></tr></thead>
+<tbody>
+<tr><td>R1</td><td><b>jump_check 是 stub</b></td><td>EXEC 返 OK 但芯片没跑新固件</td><td>PC 端回读 Flash 校验 / 0x37 + 后续操作可达性</td></tr>
+<tr><td>R2</td><td>EXEC 阻塞 5-10s</td><td>LED 心跳停、采样停、PC 心跳超时</td><td>已发 "FLASH_EXEC START" debug info；PC 据此扩大心跳超时</td></tr>
+<tr><td>R3</td><td>aw_reset_chip 非硬件 reset</td><td>若芯片状态污染，无法真硬重置</td><td>必要时硬件下电（PMIC disable + 重新 enable）</td></tr>
+<tr><td>R4</td><td>I2C2 软件 bit-banging</td><td>时序对中断敏感</td><td>EXEC 期间无 TIM6 触发；保持当前互斥</td></tr>
+<tr><td>R5</td><td>单次 64 KB ≤ AW 128 KB</td><td>烧满需 2 个 session</td><td>PC 分两次：BEGIN(0x01000000,64K) + BEGIN(0x01010000,64K)</td></tr>
+<tr><td>R6</td><td>block_erase 延时按 len 线性放大 (25ms × N)</td><td>整片 4 KB×N 阻塞</td><td>当前接受；如需缩短改 vendor 内部按 sector 拆调用</td></tr>
+<tr><td>R7</td><td>stay-in-uboot 必须 8ms 内完成</td><td>慢了 / 抖动 → 进入用户固件</td><td>AwWakeSequence 后立刻 20× 写 + 1ms 节奏，必须严格</td></tr>
+</tbody>
+</table>
+
+<h2>已知改动（vendor 文件本地修改）</h2>
+
+<p>所有 vendor 源 (<code>Flash/AW/</code>) 文件头都有 <b>本地修改记录</b> 注释块，按时间顺序追加。主要改动：</p>
+
+<ul>
+<li><b>2026-05-19</b>：AW_U8/AW_U32 → uint8_t/uint32_t；引入回调表架构（<code>aw_isp_ops_t</code> + <code>aw_isp_init()</code>）；AW_FLASH_BASE 加 AW_ 前缀避开 STM32 CMSIS 重名；<code>AwWakeSequence</code> 抽出共享子函数；定义 <code>AW_UBOOT_I2C_ADDR=0x6F</code> + <code>AW_CHIP_I2C_ADDR=0x6B</code>；vendor warnings 清理 7 处</li>
+<li><b>2026-05-21</b>：<code>aw_flash_jump_check</code> 加 IMPORTANT 警告注释（stub 说明）；<code>aw_reset_chip</code> 加 NOTE（实为 wake-out-of-uboot）</li>
+</ul>
+
+<hr>
+<p style="color:#64748b; font-size:0.85em;">生成于 2026-05-22 ｜ STM32F429ZG 电机调试板项目 ｜ 对应路线图阶段 4.6</p>
+
+</body>
+</html>

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>2026-05-22 I2C2 上电不通讯事故复盘</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --fg: #1f2328;
+    --muted: #57606a;
+    --accent: #bf5700;
+    --accent-bg: #fff5eb;
+    --ok: #1a7f37;
+    --ok-bg: #f0f7f0;
+    --bad: #c7392f;
+    --bad-bg: #fff5f3;
+    --warn: #9a6700;
+    --warn-bg: #fff8e1;
+    --code-bg: #f5f5f5;
+    --border: #d0d7de;
+    --link: #0969da;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.65;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+  h1 {
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 12px;
+    margin-bottom: 8px;
+    color: var(--accent);
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 0.9em;
+    margin-bottom: 32px;
+  }
+  h2 {
+    border-left: 4px solid var(--accent);
+    padding-left: 12px;
+    margin-top: 40px;
+    color: #24292f;
+  }
+  h3 { margin-top: 28px; color: #24292f; }
+  .tldr {
+    background: var(--accent-bg);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 16px 0 32px;
+  }
+  .tldr strong { color: var(--accent); }
+  .ok-box {
+    background: var(--ok-bg);
+    border-left: 4px solid var(--ok);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 12px 0;
+  }
+  .bad-box {
+    background: var(--bad-bg);
+    border-left: 4px solid var(--bad);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 12px 0;
+  }
+  .warn-box {
+    background: var(--warn-bg);
+    border-left: 4px solid var(--warn);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 12px 0;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f6f8fa; font-weight: 600; }
+  code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+    color: var(--accent);
+  }
+  pre {
+    background: #282c34;
+    color: #abb2bf;
+    padding: 16px 18px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.9em;
+    line-height: 1.55;
+  }
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+  .kw  { color: #c678dd; }
+  .fn  { color: #61afef; }
+  .str { color: #98c379; }
+  .num { color: #d19a66; }
+  .cmt { color: #5c6370; font-style: italic; }
+  .err { color: #e06c75; }
+  .ok  { color: #98c379; }
+  .type{ color: #e5c07b; }
+  ul, ol { padding-left: 28px; }
+  li { margin: 4px 0; }
+
+  /* Diagnosis flow timeline */
+  .timeline {
+    position: relative;
+    padding: 16px 0 8px 32px;
+    margin: 24px 0;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+  .phase {
+    position: relative;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .phase::before {
+    content: '';
+    position: absolute;
+    left: -27px;
+    top: 18px;
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border-radius: 50%;
+    border: 3px solid var(--bg);
+  }
+  .phase .ttl {
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .phase .tag {
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.75em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: normal;
+  }
+  .phase .result {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    background: var(--bad-bg);
+    border-left: 3px solid var(--bad);
+    font-size: 0.95em;
+  }
+  .phase .result.ok {
+    background: var(--ok-bg);
+    border-left-color: var(--ok);
+  }
+
+  /* before/after columns */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 16px 0;
+  }
+  .compare > div {
+    border-radius: 6px;
+    padding: 12px 16px;
+  }
+  .compare .before {
+    background: var(--bad-bg);
+    border-left: 4px solid var(--bad);
+  }
+  .compare .after {
+    background: var(--ok-bg);
+    border-left: 4px solid var(--ok);
+  }
+  .compare h4 { margin: 0 0 8px; }
+
+  .severity {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+
+  /* LED blink visualization */
+  .blinks {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    background: #1a1a1a;
+    color: #ffcc66;
+    padding: 8px 14px;
+    border-radius: 4px;
+    display: inline-block;
+    letter-spacing: 4px;
+    font-size: 1.1em;
+  }
+  .blinks .pause { color: #555; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  .footer {
+    margin-top: 60px;
+    color: var(--muted);
+    font-size: 0.85em;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<h1>I2C2 上电不通讯事故复盘 <span class="severity">高优先级 / 已解决</span></h1>
+<div class="meta">日期：2026-05-22 &nbsp;|&nbsp; 仓库：STM32_Board_Dev &nbsp;|&nbsp; 修复 PR：#1 (<code>4551285</code>) &nbsp;|&nbsp; 分支：<code>fix/i2c2-power-on</code></div>
+
+<div class="tldr">
+  <strong>TL;DR</strong>：固件上电后所有上位机指令全 timeout、心跳无响应。逐级 LED 闪烁定位到 <code>BSP_I2C2_Init</code> 失败；再细分到 <strong>SDA 和 SCL 同时被拉低</strong>；最终查明根因是 <code>BSP_PMIC_Init</code> 只预设电压寄存器、<strong>没有打开 LDO 输出</strong>，电机 IC 的 IOVDD 始终 = 0 V，I2C2 上拉无电压。修复：开机时显式调用 <code>BSP_PMIC_EnableSequence()</code>，并把 I2C2 初始化挪到 PMIC 上电之后。
+</div>
+
+<h2>一、故障现象</h2>
+
+<p>烧录最新固件（<code>8a638e4</code> 起的累积改动）后上电，上位机连接 COM7：</p>
+
+<pre><code><span class="cmt">[motordev.serial] Port COM7 opened successfully</span>
+[motordev.config] SetPmicVoltage TX ...
+<span class="err">[motordev.serial] Retry #1 for seq=0X00 cmd=0X09(SetPmicVoltage)
+[motordev.serial] Retry #2 for seq=0X00 cmd=0X09(SetPmicVoltage)
+[motordev.serial] Command timeout: seq=0X00 after 3 attempts
+[motordev.serial] Heartbeat lost: 3 missed, disconnecting</span></code></pre>
+
+<ul>
+  <li>所有控制帧（SetPmicVoltage / I2cBusScan / 心跳）全部 timeout</li>
+  <li>LED 常灭，未进入主循环 5 Hz 心跳</li>
+  <li>等同于固件完全死在初始化阶段，但具体死在哪一步从外部看不出来</li>
+</ul>
+
+<h2>二、定位过程（四阶段递进）</h2>
+
+<div class="timeline">
+
+  <div class="phase">
+    <div class="ttl">阶段 1 <span class="tag">init 模块级二分</span></div>
+    <p>main.c 顶部临时插入 <code>DiagBlinkN(N)</code> 助手 + 11 个 checkpoint。每个 BSP/App 初始化成功后 LED 闪 N 次再继续，失败处保留 <code>while(1) {;}</code> halt。</p>
+    <pre><code><span class="kw">static void</span> <span class="fn">DiagBlinkN</span>(<span class="type">uint8_t</span> n) {
+    <span class="kw">for</span> (<span class="type">uint8_t</span> i = <span class="num">0</span>; i < n; i++) {
+        <span class="fn">BSP_LED1_Toggle</span>();
+        <span class="kw">for</span> (<span class="kw">volatile</span> <span class="type">uint32_t</span> k = <span class="num">0</span>; k < <span class="num">1500000U</span>; k++) {;}  <span class="cmt">// 150 ms on</span>
+        <span class="fn">BSP_LED1_Toggle</span>();
+        <span class="kw">for</span> (<span class="kw">volatile</span> <span class="type">uint32_t</span> k = <span class="num">0</span>; k < <span class="num">1500000U</span>; k++) {;}  <span class="cmt">// 150 ms off</span>
+    }
+    <span class="kw">for</span> (<span class="kw">volatile</span> <span class="type">uint32_t</span> k = <span class="num">0</span>; k < <span class="num">10000000U</span>; k++) {;}  <span class="cmt">// 1 s group separator</span>
+}</code></pre>
+    <p>实测看到 <span class="blinks">▮ ▮ ▮ <span class="pause">— pause —</span> [常灭]</span></p>
+    <div class="result">最后一组 = 3 闪（I2C1 完成）→ <strong>卡在 <code>BSP_I2C2_Init</code> 失败的 <code>while(1)</code></strong></div>
+  </div>
+
+  <div class="phase">
+    <div class="ttl">阶段 2 <span class="tag">函数级二分</span></div>
+    <p><code>BSP_I2C2_Init</code> 唯一 ERROR 出口在 <code>BSP_I2C2_RecoverBus()</code> 之后 SDA 仍读到 0。新增 <code>g_i2c2InitDiag</code> 全局变量，在 return 前根据 SCL 电平区分两种失败模式：</p>
+    <pre><code><span class="kw">if</span> (!<span class="fn">SDA_READ</span>()) {
+    <span class="fn">BSP_I2C2_RecoverBus</span>();
+    <span class="kw">if</span> (!<span class="fn">SDA_READ</span>()) {
+        g_i2c2InitDiag = <span class="fn">SCL_READ</span>() ? <span class="num">2U</span> : <span class="num">1U</span>;  <span class="cmt">// 1=两条都低, 2=只 SDA 低</span>
+        <span class="kw">return</span> ERROR;
+    }
+}</code></pre>
+    <p>main.c 失败处改为 <code>while(1) { DiagBlinkN(g_i2c2InitDiag); }</code> 持续显示码值。</p>
+    <p>实测看到 <span class="blinks">▮ ▮ ▮ <span class="pause">— pause —</span> ▮ <span class="pause">—</span> ▮ <span class="pause">—</span> ▮ ...</span></p>
+    <div class="result">反复 1 闪 = SCL 也读到 0 → <strong>SDA 和 SCL 同时被拉低</strong>。不是 slave 抢 SDA，而是两条上拉根本没电压</div>
+  </div>
+
+  <div class="phase">
+    <div class="ttl">阶段 3 <span class="tag">假设 1：上拉接 PMIC IOVDD</span></div>
+    <p>I2C2 GPIO 配置为 <code>Open-Drain + NoPull</code>，高电平完全依赖外部上拉电阻。若上拉电阻接电机 IC 的 IOVDD（由 PMIC 供电），则在 PMIC 起来之前两条线都拉不高。</p>
+    <p><strong>尝试</strong>：把 main.c init 顺序由 <code>I2C1 → I2C2 → I2C3 → PMIC_Init</code> 改为 <code>I2C1 → I2C3 → PMIC_Init → PMIC_HwenInit → I2C2</code>，让 PMIC 先初始化。</p>
+    <div class="result"><strong>仍然 6 闪后反复 1 闪</strong>，I2C2 还是失败 → 假设方向对（PMIC 顺序确实该在前）但还差一步</div>
+  </div>
+
+  <div class="phase">
+    <div class="ttl">阶段 4 <span class="tag">根因锁定</span></div>
+    <p>查 <code>bsp_pmic.c</code> 发现关键事实：</p>
+    <pre><code><span class="type">ErrorStatus</span> <span class="fn">BSP_PMIC_Init</span>(<span class="kw">void</span>) {
+    <span class="cmt">/* Pre-set output voltages (LDO2=DRVVDD, LDO1=IOVDD, LDO3=VCMVDD) */</span>
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetVout</span>(BSP_PMIC_CH_LDO2, drvV) != SUCCESS) <span class="kw">return</span> ERROR;
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetVout</span>(BSP_PMIC_CH_LDO1, ioV)  != SUCCESS) <span class="kw">return</span> ERROR;
+    <span class="kw">if</span> (<span class="fn">BSP_PMIC_SetVout</span>(BSP_PMIC_CH_LDO3, vcmV) != SUCCESS) <span class="kw">return</span> ERROR;
+    <span class="kw">return</span> SUCCESS;  <span class="cmt">// ← 只配置电压寄存器，未写使能位！</span>
+}</code></pre>
+    <p>真正打开 LDO 输出的是 <code>BSP_PMIC_EnableSequence()</code>（按 LDO2 → 10ms → LDO1 → 10ms → LDO3 时序使能）。但它<strong>只在主循环检测到 HWEN 上升沿时</strong>被调用——开机阶段从来没人调它。</p>
+    <div class="result ok"><strong>根因</strong>：<code>BSP_PMIC_Init</code> 命名 ≠ 行为。LDO 输出从未打开 → IOVDD = 0 V → I2C2 上拉无电压 → SDA/SCL 同时读 0 → init 失败</div>
+  </div>
+
+</div>
+
+<h2>三、修复方案</h2>
+
+<p>在 <code>main()</code> 中显式调用 <code>BSP_PMIC_EnableSequence()</code>，强制开机时就把 LDO 打开。同时调整 init 顺序，让 I2C2 在 IOVDD 稳定后再做总线检查。</p>
+
+<div class="compare">
+  <div class="before">
+    <h4>修复前（main 分支）</h4>
+    <pre style="font-size: 0.85em;"><code>NVIC → Tick → LED → UART
+→ <span class="fn">I2C1_Init</span>
+→ <span class="fn">I2C2_Init</span>   <span class="err">← 此时 IOVDD = 0 V，必失败</span>
+→ <span class="fn">I2C3_Init</span>
+→ <span class="fn">PMIC_Init</span>  <span class="cmt">// 只配寄存器</span>
+→ <span class="fn">HwenInit</span>
+→ <span class="fn">aw_isp_init</span>
+→ App init → main loop
+   <span class="cmt">// 主循环里 HWEN 中断才会触发
+   // BSP_PMIC_EnableSequence()</span></code></pre>
+  </div>
+  <div class="after">
+    <h4>修复后（<code>fix/i2c2-power-on</code>）</h4>
+    <pre style="font-size: 0.85em;"><code>NVIC → Tick → LED → UART
+→ <span class="fn">I2C1_Init</span>
+→ <span class="fn">I2C3_Init</span>             <span class="cmt">// PMIC 总线</span>
+→ <span class="fn">PMIC_Init</span>             <span class="cmt">// 预设电压</span>
+→ <span class="ok"><span class="fn">PMIC_EnableSequence</span> ← 开 LDO</span>
+→ <span class="fn">HwenInit</span>
+→ <span class="fn">I2C2_Init</span>             <span class="ok">// IOVDD 已上电</span>
+→ <span class="fn">aw_isp_init</span>
+→ App init → main loop</code></pre>
+  </div>
+</div>
+
+<h3>3.1 改动清单（commit <code>4551285</code>）</h3>
+<table>
+  <thead><tr><th>文件</th><th>改动</th></tr></thead>
+  <tbody>
+    <tr><td><code>App/Inc/app_protocol.h</code></td><td>新增 <code>PROTO_INIT_FAIL_PMIC_EN = 0x06U</code> 启动状态码（0x0B BOOT_STATUS 帧 payload）</td></tr>
+    <tr><td><code>BSP/Inc/bsp_i2c2.h</code></td><td>新增宏 <code>BSP_I2C2_SW_INIT_SETTLE_CYCLES = 180000U</code>；导出 <code>extern uint8_t g_i2c2InitDiag</code></td></tr>
+    <tr><td><code>BSP/Src/bsp_i2c2.c</code></td><td>定义 <code>g_i2c2InitDiag</code>；<code>BSP_I2C2_Init</code> 加 ~1 ms RC 充电等待（防御性）；失败前记录 SCL 电平</td></tr>
+    <tr><td><code>Core/Src/main.c</code></td><td>重排 init 顺序；新增 <code>BSP_PMIC_EnableSequence()</code> 调用，失败走 <code>HaltOnInitFail(PROTO_INIT_FAIL_PMIC_EN)</code></td></tr>
+  </tbody>
+</table>
+
+<h3>3.2 保留的 HWEN 中断逻辑</h3>
+<div class="ok-box">
+开机时强制 EnableSequence 不影响原本的 HWEN 触发机制——主循环仍会监听 HWEN 上升沿并调用 <code>BSP_PMIC_EnableSequence()</code>，应对运行时 PMIC 被外部信号复位的场景。
+</div>
+
+<h2>四、硬件验证</h2>
+
+<p>修复后上电的上位机日志：</p>
+
+<pre><code><span class="ok">[motordev.config] SetPmicVoltage RX ACK</span>
+<span class="ok">[motordev.config] PmicEnable RX ACK</span>
+<span class="ok">[motordev.serial] Heartbeat response received</span>  <span class="cmt">× 10+ 周期无丢失</span>
+[motordev.config] I2cBusScan RX <span class="ok">count=4 devices=0X6A, 0X6B, 0X6F, 0X7E</span>
+[motordev.config] SetMotorIcAddr RX ACK
+[motordev.register] READREGISTER RX ACK ROW=0 <span class="ok">VALUE=0X0267</span></code></pre>
+
+<ul>
+  <li>LED：稳定 5 Hz 心跳，进入主循环</li>
+  <li>I2C2 总线扫描：4 个电机 IC（0x6A / 0x6B / 0x6F / 0x7E）</li>
+  <li>寄存器读：<code>0xB002 = 0x0267</code> 多次重复稳定读回</li>
+</ul>
+
+<h2>五、根因分类与教训</h2>
+
+<h3>5.1 直接根因</h3>
+<div class="bad-box">
+<code>BSP_PMIC_Init</code> 的命名暗示"初始化 PMIC"，但实际只设置电压寄存器、<strong>不开 LDO 输出</strong>。这种<strong>命名 ≠ 行为</strong>的 API 设计是事故的直接原因。
+</div>
+
+<h3>5.2 系统性原因</h3>
+<table>
+  <thead><tr><th>类别</th><th>问题</th></tr></thead>
+  <tbody>
+    <tr><td>API 设计</td><td>"Init"职责不一致：I2C/UART/LED 的 Init 都能直接工作，唯独 PMIC_Init 还需要后续动作</td></tr>
+    <tr><td>启动时序</td><td>把"硬件依赖关系"隐藏在主循环 HWEN 中断分支里，开机路径上没体现</td></tr>
+    <tr><td>错误处理回归</td><td>旧版本曾用 <code>(void)BSP_I2C2_Init()</code> 旁路错误，看起来"能跑"但其实第一次访问总线就 NACK，问题被掩盖至此</td></tr>
+    <tr><td>诊断可见性</td><td><code>while(1) {;}</code> halt 对外部完全不可见。本次靠临时插 <code>DiagBlinkN</code> 才定位</td></tr>
+  </tbody>
+</table>
+
+<h3>5.3 改进建议</h3>
+
+<div class="warn-box">
+<strong>1. API 重命名</strong>：<code>BSP_PMIC_Init</code> → <code>BSP_PMIC_PresetVout</code>（或在 Init 内部完成 EnableSequence），让"Init = 可用"成为不变契约。
+</div>
+
+<div class="warn-box">
+<strong>2. 启动失败可见化（已在 main 实现）</strong>：<code>HaltOnInitFail(PROTO_INIT_FAIL_XXX)</code> 通过 0x0B BOOT_STATUS 帧向上位机汇报具体失败模块 + LED 统一快闪。本次提交进一步加入了 <code>PROTO_INIT_FAIL_PMIC_EN</code> 码。
+</div>
+
+<div class="warn-box">
+<strong>3. 现场调试入口保留</strong>：<code>g_i2c2InitDiag</code> 全局变量保留（无运行成本），未来再遇到 I2C2 总线问题可通过 JTAG / 调试器直接读出失败模式（1 = 双线低 / 2 = 仅 SDA 低）。
+</div>
+
+<div class="warn-box">
+<strong>4. 严格 halt-on-fail，不再旁路</strong>：BSP Init 失败必须 halt（或 graceful degrade），禁止 <code>(void)Init()</code> 这种掩盖手法。
+</div>
+
+<h2>六、本次定位方法学要点</h2>
+
+<ol>
+  <li><strong>无串口时用 LED 编码</strong>：硬件唯一保证可用的输出口是 LED，<code>DiagBlinkN(N)</code> 是一种极简的"打印行号"机制，连续闪 N 次 + 长暗代表"通过第 N 个 checkpoint"</li>
+  <li><strong>从模块级到函数级二分</strong>：先用 11 个 checkpoint 锁定<strong>哪个 init 失败</strong>，再用 <code>g_i2c2InitDiag</code> 区分<strong>函数内具体路径</strong>。这种递进二分比一次性放 50 个 checkpoint 效率更高</li>
+  <li><strong>假设要可证伪</strong>：阶段 3 调整 init 顺序后失败模式不变，立刻意识到"PMIC 顺序对，但还缺一步"——单变量验证让方向修正成本最低</li>
+  <li><strong>调试代码清理后保留长效价值</strong>：临时 <code>DiagBlinkN</code> 在修复后删除；但 <code>g_i2c2InitDiag</code> 作为低成本诊断指针保留下来</li>
+</ol>
+
+<div class="footer">
+  事故复盘 v1.0 · 生成于 2026-05-22 · 详细 commit 见 <code>TRACKING/0522_1635_summary.md</code>
+</div>
+
+</body>
+</html>

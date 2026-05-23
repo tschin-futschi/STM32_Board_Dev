@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>2026-05-22 OAuth Token 泄露事故复盘</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --fg: #1f2328;
+    --muted: #57606a;
+    --accent: #c7392f;
+    --accent-bg: #fff5f3;
+    --ok: #1a7f37;
+    --ok-bg: #f0f7f0;
+    --warn: #9a6700;
+    --warn-bg: #fff8e1;
+    --code-bg: #f5f5f5;
+    --border: #d0d7de;
+    --link: #0969da;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.65;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+  h1 {
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 12px;
+    margin-bottom: 8px;
+    color: var(--accent);
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 0.9em;
+    margin-bottom: 32px;
+  }
+  h2 {
+    border-left: 4px solid var(--accent);
+    padding-left: 12px;
+    margin-top: 40px;
+    color: #24292f;
+  }
+  h3 {
+    margin-top: 28px;
+    color: #24292f;
+  }
+  .tldr {
+    background: var(--accent-bg);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 16px 0 32px;
+  }
+  .tldr strong {
+    color: var(--accent);
+  }
+  .ok-box {
+    background: var(--ok-bg);
+    border-left: 4px solid var(--ok);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 12px 0;
+  }
+  .warn-box {
+    background: var(--warn-bg);
+    border-left: 4px solid var(--warn);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 12px 0;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #f6f8fa;
+    font-weight: 600;
+  }
+  code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+    color: var(--accent);
+  }
+  pre {
+    background: #282c34;
+    color: #abb2bf;
+    padding: 16px 18px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.9em;
+    line-height: 1.55;
+  }
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+  .cmd { color: #61afef; }
+  .arg { color: #e5c07b; }
+  .str { color: #98c379; }
+  .cmt { color: #5c6370; font-style: italic; }
+  .err { color: #e06c75; }
+  .ok  { color: #98c379; }
+  .flow {
+    margin: 20px 0;
+    padding: 16px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .flow .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 8px 0;
+    padding: 8px 0;
+    border-bottom: 1px dashed #eaeef2;
+  }
+  .flow .step:last-child { border-bottom: none; }
+  .flow .step .num {
+    background: var(--accent);
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+  .flow .step .body { flex: 1; }
+  .flow .step .body strong { display: block; margin-bottom: 4px; }
+  .flow .step .body .detail { color: var(--muted); font-size: 0.92em; }
+  ul, ol { padding-left: 28px; }
+  li { margin: 4px 0; }
+  .severity {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+  .redacted {
+    background: #f5f5f5;
+    color: #999;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: monospace;
+  }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  .footer {
+    margin-top: 60px;
+    color: var(--muted);
+    font-size: 0.85em;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<h1>OAuth Token 泄露事故复盘 <span class="severity">高危</span></h1>
+<div class="meta">日期：2026-05-22 &nbsp;|&nbsp; 作者：Claude Code &nbsp;|&nbsp; 仓库：STM32_Board_Dev</div>
+
+<div class="tldr">
+  <strong>TL;DR</strong>：在排查 <code>git pull</code> 凭据问题时，Claude Code 两次执行了直接输出明文 token 的诊断命令（<code>gh auth git-credential get</code> 与 <code>git credential fill</code>），导致用户的 GitHub OAuth token（scope = repo/workflow/gist/read:org）出现在对话日志中。事故已通过 token 撤销 + 重新生成处置。本文记录根因与未来防护规则。
+</div>
+
+<h2>一、事故事实</h2>
+
+<h3>1.1 触发场景</h3>
+<p>用户在本地终端执行 <code>git pull</code> 时仍被提示输入 username / password，与 Claude 这边 Bash 工具中能无声 pull 的行为不一致。Claude 在排查 helper 配置是否生效时，跑了两条凭据协议命令：</p>
+
+<pre><code><span class="cmt"># 第一次：直接验证 gh helper 是否能返回 token</span>
+<span class="cmd">echo</span> <span class="str">"url=https://github.com"</span> | <span class="cmd">gh</span> <span class="arg">auth git-credential get</span>
+
+<span class="cmt"># 第二次：通过 git 凭据协议链路完整测试</span>
+<span class="cmd">printf</span> <span class="str">"protocol=https\nhost=github.com\n\n"</span> | <span class="cmd">git</span> <span class="arg">credential fill</span></code></pre>
+
+<h3>1.2 输出内容</h3>
+<p>两条命令的 stdout 均按 git 凭据协议格式返回了明文 token：</p>
+
+<pre><code>protocol=https
+host=github.com
+username=tschin-futschi
+password=<span class="err">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</span>   <span class="cmt">← token 明文</span></code></pre>
+
+<p>该输出被原样回显到 Claude Code 的对话上下文，等同于把 token 写到了会话日志中。</p>
+
+<h2>二、根因分析</h2>
+
+<h3>2.1 表面原因</h3>
+<p>诊断命令的 <strong>stdout 设计目的就是输出凭据</strong>。<code>gh auth git-credential</code> 和 <code>git credential fill</code> 是 git 凭据协议的标准实现，本意是给 git 进程作为 helper 调用，而非给人类阅读。Claude 把它们当作普通诊断命令直接执行并显示输出。</p>
+
+<h3>2.2 深层原因</h3>
+<div class="warn-box">
+  <strong>缺少"凭据协议类命令"的警戒分类。</strong>下列命令的输出<strong>必须默认视作秘密</strong>，但事前没有形成清单与拦截规则：
+</div>
+
+<table>
+  <thead>
+    <tr><th>类别</th><th>典型命令</th><th>泄露风险</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Git 凭据协议</td><td><code>git credential fill / approve / reject</code></td><td>username + password / PAT</td></tr>
+    <tr><td>GitHub CLI</td><td><code>gh auth git-credential get</code>, <code>gh auth token</code></td><td>OAuth token</td></tr>
+    <tr><td>凭据文件</td><td><code>cat ~/.netrc</code>, <code>~/.git-credentials</code></td><td>所有 host 凭据</td></tr>
+    <tr><td>云平台</td><td><code>aws sts get-session-token</code>, <code>gcloud auth print-access-token</code></td><td>云密钥 / access token</td></tr>
+    <tr><td>SSH</td><td><code>cat ~/.ssh/id_*</code>（非 pub）</td><td>SSH 私钥</td></tr>
+    <tr><td>环境变量</td><td><code>env</code>, <code>printenv</code> 不过滤</td><td>所有 *_TOKEN / *_KEY 等</td></tr>
+  </tbody>
+</table>
+
+<h3>2.3 流程因素</h3>
+<ol>
+  <li>诊断目标本可用<strong>非泄露方法</strong>达成（见第四节），Claude 选择了最直接但最危险的路径</li>
+  <li>对话上下文被默认视作"安全的"——但实际上日志可能被发往日志服务、被截图、被同步到其他设备</li>
+  <li>Token scope 设得很宽（<code>repo / workflow / gist / read:org</code>），单点泄露 = 全账户失陷</li>
+</ol>
+
+<h2>三、影响评估</h2>
+
+<table>
+  <thead><tr><th>维度</th><th>评估</th></tr></thead>
+  <tbody>
+    <tr><td>泄露载体</td><td>Claude Code 本次对话上下文 / 转录日志</td></tr>
+    <tr><td>泄露内容</td><td>1 个 OAuth token（<code>gho_***</code>），scope = repo / workflow / gist / read:org</td></tr>
+    <tr><td>潜在攻击者</td><td>能访问对话转录的人 / 系统（包括截图、复制、多端同步副本）</td></tr>
+    <tr><td>最坏情况</td><td>对账户 <code>tschin-futschi</code> 所有 repo 进行 push / 改 workflow / 读 org 信息</td></tr>
+    <tr><td>实际影响</td><td>未发现被滥用迹象（token 已撤销）</td></tr>
+  </tbody>
+</table>
+
+<h2>四、处置措施</h2>
+
+<div class="flow">
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <strong>立即撤销旧 token</strong>
+      <div class="detail">访问 <a href="https://github.com/settings/tokens">github.com/settings/tokens</a>，找到 <code>gho_ervj...</code>（gh CLI 创建的那条）点 <strong>Revoke</strong>。</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <strong>重新登录生成新 token</strong>
+      <div class="detail">本地终端执行 <code>gh auth login</code> 走 Web 流程；新 token 会自动覆盖 keyring 中旧值。</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="num">3</div>
+    <div class="body">
+      <strong>审计仓库活动</strong>
+      <div class="detail">在 <a href="https://github.com/tschin-futschi">个人主页</a> 检查最近的 push / fork / 设置变更，确认无可疑动作。</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="num">4</div>
+    <div class="body">
+      <strong>清除对话副本（如有）</strong>
+      <div class="detail">如果对话被另存为文件、贴到外部工具，删除/替换其中 token 字串。</div>
+    </div>
+  </div>
+</div>
+
+<h2>五、预防规则（写入 memory，跨会话生效）</h2>
+
+<h3>5.1 强禁止</h3>
+<div class="warn-box">
+任何凭据协议类命令的 stdout <strong>不得</strong>直接显示到对话上下文。包括但不限于第 2.2 节表格中列出的全部命令。
+</div>
+
+<h3>5.2 默认 redact</h3>
+<p>若必须执行这类命令，强制管道一遍 redact 再输出：</p>
+
+<pre><code><span class="cmd">git</span> <span class="arg">credential fill</span> | <span class="cmd">sed</span> <span class="arg">-E</span> <span class="str">'s/(password|token|secret)=.*/\1=***REDACTED***/I'</span>
+
+<span class="cmd">gh</span> <span class="arg">auth git-credential get</span> &lt;&lt;&lt; <span class="str">"url=..."</span> | <span class="cmd">sed</span> <span class="arg">'s/password=.*/password=***/'</span></code></pre>
+
+<h3>5.3 替代诊断手段</h3>
+<table>
+  <thead><tr><th>原诊断意图</th><th>原危险做法</th><th>安全替代</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>验证 gh helper 是否绑定到 git</td>
+      <td><code>git credential fill</code> 看输出</td>
+      <td><code>git config --get-regexp credential\.</code> 看 helper 是否存在</td>
+    </tr>
+    <tr>
+      <td>验证 token 是否还有效</td>
+      <td>打印 token 比对</td>
+      <td><code>gh api user --jq .login</code>（只返 username）</td>
+    </tr>
+    <tr>
+      <td>验证 git pull 能否过认证</td>
+      <td>调试 helper 链</td>
+      <td>直接 <code>git ls-remote origin HEAD &gt;/dev/null &amp;&amp; echo OK</code></td>
+    </tr>
+    <tr>
+      <td>验证凭据 helper 进程能否调用</td>
+      <td>手动调 helper get</td>
+      <td><code>echo "url=https://github.com" | $HELPER get | grep -c '^username='</code>（只看条数）</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>5.4 分工原则</h3>
+<div class="ok-box">
+登录、token 校验、凭据 dump 这类<strong>本质涉及秘密</strong>的操作，<strong>由用户在本地终端自己跑</strong>，Claude 只接收结论（如 <code>OK / FAIL</code>）。Claude 不代执行任何会让密文进入对话上下文的命令。
+</div>
+
+<h3>5.5 关键字预警</h3>
+<p>Bash 工具命令链中出现下列任一关键字时，<strong>默认</strong>判定为高敏感，必须满足 5.2 或 5.3 才能执行：</p>
+<pre><code>credential | token | secret | password | api_key |
+    apikey | passwd | bearer | oauth | private_key |
+    .netrc | .ssh/id_ | aws/credentials | .pem</code></pre>
+
+<h2>六、教训总结</h2>
+
+<ol>
+  <li><strong>对话上下文不是私密空间。</strong>任何写到 stdout 的内容都可能成为日志的一部分，按"公开"标准对待</li>
+  <li><strong>"调试需要"不是泄露秘密的正当理由。</strong>有秘密参与的诊断，永远存在不打印秘密本身的等价做法</li>
+  <li><strong>Scope 最小化是最后一道防线。</strong>若 token 只给 <code>read:org + repo</code>（不含 workflow），影响面会窄不少。下次创建 PAT 时按需开 scope</li>
+  <li><strong>事故价值在规则固化，不在自责。</strong>本次教训以 memory + 本文档形式持久化，未来同类操作必须按 5.2 / 5.3 走</li>
+</ol>
+
+<div class="footer">
+  事故复盘 v1.0 · 生成于 2026-05-22 · 后续如规则有修订请更新本文档
+</div>
+
+</body>
+</html>
