@@ -28,6 +28,9 @@
  *              master 已发起 read，读回全 0x00，memcmp 必失败返 ISP_FLASH_ERROR。
  *              对比 erase 用 25*len ms/调用，write 仅 1ms 显然不对称；
  *              取 25ms 与 erase 每块对等。烧 8506 字（~532 包）累计增延 ~12.8s。
+ *  2026-05-24  aw_flash_block_write_ckeck 内 delay_ms(25) → delay_ms(10)。
+ *              25ms 抓包稳定但 32KB 总耗时 ~13s 偏长，收紧到 10ms 缩短烧录时间；
+ *              若再失败需逐步上调（15/20）找最小可用值。
  * ============================================================================
  */
 
@@ -458,8 +461,9 @@ ISP_STATUS_E aw_flash_block_write_ckeck(uint32_t addr, uint32_t block_num, uint8
 
 	/* 2026-05-23 本地改动：vendor 原 delay_ms(1) 太短，AW 物理 Flash 写完成前
 	 * master 已发起 read，读回全 0x00，memcmp 失败返 ISP_FLASH_ERROR。
-	 * 改 25ms 与 erase 每块延时对等（aw_flash_block_erase_check 用 25*len ms）。 */
-	delay_ms(25);
+	 * 2026-05-24 再优化：25ms 抓包稳定但 32KB 总耗时 ~13s 偏长，
+	 * 收紧到 10ms 以缩短烧录时间（512 块 ×15ms 累计省 ~7.7s）。 */
+	delay_ms(10);
 
 	(void)aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, 10U, r_buff);
 
