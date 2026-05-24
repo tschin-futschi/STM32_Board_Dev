@@ -31,6 +31,10 @@
  *  2026-05-24  aw_flash_block_write_ckeck 内 delay_ms(25) → delay_ms(10)。
  *              25ms 抓包稳定但 32KB 总耗时 ~13s 偏长，收紧到 10ms 缩短烧录时间；
  *              若再失败需逐步上调（15/20）找最小可用值。
+ *  2026-05-24  aw_flash_download_check 内插入 s_ops->on_progress 回调（NULL 防御），
+ *              对应协议 0x38 FLASH_EXEC_PROGRESS：erase 前/后 各一次 (phase=0)，
+ *              write 块循环每次成功后一次 (phase=1)。32 KB 固件典型上报 ~514 次。
+ *              vendor 流程与返回值完全不变；on_progress=NULL 时无任何运行时差异。
  * ============================================================================
  */
 
@@ -495,9 +499,24 @@ ISP_STATUS_E aw_flash_download_check(uint32_t addr, uint8_t *bin_buf, uint32_t l
 	remaind = len % 16;
 	block_cnt = len / 1024 + ((len % 1024)? 1 : 0);
 
+	/* 2026-05-24 进度上报：write 阶段总块数 = divisor + (remaind ? 1 : 0)。
+	 * 与 vendor 写循环结构对齐，避免 done/total 分母漂移。 */
+	const uint32_t write_total = divisor + ((remaind != 0U) ? 1U : 0U);
+	uint32_t       write_done  = 0U;
+
+	/* erase 开始：done=0, total=1（vendor 一次性擦完所有 sector，无法细分） */
+	if ((s_ops != NULL) && (s_ops->on_progress != NULL)) {
+		s_ops->on_progress(AW_ISP_PROGRESS_PHASE_ERASE, 0U, 1U);
+	}
+
 	//Erases sectors that need to be used
 	if (aw_flash_block_erase_check(addr, block_cnt) != ISP_OK) {
 		return ISP_FLASH_ERROR;
+	}
+
+	/* erase 完成：done=1, total=1 */
+	if ((s_ops != NULL) && (s_ops->on_progress != NULL)) {
+		s_ops->on_progress(AW_ISP_PROGRESS_PHASE_ERASE, 1U, 1U);
 	}
 
 	for (i = 0; i < divisor; i++) {
@@ -505,11 +524,19 @@ ISP_STATUS_E aw_flash_download_check(uint32_t addr, uint8_t *bin_buf, uint32_t l
 		if (aw_flash_block_write_ckeck(addr, i, bin_buf,16) != ISP_OK) {
 			return ISP_FLASH_ERROR;
 		}
+		write_done++;
+		if ((s_ops != NULL) && (s_ops->on_progress != NULL)) {
+			s_ops->on_progress(AW_ISP_PROGRESS_PHASE_WRITE, write_done, write_total);
+		}
 	}
 	if (remaind != 0) {
 		//Data is written to the FLASH sector and checked
 		if (aw_flash_block_write_ckeck(addr, i, bin_buf, remaind) != ISP_OK) {
 			return ISP_FLASH_ERROR;
+		}
+		write_done++;
+		if ((s_ops != NULL) && (s_ops->on_progress != NULL)) {
+			s_ops->on_progress(AW_ISP_PROGRESS_PHASE_WRITE, write_done, write_total);
 		}
 	}
 

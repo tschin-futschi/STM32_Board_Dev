@@ -13,6 +13,11 @@
  *              避免与 STM32 CMSIS stm32f4xx.h 中 AW_FLASH_BASE (0x08000000) 重名冲突
  *  2026-05-21  aw_reset_chip 函数声明加 NOTE 注释，说明实际是 wake-out-of-uboot
  *              （非硬件 reset），沿用 vendor 命名以保持 API 兼容
+ *  2026-05-24  aw_isp_ops_t 新增可选 on_progress 回调字段，用于 EXEC 期间向 BSP
+ *              上报 erase / write 真实进度（协议 0x38 FLASH_EXEC_PROGRESS）。
+ *              字段允许为 NULL，aw_isp_init 不校验，保持 vendor SDK 兼容性。
+ *              对应 .c 实现在 aw_flash_download_check 内 erase 前/后 + write 循环
+ *              每次后调用 s_ops->on_progress（NULL 防御）。
  * ============================================================================
  */
 
@@ -68,14 +73,27 @@ typedef int  (*aw_i2c_write_fn_t)(uint8_t DevId, uint8_t AddrSize, uint8_t *pAdd
 typedef int  (*aw_i2c_read_fn_t) (uint8_t DevId, uint8_t AddrSize, uint8_t *pAddr,
                                    uint8_t RdSize, uint8_t *pRdBuf);
 
+/* 进度上报回调（可选）。在 aw_flash_download_check 内 erase 前/后 + write 块循环
+ * 每次后由 ISP 驱动调用。
+ *  phase: 0 = ERASE, 1 = WRITE （对应协议 0x38 帧 phase 字段）
+ *  done : 当前阶段已完成单元数
+ *  total: 当前阶段总单元数
+ * 字段为 NULL 时整个进度上报机制不触发，vendor SDK 行为不变。 */
+typedef void (*aw_on_progress_fn_t)(uint8_t phase, uint32_t done, uint32_t total);
+
+#define AW_ISP_PROGRESS_PHASE_ERASE  0U
+#define AW_ISP_PROGRESS_PHASE_WRITE  1U
+
 typedef struct {
-    aw_delay_ms_fn_t  delay_ms;
-    aw_i2c_write_fn_t i2c_write;
-    aw_i2c_read_fn_t  i2c_read;
+    aw_delay_ms_fn_t    delay_ms;
+    aw_i2c_write_fn_t   i2c_write;
+    aw_i2c_read_fn_t    i2c_read;
+    aw_on_progress_fn_t on_progress;   /* 可为 NULL */
 } aw_isp_ops_t;
 
 /* 注册 BSP 提供的回调实现。必须在调任何 aw_isp_* / aw_flash_* / aw_boot_control
- * 等 API 之前调用一次；传 NULL 或 ops 中任一成员为 NULL 时返回 ISP_NOT_INITED。 */
+ * 等 API 之前调用一次；传 NULL 或 ops 中 delay_ms/i2c_write/i2c_read 任一为 NULL 时
+ * 返回 ISP_NOT_INITED。on_progress 允许为 NULL，不参与校验。 */
 ISP_STATUS_E aw_isp_init(const aw_isp_ops_t *ops);
 
 #endif

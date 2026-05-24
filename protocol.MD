@@ -477,6 +477,23 @@ PC 端在发 `0x34` 之前必须临时关闭心跳检测或扩大超时窗口。
 | **阻塞时间** | **~50 ms**（wake 序列 + 15 ms 收尾） |
 | **实际行为** | 名义上是 "reset chip"，实际为 wake-out-of-uboot 序列（7 写 + 1 读校验 + 15ms 收尾），**非硬件 reset**。对 AW86008/AW86100 等价于"让芯片从 Flash 运行用户固件"。沿用 vendor 命名以保持 API 兼容。 |
 
+#### `0x38` 烧录 EXEC 进度事件帧（STM32→PC 主动上报）
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | STM32→PC（主动上报，非命令-响应配对） |
+| 触发 | `0x34 EXEC` 期间，STM32 在 `aw_flash_download_check` 内 erase 前/后 + write 块循环每次后主动上报 |
+| 帧 SEQ | 固定 `0xFF`（与 0x06 / 0x0B 主动上报一致） |
+| 帧 CMD | `0x38` |
+| 数据段 | 9 字节：`[phase(1)] [done(4 LE)] [total(4 LE)]` |
+| `phase` 取值 | `0x00 = ERASE`（擦除阶段）/ `0x01 = WRITE`（写入阶段） |
+| `done` / `total` | 当前阶段已完成单元数 / 总单元数（小端）。ERASE：单元 = 一次性擦除调用（始终 `done=0,total=1` → `done=1,total=1`）；WRITE：单元 = 64 字节 block，`total = ceil(totalBytes/64)` |
+| 用途 | PC 端用于驱动 EXEC 阶段进度条真实推进；不上报时 PC 端仍能正常收 0x34 EXEC 响应，向后兼容 |
+| 上报频率 | 32 KB 固件典型 ~514 帧（1 + 512 + 1），每帧 ~14 B @ 460800 baud ≈ 0.3 ms，累计 UART 开销 ~150 ms（占 EXEC ~2-3%） |
+| 节流策略 | **首版固件不节流**，全量上报；如 UART 拥塞实测发现问题再迭代为按 5% 或 16 ms 节流 |
+| 失败语义 | 进度帧仅表示"已成功完成 N 个单元"；任一单元失败时该帧不会发出，最终 0x34 EXEC 响应 `ispStatus != 0` 体现失败 |
+| PC 端处理 | 收到该帧应解码 phase / done / total，结合既有 DATA 阶段字节进度，按阶段权重折算总进度百分比；PC 端可选支持，不识别该帧不影响烧录功能 |
+
 ---
 
 ### 4.4 示波器控制组（0x50~0x7F）
@@ -814,3 +831,4 @@ T_sample ≥ max( T_i2c + T_main,  T_uart,  T_i2c / k )
 | v2.6 | 2026-05-19 | AW86006 / AW86100 烧录方案变更：废弃「PC 端 AW DLL → 0x30/0x31 透传」链路，改为 STM32 本地 ISP 烧录。原因：DLL 透传对 USB 转串口（如 FT232）的 Latency Timer 等通讯设置敏感，导致烧录程序不通用。0x30/0x31 保留为通用 I2C 透传 debug 工具不删除；新增 `0x32` ~ `0x37` 命令号预留给本地 ISP 烧录，字段后续补齐 |
 | v2.7 | 2026-05-19 | AW 本地 ISP 烧录 6 条命令字段定义完成：`0x32` BEGIN（`[addr][totalBytes]`）/ `0x33` DATA（`[pktSeq][chunk]` → `[nextSeq]`）/ `0x34` EXEC（→ `[ispStatus]`，阻塞 5-10s）/ `0x35` STATUS（→ `[state][rxOffset][totalBytes]`）/ `0x36` CANCEL / `0x37` RESET_CHIP。固件 max 64 KB（受 SRAM1 单缓冲限制）；`0x34` 阻塞期间 PC 须临时禁用心跳 |
 | v2.8 | 2026-05-21 | 新增 `0x0B BOOT_STATUS` 启动状态报告帧（STM32→PC 主动发送，SEQ=0xFF，LEN=1）。状态码：`0x00` BOOT_OK（全部模块初始化完成）/ `0x01` INIT_FAIL_I2C1 / `0x02` INIT_FAIL_I2C2 / `0x03` INIT_FAIL_I2C3 / `0x04` INIT_FAIL_PMIC / `0x05` INIT_FAIL_AWISP。用串口诊断替代原 LED 频率码（100/200/400/800/1600ms 区分模块的方案），LED 退化为二元"健康/卡死"指示。PC 上电连接后 ≥2s 未收到任何 0x0B 帧应判定 STM32 异常 |
+| v2.9 | 2026-05-24 | 新增 `0x38 FLASH_EXEC_PROGRESS` 事件帧（STM32→PC 主动上报，SEQ=0xFF，LEN=9）。载荷 `[phase(1)] [done(4 LE)] [total(4 LE)]`；phase `0=ERASE` / `1=WRITE`。STM32 在 `0x34 EXEC` 期间于 `aw_flash_download_check` 内 erase 前/后 + write 块循环每次后主动上报，PC 据此驱动 EXEC 阶段真实进度。PC 端可选支持；不识别不影响烧录功能 |

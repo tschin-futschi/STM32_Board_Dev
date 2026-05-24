@@ -64,6 +64,7 @@ typedef enum
     PROTO_CMD_FLASH_STATUS     = 0x35U, /* PC->STM32, data empty; resp = [state(1)][rxOffset(4)][totalBytes(4)]     */
     PROTO_CMD_FLASH_CANCEL     = 0x36U, /* PC->STM32, data empty; resp empty                                        */
     PROTO_CMD_FLASH_RESET_CHIP = 0x37U, /* PC->STM32, data empty; resp = [ispStatus(1)]                             */
+    PROTO_CMD_FLASH_EXEC_PROGRESS = 0x38U, /* STM32->PC, SEQ=0xFF, data = [phase(1)][done(4 LE)][total(4 LE)]; EXEC 期间 erase/write 阶段真实进度 */
 
     /* Oscilloscope & generator control group (0x50~0x7F) */
     PROTO_CMD_START_SAMPLE     = 0x50U, /* PC->STM32, data empty                            */
@@ -126,5 +127,13 @@ void App_Protocol_SendErrorResp(uint8_t seq, Proto_ErrCode_t err);
 /* Send a 0x0B BOOT_STATUS frame (SEQ=0xFF, LEN=1). May be called BEFORE
  * App_Protocol_Init() — only depends on BSP_UART being initialized. */
 void App_Protocol_SendBootStatus(Proto_BootStatus_t status);
+
+/* Send a 0x38 FLASH_EXEC_PROGRESS frame (SEQ=0xFF, LEN=9, all LE).
+ * Called from AW ISP driver during EXEC erase / write loop via aw_isp_ops_t::on_progress.
+ *   phase: 0 = ERASE, 1 = WRITE
+ *   done : units completed in current phase
+ *   total: total units in current phase
+ * Returns silently (frame-drop tolerated; PC has 0x34 EXEC final response as ground truth). */
+void App_Protocol_SendFlashExecProgress(uint8_t phase, uint32_t done, uint32_t total);
 
 #endif /* __APP_PROTOCOL_H */

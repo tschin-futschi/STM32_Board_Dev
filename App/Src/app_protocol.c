@@ -229,6 +229,28 @@ void App_Protocol_SendBootStatus(Proto_BootStatus_t status)
                     &statusByte, 1U);
 }
 
+/* Send a 0x38 FLASH_EXEC_PROGRESS frame (SEQ=0xFF, LEN=9, all LE).
+ * 9-byte payload: [phase(1)][done(4 LE)][total(4 LE)].
+ * 由 AW ISP 驱动 aw_isp_ops_t::on_progress 回调链触发；EXEC 主循环阻塞期间，
+ * SendFrameWithRetry 内部已自带 BSP_UART_TxWait，调用方无需补等待。
+ * 失败时静默丢帧（PC 端以 0x34 EXEC 最终响应作为真值）。 */
+void App_Protocol_SendFlashExecProgress(uint8_t phase, uint32_t done, uint32_t total)
+{
+    uint8_t payload[9];
+    payload[0] = phase;
+    payload[1] = (uint8_t)(done & 0xFFU);
+    payload[2] = (uint8_t)((done >> 8)  & 0xFFU);
+    payload[3] = (uint8_t)((done >> 16) & 0xFFU);
+    payload[4] = (uint8_t)((done >> 24) & 0xFFU);
+    payload[5] = (uint8_t)(total & 0xFFU);
+    payload[6] = (uint8_t)((total >> 8)  & 0xFFU);
+    payload[7] = (uint8_t)((total >> 16) & 0xFFU);
+    payload[8] = (uint8_t)((total >> 24) & 0xFFU);
+    (void)SendFrameWithRetry(PROTO_CRC_ERR_SEQ,
+                              (uint8_t)PROTO_CMD_FLASH_EXEC_PROGRESS,
+                              payload, 9U);
+}
+
 /*--------------------------------------------------------------------------*/
 /*                   Command handlers & dispatcher                          */
 /*--------------------------------------------------------------------------*/
