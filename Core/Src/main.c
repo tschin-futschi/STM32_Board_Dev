@@ -24,13 +24,13 @@
 #include "test_i2c_scan.h"
 #endif
 
-#define HEARTBEAT_INTERVAL_MS         100U
-#define HALT_BLINK_INTERVAL_MS        100U   /* 启动失败统一快闪频率（与心跳同频，诊断走串口 0x0B 帧） */
+#define HEARTBEAT_INTERVAL_MS         500U
+#define HALT_BLINK_INTERVAL_MS        500U   /* 启动失败统一闪烁频率（与心跳同频，诊断走串口 0x0B 帧） */
 
 /**
   * @brief  启动失败时：先经串口发 0x0B BOOT_STATUS 帧告知 PC 具体模块，
-  *         等 TX DMA 完成，再进入 LED 快闪死循环。
-  *         快闪频率统一（100 ms），LED 仅作"卡死指示"，模块识别走串口。
+  *         等 TX DMA 完成，再进入 LED 闪烁死循环。
+  *         闪烁频率统一（500 ms），LED 仅作"卡死指示"，模块识别走串口。
   */
 static void HaltOnInitFail(Proto_BootStatus_t status)
 {

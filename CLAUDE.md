@@ -116,7 +116,7 @@ Linker/            STM32F429ZGTX_FLASH.ld
 | `App/` 应用层 | 协议解析、命令执行、数据上报调度。可用 `printf`（`#ifdef DEBUG`） |
 | `Core/` 框架层 | 启动、中断向量、时钟、main 循环骨架 |
 
-`main()` 初始化顺序：NVIC 分组 → SysTick → LED → UART → I2C → 采样定时器 → App_Protocol_Init。主循环：`App_Protocol_Poll()` → `App_Sample_Poll()` → LED 心跳（100ms 翻转）。
+`main()` 初始化顺序：NVIC 分组 → SysTick → LED → UART → I2C → 采样定时器 → App_Protocol_Init。主循环：`App_Protocol_Poll()` → `App_Sample_Poll()` → LED 心跳（500ms 翻转）。
 
 `bsp_tick.c` 提供 `BSP_GetTick()` 返回毫秒计数（`volatile uint32_t`），SysTick_Handler 中递增。主循环用时间差控制 LED 翻转间隔。
 
