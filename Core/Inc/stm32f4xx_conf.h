@@ -15,6 +15,7 @@
 #include "stm32f4xx_exti.h"
 #include "stm32f4xx_syscfg.h"
 #include "stm32f4xx_tim.h"
+#include "stm32f4xx_flash.h"
 #include "misc.h"
 
 /* assert_param definition */

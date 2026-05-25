@@ -13,6 +13,7 @@
 #include "bsp_pmic.h"
 #include "app_protocol.h"
 #include "app_sample.h"
+#include "app_flashstore.h"
 
 #include "aw_port_stm32.h"
 
@@ -100,6 +101,10 @@ int main(void)
     /* App */
     App_Protocol_Init();
     App_Sample_Init();
+    /* FLASH file storage: read metadata, init CRC table, clear session state.
+     * Return value (FS_OK / FS_EMPTY / FS_CORRUPT) is informational only —
+     * not a boot-fatal condition. PC discovers state via 0x3C READ_BEGIN. */
+    (void)App_FlashStore_Init();
 
 #if TEST_I2C_SCAN
     /* 等待 USB-UART 桥就绪，避免上电时输出丢失 */

@@ -18,6 +18,7 @@
 #include "bsp_pmic.h"
 #include "app_motor.h"
 #include "app_sample.h"
+#include "app_flashstore.h"
 #include "aw_flash.h"
 #include <stddef.h>
 #include <stdio.h>
@@ -1141,6 +1142,177 @@ static void HandleFlashResetChip(const Proto_Frame_t *pFrame)
     (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_RESET_CHIP, resp, 1U);
 }
 
+/*--------------------------------------------------------------------------*/
+/*           0x39~0x3E — STM32 on-chip FLASH file storage handlers          */
+/*--------------------------------------------------------------------------*/
+
+/* 0x39 FLASH_STORE_WRITE_BEGIN — 整区擦 Sector 5-11 (~3-7s 阻塞), 开新 session.
+ * 入口拒绝：与 AW 烧录 session / sampling / generator / bulk_read 全部互斥
+ *           (擦扇区期间 CPU 卡死,这些实时任务无法并发)。 */
+static void HandleFlashStoreWriteBegin(const Proto_Frame_t *pFrame)
+{
+    uint32_t totalBytes;
+    uint8_t  resp[1];
+
+    if (pFrame->len != 4U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+    if ((s_flashSessionActive != 0U) ||
+        (App_Sample_IsActive() != 0U) ||
+        (App_Generator_IsRunning() != 0U) ||
+        (s_bulkReadActive != 0U))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    totalBytes = ((uint32_t)pFrame->data[0])
+               | ((uint32_t)pFrame->data[1] << 8)
+               | ((uint32_t)pFrame->data[2] << 16)
+               | ((uint32_t)pFrame->data[3] << 24);
+
+    /* 主动告知 PC 即将进入 3-7s 阻塞期 — PC 据此扩大心跳超时窗口 */
+    App_Protocol_SendDebugInfo("FLASH_STORE_BEGIN");
+    BSP_UART_TxWait();
+
+    resp[0] = (uint8_t)App_FlashStore_WriteBegin(totalBytes);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STORE_WRITE_BEGIN, resp, 1U);
+}
+
+/* 0x3A FLASH_STORE_WRITE_DATA — 写一包 (~2ms Flash Program), 返回 nextSeq. */
+static void HandleFlashStoreWriteData(const Proto_Frame_t *pFrame)
+{
+    uint16_t pktSeq;
+    uint16_t chunkLen;
+    uint16_t nextSeq;
+    FsStatus st;
+    uint8_t  resp[2];
+
+    if (pFrame->len < 2U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    pktSeq   = (uint16_t)pFrame->data[0] | ((uint16_t)pFrame->data[1] << 8);
+    chunkLen = (uint16_t)(pFrame->len - 2U);
+
+    st = App_FlashStore_WriteData(pktSeq, &pFrame->data[2], chunkLen, &nextSeq);
+    if (st != FS_OK)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    resp[0] = (uint8_t)(nextSeq & 0xFFU);
+    resp[1] = (uint8_t)((nextSeq >> 8) & 0xFFU);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STORE_WRITE_DATA, resp, 2U);
+}
+
+/* 0x3B FLASH_STORE_WRITE_END — 校验 CRC + 提交元数据. */
+static void HandleFlashStoreWriteEnd(const Proto_Frame_t *pFrame)
+{
+    uint32_t expectedCrc;
+    uint8_t  resp[1];
+
+    if (pFrame->len != 4U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    expectedCrc = ((uint32_t)pFrame->data[0])
+                | ((uint32_t)pFrame->data[1] << 8)
+                | ((uint32_t)pFrame->data[2] << 16)
+                | ((uint32_t)pFrame->data[3] << 24);
+
+    resp[0] = (uint8_t)App_FlashStore_WriteEnd(expectedCrc);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STORE_WRITE_END, resp, 1U);
+}
+
+/* 0x3C FLASH_STORE_READ_BEGIN — 读元数据, 返回 status + size + crc32 (9 bytes). */
+static void HandleFlashStoreReadBegin(const Proto_Frame_t *pFrame)
+{
+    uint32_t size = 0U;
+    uint32_t crc  = 0U;
+    FsStatus st;
+    uint8_t  resp[9];
+
+    if (pFrame->len != 0U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    st = App_FlashStore_ReadBegin(&size, &crc);
+
+    resp[0] = (uint8_t)st;
+    resp[1] = (uint8_t)(size & 0xFFU);
+    resp[2] = (uint8_t)((size >> 8)  & 0xFFU);
+    resp[3] = (uint8_t)((size >> 16) & 0xFFU);
+    resp[4] = (uint8_t)((size >> 24) & 0xFFU);
+    resp[5] = (uint8_t)(crc & 0xFFU);
+    resp[6] = (uint8_t)((crc >> 8)  & 0xFFU);
+    resp[7] = (uint8_t)((crc >> 16) & 0xFFU);
+    resp[8] = (uint8_t)((crc >> 24) & 0xFFU);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STORE_READ_BEGIN, resp, 9U);
+}
+
+/* 0x3D FLASH_STORE_READ_DATA — 按 pktSeq 读一包 (memcpy, 微秒级). */
+static void HandleFlashStoreReadData(const Proto_Frame_t *pFrame)
+{
+    uint16_t pktSeq;
+    uint16_t actualLen = 0U;
+    FsStatus st;
+    /* 252 bytes is the protocol-level chunk max; allocate stack-side to avoid bss growth */
+    uint8_t  buf[252];
+
+    if (pFrame->len != 2U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    pktSeq = (uint16_t)pFrame->data[0] | ((uint16_t)pFrame->data[1] << 8);
+
+    st = App_FlashStore_ReadData(pktSeq, buf, (uint16_t)sizeof(buf), &actualLen);
+    if (st != FS_OK)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STORE_READ_DATA, buf, (uint8_t)actualLen);
+}
+
+/* 0x3E FLASH_STORE_INFO — 返回 totalCapacity + usedSize (8 bytes). */
+static void HandleFlashStoreInfo(const Proto_Frame_t *pFrame)
+{
+    uint32_t total = 0U;
+    uint32_t used  = 0U;
+    uint8_t  resp[8];
+
+    if (pFrame->len != 0U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    App_FlashStore_GetInfo(&total, &used);
+
+    resp[0] = (uint8_t)(total & 0xFFU);
+    resp[1] = (uint8_t)((total >> 8)  & 0xFFU);
+    resp[2] = (uint8_t)((total >> 16) & 0xFFU);
+    resp[3] = (uint8_t)((total >> 24) & 0xFFU);
+    resp[4] = (uint8_t)(used & 0xFFU);
+    resp[5] = (uint8_t)((used >> 8)  & 0xFFU);
+    resp[6] = (uint8_t)((used >> 16) & 0xFFU);
+    resp[7] = (uint8_t)((used >> 24) & 0xFFU);
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STORE_INFO, resp, 8U);
+}
+
 static void DispatchFrame(const Proto_Frame_t *pFrame)
 {
     /* During bulk read, only respond to heartbeat — ignore all other commands */
@@ -1236,6 +1408,24 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
             break;
         case PROTO_CMD_FLASH_RESET_CHIP:
             HandleFlashResetChip(pFrame);
+            break;
+        case PROTO_CMD_FLASH_STORE_WRITE_BEGIN:
+            HandleFlashStoreWriteBegin(pFrame);
+            break;
+        case PROTO_CMD_FLASH_STORE_WRITE_DATA:
+            HandleFlashStoreWriteData(pFrame);
+            break;
+        case PROTO_CMD_FLASH_STORE_WRITE_END:
+            HandleFlashStoreWriteEnd(pFrame);
+            break;
+        case PROTO_CMD_FLASH_STORE_READ_BEGIN:
+            HandleFlashStoreReadBegin(pFrame);
+            break;
+        case PROTO_CMD_FLASH_STORE_READ_DATA:
+            HandleFlashStoreReadData(pFrame);
+            break;
+        case PROTO_CMD_FLASH_STORE_INFO:
+            HandleFlashStoreInfo(pFrame);
             break;
         case PROTO_CMD_START_SAMPLE:
             HandleStartSample(pFrame);

@@ -1,8 +1,19 @@
 /*
  * STM32F429ZGT6 Linker Script
- * Flash: 1MB @ 0x08000000
+ *
+ * Flash: 1MB physical @ 0x08000000, but linker-managed region is only the
+ *        first 128KB. The remaining 896KB is reserved for application use
+ *        (FLASH file storage, see App/Inc/app_flashstore.h).
+ *
+ *   [0x08000000, 0x08020000)  128KB  Sector 0-4    -> firmware (this script)
+ *   [0x08020000, 0x08100000)  896KB  Sector 5-11   -> FLASH file storage
+ *
+ *   LENGTH below is intentionally shrunk to 128K so a growing firmware
+ *   triggers a hard linker error ("region 'FLASH' overflowed") instead of
+ *   silently overlapping the storage region.
+ *
  * SRAM1: 112KB @ 0x20000000 (main RAM, DMA accessible)
- * CCM:   64KB @ 0x10000000 (DMA NOT accessible)
+ * CCM:   64KB  @ 0x10000000 (DMA NOT accessible)
  */
 
 /* Entry point */
@@ -14,7 +25,7 @@ _Min_Heap_Size  = 0x000;  /* 0 - no malloc/free allowed */
 
 MEMORY
 {
-    FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 1024K
+    FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 128K
     SRAM1 (rwx) : ORIGIN = 0x20000000, LENGTH = 112K
     CCM   (rw)  : ORIGIN = 0x10000000, LENGTH = 64K
 }

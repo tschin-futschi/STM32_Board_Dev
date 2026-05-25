@@ -49,11 +49,13 @@ C_SOURCES += BSP/Src/bsp_i2c2.c
 C_SOURCES += BSP/Src/bsp_i2c3.c
 C_SOURCES += BSP/Src/bsp_pmic.c
 C_SOURCES += BSP/Src/bsp_tim.c
+C_SOURCES += BSP/Src/bsp_flash.c
 
 # App sources
 C_SOURCES += App/Src/app_protocol.c
 C_SOURCES += App/Src/app_motor.c
 C_SOURCES += App/Src/app_sample.c
+C_SOURCES += App/Src/app_flashstore.c
 
 # Test sources
 C_SOURCES += Test/Src/test_pmic.c
@@ -74,6 +76,7 @@ C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_i2c.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_exti.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_syscfg.c
 C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_tim.c
+C_SOURCES += $(SPL_DRV_DIR)/src/stm32f4xx_flash.c
 C_SOURCES += $(SPL_DRV_DIR)/src/misc.c
 
 # Startup

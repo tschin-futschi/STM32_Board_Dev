@@ -496,6 +496,118 @@ PC 端在发 `0x34` 之前必须临时关闭心跳检测或扩大超时窗口。
 
 ---
 
+### 4.3.6 STM32 本地 FLASH 文件存储组（0x39~0x3E）
+
+服务于"PC 上传任意文件到 STM32 内置 Flash 暂存，另一台 PC 再下载下来"的场景。
+与 §4.3.5（AW86008/AW86100 IC 烧录）**完全独立**，写入目标是 **STM32 自身 Flash Sector 5-11**（`[0x08020000, 0x08100000)`，共 896 KB），不经过 I2C，不影响 motor IC。
+
+**单插槽覆盖模型**：Flash 文件存储区**只保留 1 个文件**，每次 `0x39 WRITE_BEGIN` 整区擦除（~3-7 s 阻塞）后重新写入。
+**复原语义**：`0x3D READ_DATA` 返回的字节流与原始上传文件**完全一致（1:1 无损）**，PC 端落盘后只需把扩展名改回去（如 `.txt` → `.rar`）即可使用。
+
+**存储布局**（896 KB 区域）：
+```
+0x08020000 ─────────────────────  Sector 5 起始
+            metadata (16 字节)：
+              [magic(4 LE)] [size(4 LE)] [crc32(4 LE)] [reserved(4)=0xFFFFFFFF]
+              magic = 0xA5C3E18F 表示当前 slot 有效，0xFFFFFFFF 表示空，其他表示损坏
+0x08020010 ─────────────────────
+            文件数据（最多 917488 B = 896 KB - 16 B）
+0x08100000 ─────────────────────  Sector 12 起始（不含）
+```
+
+**关键互斥**：`0x39 WRITE_BEGIN` 需擦 7 个扇区（3-7 秒 CPU 阻塞），入口会拒绝以下并发场景，全部返回错误码 `0x03`：
+- AW 烧录 session 进行中（与 §4.3.5 互斥）
+- 采样 / 发生器 / bulk_read 进行中
+
+`0x3A WRITE_DATA` 每包 Flash Program ~2 ms 阻塞，不与采样互斥（采样允许 ms 级 jitter）。
+`0x3B / 0x3C / 0x3D / 0x3E` 均为微秒级，无任何互斥。
+
+**心跳**：`0x39 WRITE_BEGIN` 前 STM32 主动发一帧 `0x06 DEBUG_INFO "FLASH_STORE_BEGIN"` 通知 PC 即将阻塞；PC 端在发 `0x39` 前应停心跳，收到 `0x39` 响应后再恢复。
+
+**状态码 FsStatus**（用于 `0x39 / 0x3B / 0x3C` 响应的 status 字段）：
+
+| 值 | 名称 | 含义 |
+|---|---|---|
+| `0x00` | OK | 成功 |
+| `0x01` | EMPTY | metadata magic = 0xFFFFFFFF（slot 为空，正常状态） |
+| `0x02` | CORRUPT | metadata magic 非法（既非 0xFFFFFFFF 也非 magic 常量），或 size 越界 |
+| `0x03` | WRITE_FAILED | Flash erase / program 硬件失败 |
+| `0x04` | CRC_MISMATCH | `0x3B WRITE_END`：PC 给的 CRC 与 STM32 累计 CRC 不一致 → 元数据未写入，文件作废 |
+| `0x05` | BUSY | 保留（首版不触发） |
+| `0x06` | OUT_OF_RANGE | totalBytes / pktSeq / len 越界 |
+| `0x07` | SEQ_ERROR | pktSeq 不连续 / 重复 / 无 active session / WriteEnd 时 offset != totalBytes |
+
+CRC32 算法：标准 **IEEE 802.3**（多项式 `0xEDB88320`，初值 `0xFFFFFFFF`，结束 XOR `0xFFFFFFFF`），与 MotorDev/src/protocol/firmware_parser.cpp 同款。
+
+#### `0x39` 文件存储 WRITE_BEGIN
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 4 字节：`[totalBytes(4 LE)]`；范围 `[1, 917488]` |
+| 成功响应 | 同 CMD+SEQ，数据段 `[status(1)]`（`0x00 = OK`） |
+| 失败条件 | LEN != 4；并发互斥触发；`totalBytes` 越界；erase 硬件失败 |
+| 失败响应 | 互斥/LEN 错 → 错误响应帧 `0x03`；范围/erase 错 → 正常响应 + `status != 0` |
+| **阻塞时间** | **~3-7 秒**（7 个 128 KB 扇区擦除）。PC 端必须先停心跳 |
+| 副作用 | 整个 Sector 5-11 区域被擦为 0xFF；session 状态重置（offset=0, nextSeq=0, CRC 初值） |
+
+#### `0x3A` 文件存储 WRITE_DATA
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | `[pktSeq(2 LE)] [chunk(N 字节)]`，单帧 LEN ≤ 255 → chunk ≤ 253，本协议建议 N = **252 字节**（与 `0x33` 一致） |
+| 成功响应 | 同 CMD+SEQ，数据段 `[nextExpectedSeq(2 LE)]`（= 本次 pktSeq + 1） |
+| 失败条件 | 无 active session；`pktSeq` ≠ 期望值；`offset + len > totalBytes`；len 越界（0 或 >252）；Flash program 失败 |
+| 失败响应 | 错误响应帧，错误码 `0x03`（session 同时被中止；PC 应重发 `0x39 WRITE_BEGIN` 重来） |
+| 每包阻塞 | ~2 ms（Flash word-program）；采样可正常运行（仅 ms 级 jitter） |
+| 副作用 | 写入 STM32 Flash + 累计运行 CRC + `offset += len` + `nextSeq++` |
+
+#### `0x3B` 文件存储 WRITE_END
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 4 字节：`[expectedCrc32(4 LE)]`，PC 预先对**原始上传文件**算出的 CRC32 |
+| 成功响应 | 同 CMD+SEQ，数据段 `[status(1)]` |
+| status 取值 | `0x00 OK`（元数据写入完成）/ `0x04 CRC_MISMATCH`（文件作废）/ `0x07 SEQ_ERROR`（未到 totalBytes）/ `0x03 WRITE_FAILED`（元数据写入硬件失败） |
+| 副作用 | OK 时写入元数据 16 B；非 OK 时**不写**元数据 → slot 仍为 EMPTY；任意结果 session 都关闭 |
+
+#### `0x3C` 文件存储 READ_BEGIN
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 空（LEN=0） |
+| 成功响应 | 9 字节：`[status(1)] [size(4 LE)] [crc32(4 LE)]` |
+| status 取值 | `0x00 OK`（有有效文件）/ `0x01 EMPTY`（slot 为空）/ `0x02 CORRUPT`（元数据损坏） |
+| 非 OK 时 | `size` / `crc32` 字段填 0，但帧长仍为 9 字节 |
+| 副作用 | 无（纯读元数据） |
+
+#### `0x3D` 文件存储 READ_DATA
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 2 字节：`[pktSeq(2 LE)]`，0-based |
+| 成功响应 | 同 CMD+SEQ，数据段 `[chunk(N 字节)]`，N = min(252, size - pktSeq * 252) |
+| 失败条件 | LEN != 2；slot 为空 / 损坏；pktSeq * 252 ≥ size（越界） |
+| 失败响应 | 错误响应帧，错误码 `0x03` |
+| 备注 | Stateless：无需先调 `0x3C`；每次 READ_DATA 内部都重读 metadata 校验 |
+
+#### `0x3E` 文件存储 INFO
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 空（LEN=0） |
+| 成功响应 | 8 字节：`[totalCapacity(4 LE)] [usedSize(4 LE)]` |
+| totalCapacity | 固定 `917488`（= 896 KB - 16 B 元数据） |
+| usedSize | 当前文件 size（slot 为空/损坏时填 0） |
+| 用途 | 上位机刷新"剩余空间"显示 |
+
+---
+
 ### 4.4 示波器控制组（0x50~0x7F）
 
 #### 采样默认值
@@ -832,3 +944,4 @@ T_sample ≥ max( T_i2c + T_main,  T_uart,  T_i2c / k )
 | v2.7 | 2026-05-19 | AW 本地 ISP 烧录 6 条命令字段定义完成：`0x32` BEGIN（`[addr][totalBytes]`）/ `0x33` DATA（`[pktSeq][chunk]` → `[nextSeq]`）/ `0x34` EXEC（→ `[ispStatus]`，阻塞 5-10s）/ `0x35` STATUS（→ `[state][rxOffset][totalBytes]`）/ `0x36` CANCEL / `0x37` RESET_CHIP。固件 max 64 KB（受 SRAM1 单缓冲限制）；`0x34` 阻塞期间 PC 须临时禁用心跳 |
 | v2.8 | 2026-05-21 | 新增 `0x0B BOOT_STATUS` 启动状态报告帧（STM32→PC 主动发送，SEQ=0xFF，LEN=1）。状态码：`0x00` BOOT_OK（全部模块初始化完成）/ `0x01` INIT_FAIL_I2C1 / `0x02` INIT_FAIL_I2C2 / `0x03` INIT_FAIL_I2C3 / `0x04` INIT_FAIL_PMIC / `0x05` INIT_FAIL_AWISP。用串口诊断替代原 LED 频率码（100/200/400/800/1600ms 区分模块的方案），LED 退化为二元"健康/卡死"指示。PC 上电连接后 ≥2s 未收到任何 0x0B 帧应判定 STM32 异常 |
 | v2.9 | 2026-05-24 | 新增 `0x38 FLASH_EXEC_PROGRESS` 事件帧（STM32→PC 主动上报，SEQ=0xFF，LEN=9）。载荷 `[phase(1)] [done(4 LE)] [total(4 LE)]`；phase `0=ERASE` / `1=WRITE`。STM32 在 `0x34 EXEC` 期间于 `aw_flash_download_check` 内 erase 前/后 + write 块循环每次后主动上报，PC 据此驱动 EXEC 阶段真实进度。PC 端可选支持；不识别不影响烧录功能 |
+| v2.10 | 2026-05-25 | 新增 §4.3.6 STM32 本地 FLASH 文件存储组（`0x39`~`0x3E`）：上位机可将任意文件上传到 STM32 自身 Flash Sector 5-11（896 KB 区域）暂存，另一台电脑可下载下来。单插槽覆盖模型（每次 WRITE_BEGIN 整区擦除 ~3-7s）；下载字节与原文件 1:1 无损（改扩展名即可复原）。命令：`0x39` WRITE_BEGIN（`[totalBytes]` → `[status]`）/ `0x3A` WRITE_DATA（`[pktSeq][chunk]` → `[nextSeq]`）/ `0x3B` WRITE_END（`[crc32]` → `[status]`）/ `0x3C` READ_BEGIN（→ `[status][size][crc32]`）/ `0x3D` READ_DATA（`[pktSeq]` → `[chunk]`）/ `0x3E` INFO（→ `[totalCapacity][usedSize]`）。CRC32 算法 IEEE 802.3。Linker 同步：`Linker/STM32F429ZGTX_FLASH.ld` 中 `FLASH LENGTH = 1024K` 收缩为 `128K`，防止固件膨胀沉默覆盖文件区 |

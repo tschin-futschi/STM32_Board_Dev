@@ -66,6 +66,16 @@ typedef enum
     PROTO_CMD_FLASH_RESET_CHIP = 0x37U, /* PC->STM32, data empty; resp = [ispStatus(1)]                             */
     PROTO_CMD_FLASH_EXEC_PROGRESS = 0x38U, /* STM32->PC, SEQ=0xFF, data = [phase(1)][done(4 LE)][total(4 LE)]; EXEC 期间 erase/write 阶段真实进度 */
 
+    /* On-chip FLASH file storage group (0x39~0x3E) — STM32 自身 Flash 用户文件存储,单插槽覆盖模式
+     * Region: Sector 5-11 ([0x08020000, 0x08100000)), 元数据 16B + 数据 917488B
+     * Status codes: 与 App/Inc/app_flashstore.h 中的 FsStatus 枚举严格对齐 */
+    PROTO_CMD_FLASH_STORE_WRITE_BEGIN = 0x39U, /* PC->STM32, data = [totalBytes(4 LE)]; resp = [status(1)]; 阻塞 ~3-7s 整区擦 */
+    PROTO_CMD_FLASH_STORE_WRITE_DATA  = 0x3AU, /* PC->STM32, data = [pktSeq(2 LE)][chunk(N)]; resp = [nextSeq(2 LE)] / ErrorResp on fail */
+    PROTO_CMD_FLASH_STORE_WRITE_END   = 0x3BU, /* PC->STM32, data = [expectedCrc32(4 LE)]; resp = [status(1)]; 校验通过才写元数据 */
+    PROTO_CMD_FLASH_STORE_READ_BEGIN  = 0x3CU, /* PC->STM32, data empty; resp = [status(1)][size(4 LE)][crc32(4 LE)] (9B) */
+    PROTO_CMD_FLASH_STORE_READ_DATA   = 0x3DU, /* PC->STM32, data = [pktSeq(2 LE)]; resp = [chunk(N <= 252)] / ErrorResp on fail */
+    PROTO_CMD_FLASH_STORE_INFO        = 0x3EU, /* PC->STM32, data empty; resp = [totalCapacity(4 LE)][usedSize(4 LE)] (8B) */
+
     /* Oscilloscope & generator control group (0x50~0x7F) */
     PROTO_CMD_START_SAMPLE     = 0x50U, /* PC->STM32, data empty                            */
     PROTO_CMD_STOP_SAMPLE      = 0x51U, /* PC->STM32, data empty                            */
