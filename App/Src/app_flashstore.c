@@ -225,6 +225,26 @@ FsStatus App_FlashStore_ReadBegin(uint32_t *sizeOut, uint32_t *crc32Out)
 
 /*--------------------------------------------------------------------------*/
 
+FsStatus App_FlashStore_Wipe(void)
+{
+    /* Same erase as WriteBegin, but caller does not follow up with WRITE_DATA.
+     * Sequence matters: erase first (may fail), then clear session state only
+     * on success, so a failed wipe leaves the in-RAM session untouched. */
+    BSP_Flash_Status est = BSP_Flash_EraseSectors(FS_SECTOR_FIRST, FS_SECTOR_LAST);
+    if (est != BSP_FLASH_OK) {
+        return FS_WRITE_FAILED;
+    }
+
+    s_writeActive   = 0U;
+    s_expectedTotal = 0U;
+    s_writeOffset   = 0U;
+    s_nextPktSeq    = 0U;
+    s_writeCrcAccum = 0U;
+    return FS_OK;
+}
+
+/*--------------------------------------------------------------------------*/
+
 FsStatus App_FlashStore_ReadData(uint16_t pktSeq,
                                  uint8_t *out,
                                  uint16_t maxLen,

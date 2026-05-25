@@ -75,6 +75,7 @@ typedef enum
     PROTO_CMD_FLASH_STORE_READ_BEGIN  = 0x3CU, /* PC->STM32, data empty; resp = [status(1)][size(4 LE)][crc32(4 LE)] (9B) */
     PROTO_CMD_FLASH_STORE_READ_DATA   = 0x3DU, /* PC->STM32, data = [pktSeq(2 LE)]; resp = [chunk(N <= 252)] / ErrorResp on fail */
     PROTO_CMD_FLASH_STORE_INFO        = 0x3EU, /* PC->STM32, data empty; resp = [totalCapacity(4 LE)][usedSize(4 LE)] (8B) */
+    PROTO_CMD_FLASH_STORE_WIPE        = 0x3FU, /* PC->STM32, data empty; resp = [status(1)]; 阻塞 ~3-7s 整区擦 */
 
     /* Oscilloscope & generator control group (0x50~0x7F) */
     PROTO_CMD_START_SAMPLE     = 0x50U, /* PC->STM32, data empty                            */

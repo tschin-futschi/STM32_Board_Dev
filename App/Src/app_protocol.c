@@ -1287,6 +1287,35 @@ static void HandleFlashStoreReadData(const Proto_Frame_t *pFrame)
     (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STORE_READ_DATA, buf, (uint8_t)actualLen);
 }
 
+/* 0x3F FLASH_STORE_WIPE — 整区擦 Sector 5-11 (~3-7s 阻塞), 不开 session.
+ * 入口拒绝：与 0x39 WRITE_BEGIN 一致(AW 烧录 / sampling / generator / bulk_read 互斥)。
+ * 用途：用户主动清空 Flash 文件存储区,消除存储痕迹(全部回到 0xFF)。 */
+static void HandleFlashStoreWipe(const Proto_Frame_t *pFrame)
+{
+    uint8_t resp[1];
+
+    if (pFrame->len != 0U)
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+    if ((s_flashSessionActive != 0U) ||
+        (App_Sample_IsActive() != 0U) ||
+        (App_Generator_IsRunning() != 0U) ||
+        (s_bulkReadActive != 0U))
+    {
+        SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
+        return;
+    }
+
+    /* 主动告知 PC 即将进入 3-7s 阻塞期 — PC 据此扩大心跳超时窗口 */
+    App_Protocol_SendDebugInfo("FLASH_STORE_WIPE");
+    BSP_UART_TxWait();
+
+    resp[0] = (uint8_t)App_FlashStore_Wipe();
+    (void)SendFrameWithRetry(pFrame->seq, (uint8_t)PROTO_CMD_FLASH_STORE_WIPE, resp, 1U);
+}
+
 /* 0x3E FLASH_STORE_INFO — 返回 totalCapacity + usedSize (8 bytes). */
 static void HandleFlashStoreInfo(const Proto_Frame_t *pFrame)
 {
@@ -1426,6 +1455,9 @@ static void DispatchFrame(const Proto_Frame_t *pFrame)
             break;
         case PROTO_CMD_FLASH_STORE_INFO:
             HandleFlashStoreInfo(pFrame);
+            break;
+        case PROTO_CMD_FLASH_STORE_WIPE:
+            HandleFlashStoreWipe(pFrame);
             break;
         case PROTO_CMD_START_SAMPLE:
             HandleStartSample(pFrame);

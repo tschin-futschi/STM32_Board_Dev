@@ -606,6 +606,21 @@ CRC32 算法：标准 **IEEE 802.3**（多项式 `0xEDB88320`，初值 `0xFFFFFF
 | usedSize | 当前文件 size（slot 为空/损坏时填 0） |
 | 用途 | 上位机刷新"剩余空间"显示 |
 
+#### `0x3F` 文件存储 WIPE
+
+| 项目 | 内容 |
+|------|------|
+| 方向 | PC→STM32 |
+| 数据段 | 空（LEN=0） |
+| 成功响应 | 同 CMD+SEQ，数据段 `[status(1)]` |
+| status 取值 | `0x00 OK`（擦除完成）/ `0x03 WRITE_FAILED`（BSP 擦除硬件失败） |
+| 失败条件 | LEN != 0；并发互斥触发（AW 烧录 / 采样 / 发生器 / bulk_read 进行中）；BSP 擦除硬件失败 |
+| 失败响应 | LEN/互斥错 → 错误响应帧 `0x03`；硬件擦除错 → 正常响应 + `status = 0x03 WRITE_FAILED` |
+| **阻塞时间** | **~3-7 秒**（与 `0x39 WRITE_BEGIN` 一致，擦 7 个 128 KB 扇区）。PC 端必须先停心跳；STM32 端会先发 `0x06 DEBUG_INFO "FLASH_STORE_WIPE"` 通知 |
+| 用途 | 主动清空 Flash 文件存储区,消除存储痕迹(数据 + 元数据全部回到 0xFF) |
+| 副作用 | Sector 5-11 全部被擦为 0xFF（含元数据 16 B）；任何未提交的 write session 状态被清零；后续 `0x3C READ_BEGIN` 返回 `EMPTY`，`0x3E INFO` 返回 `usedSize=0` |
+| 不可取消 | 擦扇区期间 ~3-7s STM32 CPU 阻塞，不响应任何帧；PC 端 UI 上的"取消"按钮在 WIPE 阶段无效。这是 NOR Flash 物理特性 |
+
 ---
 
 ### 4.4 示波器控制组（0x50~0x7F）
@@ -945,3 +960,4 @@ T_sample ≥ max( T_i2c + T_main,  T_uart,  T_i2c / k )
 | v2.8 | 2026-05-21 | 新增 `0x0B BOOT_STATUS` 启动状态报告帧（STM32→PC 主动发送，SEQ=0xFF，LEN=1）。状态码：`0x00` BOOT_OK（全部模块初始化完成）/ `0x01` INIT_FAIL_I2C1 / `0x02` INIT_FAIL_I2C2 / `0x03` INIT_FAIL_I2C3 / `0x04` INIT_FAIL_PMIC / `0x05` INIT_FAIL_AWISP。用串口诊断替代原 LED 频率码（100/200/400/800/1600ms 区分模块的方案），LED 退化为二元"健康/卡死"指示。PC 上电连接后 ≥2s 未收到任何 0x0B 帧应判定 STM32 异常 |
 | v2.9 | 2026-05-24 | 新增 `0x38 FLASH_EXEC_PROGRESS` 事件帧（STM32→PC 主动上报，SEQ=0xFF，LEN=9）。载荷 `[phase(1)] [done(4 LE)] [total(4 LE)]`；phase `0=ERASE` / `1=WRITE`。STM32 在 `0x34 EXEC` 期间于 `aw_flash_download_check` 内 erase 前/后 + write 块循环每次后主动上报，PC 据此驱动 EXEC 阶段真实进度。PC 端可选支持；不识别不影响烧录功能 |
 | v2.10 | 2026-05-25 | 新增 §4.3.6 STM32 本地 FLASH 文件存储组（`0x39`~`0x3E`）：上位机可将任意文件上传到 STM32 自身 Flash Sector 5-11（896 KB 区域）暂存，另一台电脑可下载下来。单插槽覆盖模型（每次 WRITE_BEGIN 整区擦除 ~3-7s）；下载字节与原文件 1:1 无损（改扩展名即可复原）。命令：`0x39` WRITE_BEGIN（`[totalBytes]` → `[status]`）/ `0x3A` WRITE_DATA（`[pktSeq][chunk]` → `[nextSeq]`）/ `0x3B` WRITE_END（`[crc32]` → `[status]`）/ `0x3C` READ_BEGIN（→ `[status][size][crc32]`）/ `0x3D` READ_DATA（`[pktSeq]` → `[chunk]`）/ `0x3E` INFO（→ `[totalCapacity][usedSize]`）。CRC32 算法 IEEE 802.3。Linker 同步：`Linker/STM32F429ZGTX_FLASH.ld` 中 `FLASH LENGTH = 1024K` 收缩为 `128K`，防止固件膨胀沉默覆盖文件区 |
+| v2.11 | 2026-05-25 | §4.3.6 新增 `0x3F FLASH_STORE_WIPE`：主动清空 STM32 Flash 文件存储区(Sector 5-11 全部擦回 0xFF,含元数据 16B),消除存储痕迹。空载荷,响应 `[status(1)]`；阻塞 ~3-7s 与 0x39 WRITE_BEGIN 同款；入口互斥/心跳处理/超时窗口与 0x39 完全一致；status 仅 `OK / WRITE_FAILED` 两种。复用既有 BSP_Flash_EraseSectors，0 新建底层。上位机端 UI 加"清空 FLASH"按钮（带 QMessageBox 二次确认弹窗,默认按钮 No 防误触发） |

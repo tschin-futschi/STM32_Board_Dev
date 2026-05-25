@@ -168,6 +168,21 @@ FsStatus App_FlashStore_ReadData(uint16_t pktSeq,
                                  uint16_t *actualLenOut);
 
 /**
+  * @brief  Wipe the entire region back to erased state (all 0xFF).
+  * @retval FS_OK            Erase succeeded; metadata + data both cleared
+  * @retval FS_WRITE_FAILED  BSP_Flash_EraseSectors hardware error
+  *
+  * Physically erases Sector 5-11 (same as WriteBegin) and clears any active
+  * write session state. After this call: metadata magic = 0xFFFFFFFF (Empty),
+  * data region all 0xFF. Subsequent ReadBegin returns FS_EMPTY, GetInfo
+  * returns usedSize = 0.
+  *
+  * Blocks ~3-7 seconds like WriteBegin. Heartbeat must be paused by caller
+  * before invoking via 0x3F protocol command.
+  */
+FsStatus App_FlashStore_Wipe(void);
+
+/**
   * @brief  Report region capacity and current usage.
   * @param  totalCapacity  [out] FS_MAX_FILE_BYTES (constant 917488)
   * @param  usedSize       [out] Current file size in bytes, or 0 if slot empty/corrupt
