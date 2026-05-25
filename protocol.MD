@@ -524,7 +524,7 @@ PC 端在发 `0x34` 之前必须临时关闭心跳检测或扩大超时窗口。
 
 **心跳**：`0x39 WRITE_BEGIN` 前 STM32 主动发一帧 `0x06 DEBUG_INFO "FLASH_STORE_BEGIN"` 通知 PC 即将阻塞；PC 端在发 `0x39` 前应停心跳，收到 `0x39` 响应后再恢复。
 
-**状态码 FsStatus**（用于 `0x39 / 0x3B / 0x3C` 响应的 status 字段）：
+**状态码 FsStatus / FlashStoreStatus**（用于 `0x39 / 0x3B / 0x3C` 响应的 status 字段）：
 
 | 值 | 名称 | 含义 |
 |---|---|---|
