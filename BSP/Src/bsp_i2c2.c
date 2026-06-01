@@ -28,6 +28,13 @@ uint8_t g_i2c2InitDiag = 0U;
 
 static uint8_t s_busRecovered = 0U;
 
+/* Set by any bit-level primitive whose WaitSclHigh() timed out (slave stuck /
+ * gone). Cleared at the start of each public transaction; checked before a
+ * SUCCESS return so a stretched-out read can no longer report stale bus bits
+ * as real data. Not volatile: written and read within the same call chain on
+ * one context (a transaction never spans the ISR/main boundary). */
+static uint8_t s_busTimeout = 0U;
+
 /*--------------------------------------------------------------------------*/
 /*                       DWT cycle counter helpers                          */
 /*--------------------------------------------------------------------------*/
@@ -102,7 +109,7 @@ static __inline void SendBit(uint8_t bit)
     /* SCL high phase */
     SCL_HIGH();
     t = DWT->CYCCNT;
-    (void)WaitSclHigh();
+    if (!WaitSclHigh()) { s_busTimeout = 1U; }
     DELAY_HALF_FROM(t);
 
     SCL_LOW();
@@ -121,7 +128,11 @@ static __inline uint8_t RecvBit(void)
     /* SCL high phase: sample SDA */
     SCL_HIGH();
     t = DWT->CYCCNT;
-    if (!WaitSclHigh()) { return 1U; }  /* timeout → NACK */
+    if (!WaitSclHigh()) {        /* slave stretched past timeout */
+        s_busTimeout = 1U;
+        SCL_LOW();              /* restore line low, do not leave SCL high */
+        return 1U;             /* recessive bit; caller aborts via s_busTimeout */
+    }
     bit = SDA_READ() ? 1U : 0U;
     DELAY_HALF_FROM(t);
 
@@ -169,7 +180,7 @@ static void I2C_Start(void)
     SDA_HIGH();
     SCL_HIGH();
     DELAY_HALF();
-    (void)WaitSclHigh();
+    if (!WaitSclHigh()) { s_busTimeout = 1U; }
     SDA_LOW();          /* SDA falls while SCL high = START */
     DELAY_HALF();
     SCL_LOW();
@@ -185,7 +196,7 @@ static void I2C_Stop(void)
 
     SCL_HIGH();
     t = DWT->CYCCNT;
-    (void)WaitSclHigh();
+    if (!WaitSclHigh()) { s_busTimeout = 1U; }
     DELAY_HALF_FROM(t);
 
     SDA_HIGH();         /* SDA rises while SCL high = STOP */
@@ -198,7 +209,7 @@ static void I2C_RepeatedStart(void)
     DELAY_HALF();
     SCL_HIGH();
     DELAY_HALF();
-    (void)WaitSclHigh();
+    if (!WaitSclHigh()) { s_busTimeout = 1U; }
     SDA_LOW();          /* SDA falls while SCL high = repeated START */
     DELAY_HALF();
     SCL_LOW();
@@ -262,6 +273,7 @@ ErrorStatus BSP_I2C2_WriteReg(uint8_t devAddr, uint16_t reg,
 {
     uint16_t i;
 
+    s_busTimeout = 0U;
     I2C_Start();
 
     /* Address + W */
@@ -277,6 +289,7 @@ ErrorStatus BSP_I2C2_WriteReg(uint8_t devAddr, uint16_t reg,
         if (!SendByte(pData[i]))                     { goto error; }
     }
 
+    if (s_busTimeout) { goto error; }   /* clock stretched past timeout */
     I2C_Stop();
     return SUCCESS;
 
@@ -295,6 +308,8 @@ ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint16_t reg,
 
     if (len == 0U) { return SUCCESS; }
 
+    s_busTimeout = 0U;
+
     /* Write phase: START + addr+W + 16-bit reg addr */
     I2C_Start();
     if (!SendByte((uint8_t)(devAddr << 1U)))         { goto error; }
@@ -311,6 +326,8 @@ ErrorStatus BSP_I2C2_ReadReg(uint8_t devAddr, uint16_t reg,
         pData[i] = RecvByte((i < (len - 1U)) ? 1U : 0U);
     }
 
+    /* A stretch timeout during the read makes the sampled bits invalid. */
+    if (s_busTimeout) { goto error; }
     I2C_Stop();
     return SUCCESS;
 
@@ -336,6 +353,7 @@ ErrorStatus BSP_I2C2_TransparentWrite(uint8_t devAddr,
 {
     uint16_t i;
 
+    s_busTimeout = 0U;
     I2C_Start();
     if (!SendByte((uint8_t)(devAddr << 1U)))             { goto error; }
 
@@ -349,6 +367,7 @@ ErrorStatus BSP_I2C2_TransparentWrite(uint8_t devAddr,
         if (!SendByte(pData[i]))                          { goto error; }
     }
 
+    if (s_busTimeout) { goto error; }   /* clock stretched past timeout */
     I2C_Stop();
     return SUCCESS;
 
@@ -367,6 +386,8 @@ ErrorStatus BSP_I2C2_TransparentRead(uint8_t devAddr,
     uint16_t i;
 
     if (dataLen == 0U) { return SUCCESS; }
+
+    s_busTimeout = 0U;
 
     if (addrSize > 0U)
     {
@@ -391,6 +412,8 @@ ErrorStatus BSP_I2C2_TransparentRead(uint8_t devAddr,
         pData[i] = RecvByte((i < (dataLen - 1U)) ? 1U : 0U);
     }
 
+    /* A stretch timeout during the read makes the sampled bits invalid. */
+    if (s_busTimeout) { goto error; }
     I2C_Stop();
     return SUCCESS;
 

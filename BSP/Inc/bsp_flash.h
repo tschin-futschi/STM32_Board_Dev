@@ -31,6 +31,18 @@ typedef enum {
 } BSP_Flash_Status;
 
 /*--------------------------------------------------------------------------*/
+/*                       Writable region bounds                            */
+/*--------------------------------------------------------------------------*/
+
+/* Only the data region (Sector 5-11) may be erased/programmed. Sectors 0-4
+ * hold the running firmware + vector table; writing/erasing them would brick
+ * the board, so the API rejects any target below SECTOR_MIN / START_ADDR. */
+#define BSP_FLASH_DATA_START_ADDR   0x08020000U   /* Sector 5 start            */
+#define BSP_FLASH_DATA_END_ADDR     0x08100000U   /* Sector 12 start (exclusive) */
+#define BSP_FLASH_SECTOR_MIN        5U            /* Lowest erasable sector    */
+#define BSP_FLASH_SECTOR_MAX        11U           /* Highest sector on F429ZG  */
+
+/*--------------------------------------------------------------------------*/
 /*                                  API                                     */
 /*--------------------------------------------------------------------------*/
 

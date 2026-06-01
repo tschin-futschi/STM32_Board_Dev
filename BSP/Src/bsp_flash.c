@@ -28,7 +28,9 @@ static const uint16_t s_sectorMap[12] = {
 
 BSP_Flash_Status BSP_Flash_EraseSectors(uint8_t startSector, uint8_t endSector)
 {
-    if ((startSector > endSector) || (endSector > 11U)) {
+    if ((startSector < BSP_FLASH_SECTOR_MIN) ||
+        (startSector > endSector) ||
+        (endSector > BSP_FLASH_SECTOR_MAX)) {
         return BSP_FLASH_ERR_RANGE;
     }
 
@@ -52,6 +54,13 @@ BSP_Flash_Status BSP_Flash_EraseSectors(uint8_t startSector, uint8_t endSector)
 BSP_Flash_Status BSP_Flash_ProgramBytes(uint32_t addr, const uint8_t *data, uint32_t len)
 {
     if ((data == NULL) || (len == 0U)) {
+        return BSP_FLASH_ERR_RANGE;
+    }
+    /* Reject any target outside the data region (protect firmware sectors).
+     * Use subtraction (len > END - addr) so addr+len cannot overflow. */
+    if ((addr < BSP_FLASH_DATA_START_ADDR) ||
+        (addr >= BSP_FLASH_DATA_END_ADDR)  ||
+        (len  > (BSP_FLASH_DATA_END_ADDR - addr))) {
         return BSP_FLASH_ERR_RANGE;
     }
     if ((addr & 0x3U) != 0U) {
