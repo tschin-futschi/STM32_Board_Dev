@@ -555,8 +555,10 @@ static void HandleBulkRead(const Proto_Frame_t *pFrame)
     /* Calculate total packets (ceiling division) */
     totalPkts = (uint8_t)((totalRegs + BULK_REGS_PER_PKT - 1U) / BULK_REGS_PER_PKT);
 
-    /* Reject bulk read while sampling is active */
-    if (App_Sample_IsActive() != 0U)
+    /* Reject bulk read while sampling OR generator is active: both drive
+     * I2C2 from the TIM6 ISR. This is a long multi-packet transaction, so
+     * rejecting at entry is preferred over masking the ISR for ms (H-d). */
+    if ((App_Sample_IsActive() != 0U) || (App_Generator_IsRunning() != 0U))
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
@@ -642,7 +644,13 @@ static void HandleI2cPassWrite(const Proto_Frame_t *pFrame)
     pAddr = (addrSize > 0U) ? &pFrame->data[2]                     : NULL;
     pData = (dataLen  > 0U) ? &pFrame->data[3U + addrSize]          : NULL;
 
-    if (BSP_I2C2_TransparentWrite(devAddr, pAddr, addrSize, pData, dataLen) != SUCCESS)
+    /* Bus lock: prevent TIM6 ISR (sampling/generator) from preempting
+     * mid-transaction and corrupting the SW bit-bang timing (H-d). */
+    App_Sample_AcquireBus();
+    ErrorStatus s = BSP_I2C2_TransparentWrite(devAddr, pAddr, addrSize, pData, dataLen);
+    App_Sample_ReleaseBus();
+
+    if (s != SUCCESS)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;
@@ -693,7 +701,15 @@ static void HandleI2cPassRead(const Proto_Frame_t *pFrame)
 
     pAddr = (addrSize > 0U) ? &pFrame->data[2] : NULL;
 
-    if (BSP_I2C2_TransparentRead(devAddr, pAddr, addrSize, s_passReadBuf, readLen) != SUCCESS)
+    /* Bus lock: prevent TIM6 ISR (sampling/generator) from preempting
+     * mid-transaction and corrupting the SW bit-bang timing (H-d).
+     * readLen <= 255 → masks the ISR up to ~2.3ms; AW passthrough runs in
+     * the flashing flow where sampling is not active, so the stall is moot. */
+    App_Sample_AcquireBus();
+    ErrorStatus s = BSP_I2C2_TransparentRead(devAddr, pAddr, addrSize, s_passReadBuf, readLen);
+    App_Sample_ReleaseBus();
+
+    if (s != SUCCESS)
     {
         SendErrorResp(pFrame->seq, PROTO_ERR_EXEC_FAIL);
         return;

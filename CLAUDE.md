@@ -304,13 +304,13 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 | H-a | AW ISP I2C 返回值全 `(void)` 丢弃 | 5 个子步骤改为检查返回值快速失败，跳过无谓长延时；成功路径不变 |
 | H-b | `aw_flash_pack_read` `r_buff[69]` 栈越界 | → `r_buff[78]`，仅 `0x33` 回读/upload 路径触发 |
 | H-c | `main.c` `BSP_UART_Init()` 返回值丢弃 | 新增 `HaltNoUart()`，UART 自身故障用 100ms 快闪（区别 500ms）指示 |
+| H-d（≡旧 H1） | 采样/发生器运行时 I2C2 并发保护补全 | `0x30`/`0x31` 透传加 `AcquireBus/ReleaseBus` 锁；`0x22` bulk read 入口补 `App_Generator_IsRunning()` 拒绝。5 个 I2C2 IO handler 现全有保护 |
 | ~~S2~~ | ~~TIM6 ISR 内做 I2C 采样~~ | **撤销**：有意设计（采样时序精度），非缺陷。见 memory `project_isr_sampling_intentional` |
 
 **剩余待修**：
 
 | 优先级 | 编号 | 项目 |
 |--------|------|------|
-| 高 | H-d（≡旧 H1） | 并发总线锁：`0x20`/`0x21` 已包 `AcquireBus`，**`0x30`/`0x31` 透传 + bulk read 仍未包**；详见下方 H1 |
 | 中 | H-e | `app_sample` 双缓冲组帧：`mask`/`totalCount` 快照与数据 buffer 可能不同源（极端时序下通道错位） |
 | 中 | — | `bsp_i2c2` `RecoverBus` 无法恢复 SCL 被从机钳死 / `Scan` `pAddrList` 无上界 |
 | 低 | — | `SetChannelMask` 清失败计数+临界区 / `StartCosine` 入口边界 / `bsp_pmic` `SetEnable` 读改写 / MemManage·BusFault·UsageFault 静默 `while(1)` / `s_bulkReadActive` 缺 `volatile` |
@@ -320,7 +320,7 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 
 | 优先级 | 项目 | 说明 |
 |--------|------|------|
-| 高 | **H1（≡本次 H-d）：采样运行中 I2C 总线并发保护** | TIM6 ISR (采样读/发生器写) 与主循环寄存器 IO 共用 I2C2 无锁。**进度**：`0x20`/`0x21`（ReadReg/WriteReg）已用 `AcquireBus/ReleaseBus` 包装（`app_protocol.c:471`/`:504`）；`0x30`/`0x31` 透传与 bulk read 仍未包，待补。计划：`AcquireBus/ReleaseBus` 内 NVIC mask `TIM6_DAC_IRQ`；详见 `TRACKING/0513_code_review.md` |
+| ~~高~~ **已修** | **H1（≡本次 H-d）：采样运行中 I2C 总线并发保护** | 2026-06-01 完成：`0x20`/`0x21`/`0x30`/`0x31` 单次事务均用 `AcquireBus/ReleaseBus`（NVIC mask `TIM6_DAC_IRQ`）包装；`0x22` bulk read 为长事务，改在入口拒绝采样+发生器运行（避免 mask ISR 数 ms）。5 个 I2C2 IO handler 全部有并发保护。详见 `TRACKING/0513_code_review.md` |
 | 中 | 其它 review (H2 / H4 / M2~M8 / L1~L5) | 完整清单见 `TRACKING/0513_code_review.md`。**H3**（totalCount=0 误触发 auto-stop）**已修**（`app_sample.c:342` 加 `totalCount>0` 守卫）；**M1**（LED 心跳频率）已消除；H2 (`app_sample.h` 默认 idx 注释错)、H4 (TIM6 ISR clock-stretch 阻塞，注：S3 已让超时可返错) 待处理 |
 
 ---
