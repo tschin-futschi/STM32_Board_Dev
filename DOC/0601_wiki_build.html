@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>构建 / 测试 · STM32 固件 WIKI</title>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --bd:#2a3340;
+  --fg:#d7dde6; --mut:#8b97a7; --acc:#4ea1ff; --acc2:#7ee0c0;
+  --code:#0b0e13; --kw:#ff9d6b; --hi:#ffd479;
+  --hi-bg:#3a2f12;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.7}
+.layout{display:flex;min-height:100vh}
+nav.side{width:248px;flex:0 0 248px;background:var(--panel);border-right:1px solid var(--bd);
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 0}
+nav.side .brand{padding:0 20px 14px;border-bottom:1px solid var(--bd);margin-bottom:10px}
+nav.side .brand b{display:block;color:var(--acc);font-size:16px;letter-spacing:.3px}
+nav.side .brand span{color:var(--mut);font-size:12px}
+nav.side a{display:block;padding:9px 20px;color:var(--fg);text-decoration:none;font-size:14px;border-left:3px solid transparent}
+nav.side a:hover{background:var(--panel2);border-left-color:var(--acc)}
+nav.side a.active{background:var(--panel2);border-left-color:var(--acc);color:var(--acc);font-weight:600}
+nav.side .grp{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:14px 20px 4px}
+main{flex:1;min-width:0;padding:34px 46px 80px;max-width:1100px}
+h1{font-size:28px;margin:.2em 0 .1em;color:#fff;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:21px;margin:1.8em 0 .5em;color:var(--acc2);border-bottom:1px solid var(--bd);padding-bottom:6px}
+h3{font-size:17px;margin:1.4em 0 .4em;color:var(--hi)}
+p{margin:.5em 0}
+.lead{color:var(--mut);font-size:15px;margin:.4em 0 1.4em}
+code{background:var(--code);color:var(--kw);padding:1px 6px;border-radius:4px;font-family:"Cascadia Code","Consolas",monospace;font-size:.88em}
+pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;line-height:1.55}
+pre code{background:none;color:var(--fg);padding:0}
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:13.5px}
+th,td{border:1px solid var(--bd);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--acc2);font-weight:600}
+tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+td code{white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:18px 22px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:14px 0}
+.tile{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;text-decoration:none;color:var(--fg);transition:.15s}
+.tile:hover{border-color:var(--acc);transform:translateY(-2px)}
+.tile b{color:var(--acc);font-size:15px}
+.tile p{color:var(--mut);font-size:13px;margin:.4em 0 0}
+.badge{display:inline-block;padding:1px 9px;border-radius:11px;font-size:11px;font-weight:700;vertical-align:middle}
+.sev-high{background:#5b1418;color:#ff8a8a;border:1px solid #8a2228}
+.sev-med{background:#5a3a10;color:#ffc46b;border:1px solid #8a6018}
+.sev-low{background:#143a4a;color:#7ed0ff;border:1px solid #1f5e78}
+.sev-style{background:#2a313c;color:#a9b6c6;border:1px solid #3a4554}
+.callout{border-left:4px solid var(--acc);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+.callout.warn{border-left-color:#ffc46b}
+.callout.danger{border-left-color:#ff8a8a}
+.callout .t{font-weight:700;color:var(--acc);margin-bottom:4px}
+.callout.warn .t{color:#ffc46b}
+.callout.danger .t{color:#ff8a8a}
+.kv{color:var(--mut);font-size:12px}
+.finding{background:var(--panel);border:1px solid var(--bd);border-left-width:4px;border-radius:0 8px 8px 0;padding:14px 18px;margin:14px 0}
+.finding.sv-high{border-left-color:#ff8a8a}
+.finding.sv-medium{border-left-color:#ffc46b}
+.finding.sv-low{border-left-color:#7ed0ff}
+.finding.sv-style{border-left-color:#6b7686}
+.finding .ttl{font-weight:700;font-size:15px;color:#fff}
+.finding .meta{font-size:12px;color:var(--mut);margin:4px 0 8px}
+.finding .row{margin:6px 0}
+.finding .lbl{color:var(--acc2);font-weight:600;font-size:13px}
+.flow{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:16px;margin:14px 0;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;white-space:pre;overflow-x:auto;color:var(--acc2)}
+footer{color:var(--mut);font-size:12px;margin-top:50px;padding-top:18px;border-top:1px solid var(--bd)}
+a{color:var(--acc)}
+.toc{columns:2;gap:30px;margin:10px 0}
+.toc a{display:block;padding:3px 0;font-size:13.5px}
+@media(max-width:860px){.layout{flex-direction:column}nav.side{width:100%;height:auto;position:static}main{padding:24px}}
+</style></head>
+<body><div class="layout"><nav class="side"><div class="brand"><b>STM32F429ZG 电机调试板</b><span>固件代码 WIKI · 2026-06-01</span></div><div class="grp">导航</div><a href="0601_wiki_index.html">首页 / 总览</a><a href="0601_wiki_architecture.html">系统架构 (Core)</a><a href="0601_wiki_bsp.html">BSP 驱动层</a><a href="0601_wiki_protocol.html">通信协议 (App)</a><a href="0601_wiki_sample.html">采样 / 波形发生</a><a href="0601_wiki_flash.html">Flash 烧录 / 存储</a><a href="0601_wiki_build.html" class="active">构建 / 测试</a><a href="0601_wiki_review.html">代码审查报告</a><div class="grp">补充资料 (DOC/)</div><a href="0328_protocol_v1.4.html">协议 v1.4 专题</a><a href="0327_pmic_code_explain.html">PMIC 初始化</a><a href="0429_sw_i2c_explain.html">软件 I2C2 详解</a><a href="0519_aw_isp_walkthrough.html">AW ISP 走读</a><a href="0522_flash_burn_flow.html">Flash 烧录流程</a></nav>
+<main><h1>构建系统 / 测试框架</h1>
+<p class="lead">Windows MSYS2/MinGW 环境，<code>arm-none-eabi-gcc</code> + SPL V1.9.0 + OpenOCD/ST-Link。</p>
+<pre><code>make              # Release (-O2)
+make DEBUG=1      # Debug (-Og -g3 -DDEBUG)
+make flash        # 编译并烧录
+make clean</code></pre>
+<div class="callout"><div class="t">关键编译标志</div>
+<code>-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb</code><br>
+<code>-ffunction-sections -fdata-sections -fno-common</code> · <code>-Wall -Wextra -Wshadow</code><br>
+<code>-Wl,--gc-sections -specs=nano.specs</code>（死代码裁剪，测试宏=0 时自动剔除测试代码）</div>
+<div class="callout"><div class="t">测试框架 (Test/)</div><code>test_config.h</code> 每个测试项一个使能宏，默认 0；测试代码只调 BSP/App 公开 API，不改业务文件。PC 端测试脚本在 <code>PcTest/</code>，仅依赖 pyserial。</div>
+<h2>模块详情</h2>
+<p>本模块覆盖固件的构建系统（Makefile + 链接脚本）与测试基础设施（片上 Test/ 框架 + PC 端 pyserial 脚本）。Makefile 用 arm-none-eabi-gcc(MSYS2) 编译 SPL V1.9.0，统一 -O2/Release 与 -Og/Debug，链接脚本将固件区人为压缩到 128KB 以与后 896KB Flash 文件存储区物理隔离。Test/ 框架通过 test_config.h 使能宏（默认全 0）配合 --gc-sections 实现&quot;测试代码零成本进正式固件&quot;。PcTest/ 是上位机协议验证脚本，独立实现 CRC16/帧封装来与固件互测。实测 make DEBUG=1 编译通过，gc-sections 已正确裁剪禁用测试代码。</p>
+<h3>文件构成</h3>
+<table><tr><th>文件</th><th>职责</th></tr>
+<tr><td><code>Makefile</code></td><td>构建脚本：CPU/编译/链接标志、SPL_DIR、C_SOURCES 清单、flash/reset/clean 目标。CPU_FLAGS/OPT_FLAGS/WARN_FLAGS/LINK_FLAGS 与 CLAUDE.md §3 一致</td></tr>
+<tr><td><code>Linker/STM32F429ZGTX_FLASH.ld</code></td><td>链接脚本：FLASH 故意限 128K、SRAM1 112K、CCM 64K(不放任何段)，_Min_Stack_Size=0x800、_Min_Heap_Size=0，DISCARD libc/libm/libgcc</td></tr>
+<tr><td><code>Test/Inc/test_config.h</code></td><td>测试使能宏集中地：TEST_PMIC_PID_READ / TEST_I2C_SCAN，默认全 0</td></tr>
+<tr><td><code>Test/Src/test_i2c_scan.c</code></td><td>片上 I2C1/2/3 扫描测试，结果经 UART ASCII 上报；含发送缓冲防溢出保护</td></tr>
+<tr><td><code>Test/Src/test_pmic.c</code></td><td>片上 PMIC 寄存器轮询读测试 (0x00~0x14)，100ms 周期，UART ASCII 上报</td></tr>
+<tr><td><code>PcTest/firmware_test_protocol_0331.py</code></td><td>PC 协议主测脚本 v1.4：心跳/系统控制/寄存器读写/采样，自实现 CRC16+帧解析</td></tr>
+<tr><td><code>PcTest/firmware_test_i2C_command_0329.py</code></td><td>PC 寄存器读写(0x20/21/22)+波特率切换测试</td></tr>
+<tr><td><code>PcTest/test_pmic_cmd09_0420.py</code></td><td>PC PMIC SetVoltage(0x09) 超时诊断脚本</td></tr>
+<tr><td><code>PcTest/firmware_test_aw_i2c_passthru_0513.py</code></td><td>PC AW Firmware I2C 透传(0x30/0x31) 测试，覆盖参数校验/NACK/大数据量</td></tr>
+<tr><td><code>outline.py</code></td><td>Python 结构提取辅助工具(CLAUDE.md §12 要求先跑它)，当前有编码 bug</td></tr>
+</table>
+<h3>公开 API</h3>
+<table><tr><th>签名</th><th>说明</th></tr>
+<tr><td><code>make / make DEBUG=1 / make flash / make reset / make clean</code></td><td>Release(-O2) / Debug(-Og -g3 -DDEBUG) / 编译并 OpenOCD 烧录 / 复位运行 / 删 build。实测需用 mingw32-make(环境无 make 别名)</td></tr>
+<tr><td><code>void Test_I2C_Scan_Run(void)</code></td><td>初始化后调用一次，依次扫描 I2C1/2/3 并经 UART 上报 &quot;I2Cx: 0xXX ...&quot; / &quot;I2Cx: none&quot;</td></tr>
+<tr><td><code>void Test_PMIC_PidRead_Poll(uint32_t tick)</code></td><td>主循环轮询，每 100ms 读一个 PMIC 寄存器(0x00~0x14 循环)经 UART 上报</td></tr>
+<tr><td><code>crc16/crc16_modbus(data: bytes) -&gt; int (PC 各脚本)</code></td><td>poly=0x8005 右移 LSB-first，init=0xFFFF，结果大端；与固件 CRC16_Update 完全一致</td></tr>
+<tr><td><code>build_frame(seq, cmd, data) -&gt; bytes (PC 各脚本)</code></td><td>封装 [0xAA][0x55][SEQ][CMD][LEN][DATA][CRC_H][CRC_L]，与协议/固件一致</td></tr>
+</table>
+<h3>关键实现要点</h3>
+<div class="card"><b style="color:var(--hi)">编译标志齐全性(CLAUDE.md §3 核对)</b><p>Makefile:100/119/120/130-131 — CPU_FLAGS(-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb)、-ffunction-sections -fdata-sections -fno-common、-Wall -Wextra -Wshadow、-Wl,--gc-sections -specs=nano.specs 全部齐全。预定义宏 USE_STDPERIPH_DRIVER/HSE_VALUE=8000000U 齐全</p></div>
+<div class="card"><b style="color:var(--hi)">--gc-sections 死代码裁剪验证</b><p>实测 mingw32-make DEBUG=1 后 build/firmware.map 中 Test_PMIC_PidRead_Poll/Test_I2C_Scan_Run 出现 0 次(仅在 Discarded input sections 列表)，证明默认 test 宏=0 时测试代码被完全裁剪，符合 CLAUDE.md §9 &#x27;正式固件不引入测试代码&#x27;</p></div>
+<div class="card"><b style="color:var(--hi)">内存分配</b><p>Linker .ld:23-24 _Min_Stack_Size=0x800(2KB)、_Min_Heap_Size=0x000(禁 malloc)，与 CLAUDE.md 一致。CCM 区在 MEMORY 声明但无任何 SECTION 落入(DMA 禁访 CCM 得到保证)。实测 text=29696 data=104 bss=71544，flash≈29.8KB&lt;&lt;128K，RAM≈70KB+栈&lt;112K，余量充足</p></div>
+<div class="card"><b style="color:var(--hi)">PC↔固件协议一致性</b><p>4 个 PcTest 脚本的 CRC16 全部 poly=0x8005 右移大端，与固件 app_protocol.c:126 CRC16_Update 一致；帧格式 0xAA55+SEQ+CMD+LEN+DATA+CRC 一致；16-bit 寄存器用 struct &#x27;&gt;H&#x27;/&#x27;&gt;HH&#x27; 大端打包(i2c_command:429/439/451)，符合 CLAUDE.md &#x27;寄存器地址 16-bit 大端&#x27;。命令码 0x20/0x21/0x22/0x30/0x31/0x09 与 app_protocol.h 枚举一致</p></div>
+<div class="card"><b style="color:var(--hi)">链接脚本 Flash 隔离设计</b><p>FLASH LENGTH 故意压到 128K(.ld:28)，固件超界即触发 &#x27;region FLASH overflowed&#x27; 硬错误，防止静默覆盖 0x08020000 起的文件存储区。设计意图明确且正确</p></div>
+<div class="card"><b style="color:var(--hi)">测试缓冲安全</b><p>test_i2c_scan.c:65 &#x27;pos+5&gt;=64&#x27; 守卫防 buf[64] 溢出；test_pmic.c buf[15] ERR 路径最大写到 index13(14B) 在界内。SCAN_ADDR_BUF_SIZE=127 容纳 Scan 最多 126 个地址(addr 1..126)，安全</p></div>
+<h3>数据流 / 控制流</h3>
+<div class="callout"><div class="t">流程</div>构建流: C_SOURCES(Core+BSP+App+Test+Flash/AW+SPL) → 每个 .o 经 vpath 编译 → 链接 .elf(gc-sections 裁剪未引用段) → objcopy 出 .bin → size 打印。flash 目标用 OpenOCD program .elf verify reset。测试流(片上): test_config.h 宏=1 → main.c #if 接入 Poll → BSP/App 公开 API → UART 上报。测试流(PC): pyserial 打开串口 → build_frame(CRC16) → ser.write → recv_control_frame 解析(自动跳过 0xBB 流帧) → 断言。</div>
+<h3>模块耦合关系</h3>
+<p>Makefile 依赖 SPL_DIR 只读库与 Core/BSP/App/Test/Flash 全部源；链接脚本与 startup .s(提供 _sidata/_sdata/_estack 等符号)及 app_flashstore.h 的 0x08020000 边界约定耦合。Test/ 仅调用 BSP_I2Cx_Scan/BSP_I2C3_ReadReg/BSP_UART_Transmit/BSP_GetTick 等公开 API，符合分层。PcTest 脚本与 app_protocol.h 的帧常量/命令码/CRC 算法强耦合(各脚本独立复制实现，存在重复)。</p>
+<h3>本模块审查发现</h3>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> PC 测试脚本默认波特率 115200 与固件默认 460800 不匹配</div>
+<div class="meta">📍 <code>PcTest/firmware_test_protocol_0331.py:36,726; firmware_test_i2C_command_0329.py:29; vs bsp_uart.h:17</code></div>
+<div class="row"><span class="lbl">问题：</span>固件 BSP_UART_BAUDRATE_DEFAULT=460800U(CLAUDE.md §2 亦标注 460800 默认)，但所有 PC 主测脚本 CFG[&#x27;baud&#x27;]/argparse default 均为 115200。开箱即用直接运行脚本会因波特率不符而完全收不到固件响应(心跳超时),需用户每次手动 --baud 460800。这是常见的联调踩坑点。</div>
+<div class="row"><span class="lbl">建议：</span>将脚本默认波特率改为 460800 与固件出厂值对齐；或在脚本启动时先试 460800、失败再回退低速并打印明确提示。</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> outline.py 未指定 UTF-8 编码，对含中文的 PcTest 脚本崩溃</div>
+<div class="meta">📍 <code>outline.py:3-4 (open(sys.argv[1]) 无 encoding)</code></div>
+<div class="row"><span class="lbl">问题：</span>CLAUDE.md §12 强制要求读 Python 文件前先跑 <code>python outline.py &lt;file&gt;</code>，但 outline.py 用 open() 默认 GBK 编码(Windows)，遇到 PcTest 脚本里的中文 docstring 抛 UnicodeDecodeError(&#x27;gbk&#x27; codec can&#x27;t decode byte 0xae)，导致该工作流对本项目所有含中文的 .py 完全不可用。</div>
+<div class="row"><span class="lbl">建议：</span>改为 open(sys.argv[1], encoding=&#x27;utf-8&#x27;)。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> PC 脚本 CRC 函数名 &#x27;crc16_modbus&#x27; 误导(实际非标准 MODBUS)</div>
+<div class="meta">📍 <code>PcTest/firmware_test_protocol_0331.py:54-55; firmware_test_i2C_command_0329.py:46-47; test_pmic_cmd09_0420.py:15</code></div>
+<div class="row"><span class="lbl">问题：</span>函数命名/docstring 称 &#x27;CRC16-MODBUS poly=0x8005 LSB-first&#x27;，但标准 MODBUS 的 LSB-first(右移)实现必须用反射多项式 0xA001;用 0x8005 右移是项目自定义算法。固件 app_protocol.h:9-10 已明确标注 &#x27;NOT standard CRC16-MODBUS&#x27;。算法本身与固件一致(实测匹配)，仅命名误导，新人易据名错改成 0xA001 而导致整链路 CRC 失配。aw_passthru 脚本(:56)命名已正确标注&#x27;与 firmware 一致&#x27;。</div>
+<div class="row"><span class="lbl">建议：</span>将三个脚本里的 crc16_modbus 重命名为 crc16_proto 并修正 docstring 为 &#x27;项目自定义 CRC16, poly=0x8005 右移, 非标准 MODBUS&#x27;，与 firmware/aw 脚本口径统一。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> 四个 PC 脚本各自重复实现 CRC16/build_frame/parse_frame</div>
+<div class="meta">📍 <code>PcTest/firmware_test_protocol_0331.py:54-68 等四处</code></div>
+<div class="row"><span class="lbl">问题：</span>crc16、build_frame、parse_frame 在 4 个脚本中各复制一份。协议帧格式或 CRC 一旦演进(协议已到 v2.x，aw 脚本标注 v2.5)，需同步改 4 处，极易漏改造成脚本间行为不一致。属坏味道,非功能 bug。</div>
+<div class="row"><span class="lbl">建议：</span>抽出 PcTest/proto_common.py(crc16/build_frame/parse_frame/recv_control_frame)供各脚本 import，单点维护。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl"><span class="badge sev-style">风格</span> CLAUDE.md §3 文档与 Makefile 实际宏/启动文件名不一致</div>
+<div class="meta">📍 <code>Makefile:104 (-DSTM32F429_439xx), :83 (startup_stm32f429_439xx.s) vs CLAUDE.md §3 &#x27;STM32F429xx&#x27; / §4 &#x27;startup_stm32f429zgtx.s&#x27;</code></div>
+<div class="row"><span class="lbl">问题：</span>CLAUDE.md 列预定义宏为 STM32F429xx、启动文件为 startup_stm32f429zgtx.s(HAL/CubeMX 命名)，而 Makefile 用 SPL V1.9.0 正确命名 STM32F429_439xx 与 startup_stm32f429_439xx.s。已核 SPL 设备头 stm32f4xx.h:61/70 只识别 STM32F429_439xx，故 Makefile 正确、文档不精确。实测编译通过，非缺陷,仅为防止后续依据文档误改。</div>
+<div class="row"><span class="lbl">建议：</span>更新 CLAUDE.md §3/§4 的宏名与启动文件名为 SPL 实际值,或加注&#x27;SPL 命名&#x27;说明。</div>
+</div>
+<footer>STM32F429ZG 电机调试板固件 · 代码 WIKI · 生成于 2026-06-01 · 基于多代理深度审查（8 模块 / 110 代理 / 51 发现 40 确认）<br>
+本 WIKI 由结构化审查数据渲染；SPL V1.9.0 库与 Firmware_Flash/ 原始参考代码仅说明定位，不逐行讲解。</footer>
+</main></div></body></html>

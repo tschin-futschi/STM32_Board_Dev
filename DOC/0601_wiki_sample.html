@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>采样 / 波形发生 · STM32 固件 WIKI</title>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --bd:#2a3340;
+  --fg:#d7dde6; --mut:#8b97a7; --acc:#4ea1ff; --acc2:#7ee0c0;
+  --code:#0b0e13; --kw:#ff9d6b; --hi:#ffd479;
+  --hi-bg:#3a2f12;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.7}
+.layout{display:flex;min-height:100vh}
+nav.side{width:248px;flex:0 0 248px;background:var(--panel);border-right:1px solid var(--bd);
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 0}
+nav.side .brand{padding:0 20px 14px;border-bottom:1px solid var(--bd);margin-bottom:10px}
+nav.side .brand b{display:block;color:var(--acc);font-size:16px;letter-spacing:.3px}
+nav.side .brand span{color:var(--mut);font-size:12px}
+nav.side a{display:block;padding:9px 20px;color:var(--fg);text-decoration:none;font-size:14px;border-left:3px solid transparent}
+nav.side a:hover{background:var(--panel2);border-left-color:var(--acc)}
+nav.side a.active{background:var(--panel2);border-left-color:var(--acc);color:var(--acc);font-weight:600}
+nav.side .grp{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:14px 20px 4px}
+main{flex:1;min-width:0;padding:34px 46px 80px;max-width:1100px}
+h1{font-size:28px;margin:.2em 0 .1em;color:#fff;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:21px;margin:1.8em 0 .5em;color:var(--acc2);border-bottom:1px solid var(--bd);padding-bottom:6px}
+h3{font-size:17px;margin:1.4em 0 .4em;color:var(--hi)}
+p{margin:.5em 0}
+.lead{color:var(--mut);font-size:15px;margin:.4em 0 1.4em}
+code{background:var(--code);color:var(--kw);padding:1px 6px;border-radius:4px;font-family:"Cascadia Code","Consolas",monospace;font-size:.88em}
+pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;line-height:1.55}
+pre code{background:none;color:var(--fg);padding:0}
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:13.5px}
+th,td{border:1px solid var(--bd);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--acc2);font-weight:600}
+tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+td code{white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:18px 22px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:14px 0}
+.tile{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;text-decoration:none;color:var(--fg);transition:.15s}
+.tile:hover{border-color:var(--acc);transform:translateY(-2px)}
+.tile b{color:var(--acc);font-size:15px}
+.tile p{color:var(--mut);font-size:13px;margin:.4em 0 0}
+.badge{display:inline-block;padding:1px 9px;border-radius:11px;font-size:11px;font-weight:700;vertical-align:middle}
+.sev-high{background:#5b1418;color:#ff8a8a;border:1px solid #8a2228}
+.sev-med{background:#5a3a10;color:#ffc46b;border:1px solid #8a6018}
+.sev-low{background:#143a4a;color:#7ed0ff;border:1px solid #1f5e78}
+.sev-style{background:#2a313c;color:#a9b6c6;border:1px solid #3a4554}
+.callout{border-left:4px solid var(--acc);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+.callout.warn{border-left-color:#ffc46b}
+.callout.danger{border-left-color:#ff8a8a}
+.callout .t{font-weight:700;color:var(--acc);margin-bottom:4px}
+.callout.warn .t{color:#ffc46b}
+.callout.danger .t{color:#ff8a8a}
+.kv{color:var(--mut);font-size:12px}
+.finding{background:var(--panel);border:1px solid var(--bd);border-left-width:4px;border-radius:0 8px 8px 0;padding:14px 18px;margin:14px 0}
+.finding.sv-high{border-left-color:#ff8a8a}
+.finding.sv-medium{border-left-color:#ffc46b}
+.finding.sv-low{border-left-color:#7ed0ff}
+.finding.sv-style{border-left-color:#6b7686}
+.finding .ttl{font-weight:700;font-size:15px;color:#fff}
+.finding .meta{font-size:12px;color:var(--mut);margin:4px 0 8px}
+.finding .row{margin:6px 0}
+.finding .lbl{color:var(--acc2);font-weight:600;font-size:13px}
+.flow{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:16px;margin:14px 0;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;white-space:pre;overflow-x:auto;color:var(--acc2)}
+footer{color:var(--mut);font-size:12px;margin-top:50px;padding-top:18px;border-top:1px solid var(--bd)}
+a{color:var(--acc)}
+.toc{columns:2;gap:30px;margin:10px 0}
+.toc a{display:block;padding:3px 0;font-size:13.5px}
+@media(max-width:860px){.layout{flex-direction:column}nav.side{width:100%;height:auto;position:static}main{padding:24px}}
+</style></head>
+<body><div class="layout"><nav class="side"><div class="brand"><b>STM32F429ZG 电机调试板</b><span>固件代码 WIKI · 2026-06-01</span></div><div class="grp">导航</div><a href="0601_wiki_index.html">首页 / 总览</a><a href="0601_wiki_architecture.html">系统架构 (Core)</a><a href="0601_wiki_bsp.html">BSP 驱动层</a><a href="0601_wiki_protocol.html">通信协议 (App)</a><a href="0601_wiki_sample.html" class="active">采样 / 波形发生</a><a href="0601_wiki_flash.html">Flash 烧录 / 存储</a><a href="0601_wiki_build.html">构建 / 测试</a><a href="0601_wiki_review.html">代码审查报告</a><div class="grp">补充资料 (DOC/)</div><a href="0328_protocol_v1.4.html">协议 v1.4 专题</a><a href="0327_pmic_code_explain.html">PMIC 初始化</a><a href="0429_sw_i2c_explain.html">软件 I2C2 详解</a><a href="0519_aw_isp_walkthrough.html">AW ISP 走读</a><a href="0522_flash_burn_flow.html">Flash 烧录流程</a></nav>
+<main><h1>采样示波器 / 波形发生器</h1>
+<p class="lead"><code>app_sample.c</code>（666 行）实现两类功能：① 周期性采样电机 IC 寄存器并以 0xBB 数据流上报（示波器）；② 向电机寄存器周期性写入线性/锯齿/余弦波形（信号发生器）。两者通过 TIM6 中断驱动，共享 I2C2 总线锁。</p>
+<div class="callout"><div class="t">总线并发保护（已修 H-d / H1）</div>采样与发生器在 TIM6 ISR 内访问 I2C2；单次事务命令（0x20/0x21/0x30/0x31）用 <code>App_Sample_AcquireBus / ReleaseBus</code>（NVIC 屏蔽 TIM6 IRQ）包装；长事务（0x22 bulk read、Flash 烧录）改在入口拒绝采样+发生器运行，避免长时间屏蔽 ISR。</div>
+<div class="callout"><div class="t">采样频率档位（TIM6, 1MHz 计数）</div>通过 <code>SET_INTERVAL</code> 索引选择，ARR = 1MHz/freq − 1。波形发生器支持线性扫描、锯齿（每 tick 步进）、余弦（amp/offset/freq + 多通道）。</div>
+<h2>模块详情</h2>
+<p>app_sample.c 是示波器采样与波形发生器双功能模块，二者共用 TIM6 作为统一节拍源：I2C 读（采样）和寄存器写（发生器）均在 TIM6 ISR 内执行以保证时序精度（有意设计），主循环只负责把双缓冲数据经 UART/DMA 发出。采样组帧为 0xBB 数据流帧（protocol.MD v1.4）。app_motor.c 是电机 IC 16-bit 大端寄存器访问的薄封装，转调 BSP_I2C2，并用 g_motorIcAddr==0 做未配置守卫。模块对外提供采样控制、通道掩码/寄存器映射配置、I2C2 总线锁（AcquireBus/ReleaseBus 通过屏蔽 TIM6 IRQ 实现）以及三种发生器（线性三角波/锯齿/余弦）。</p>
+<h3>文件构成</h3>
+<table><tr><th>文件</th><th>职责</th></tr>
+<tr><td><code>D:/echo.qfq/19_STM32_Project/App/Src/app_sample.c</code></td><td>采样双缓冲组帧、TIM6 ISR 回调、波形发生器、总线锁、auto-stop 守卫</td></tr>
+<tr><td><code>D:/echo.qfq/19_STM32_Project/App/Inc/app_sample.h</code></td><td>采样/发生器 API 声明、通道/寄存器映射常量、COS 最大通道数宏</td></tr>
+<tr><td><code>D:/echo.qfq/19_STM32_Project/App/Src/app_motor.c</code></td><td>电机 IC 16-bit 大端寄存器读写，转调 BSP_I2C2</td></tr>
+<tr><td><code>D:/echo.qfq/19_STM32_Project/App/Inc/app_motor.h</code></td><td>App_Motor_ReadReg/WriteReg 声明</td></tr>
+</table>
+<h3>公开 API</h3>
+<table><tr><th>签名</th><th>说明</th></tr>
+<tr><td><code>void App_Sample_Init(void)</code></td><td>初始化采样/发生器全部静态状态，复位双缓冲、通道掩码=0x01、寄存器映射全 0xFFFF，安装 TIM6 回调 SampleTimerISR</td></tr>
+<tr><td><code>void App_Sample_Poll(void)</code></td><td>主循环调用：TX 忙则返回保留数据；有新数据则临界区快照 mask/fail/total/readIdx 并清 ready，mask==0 则停采样，否则组帧发送</td></tr>
+<tr><td><code>ErrorStatus App_Sample_Start(void)</code></td><td>启动采样；有效掩码为 0（无映射通道）则返 ERROR</td></tr>
+<tr><td><code>void App_Sample_Stop(void)</code></td><td>停止采样；若发生器也空闲则停 TIM6</td></tr>
+<tr><td><code>ErrorStatus App_Sample_SetInterval(uint8_t idx)</code></td><td>按索引设采样间隔；若发生器在跑则重算其 divider / 余弦相位增量</td></tr>
+<tr><td><code>ErrorStatus App_Sample_SetChannelMask(uint8_t mask)</code></td><td>设通道掩码，mask==0 返 ERROR</td></tr>
+<tr><td><code>void App_Sample_SetRegMap(const uint8_t *pData)</code></td><td>临界区内写入 8 通道 16-bit 大端寄存器映射</td></tr>
+<tr><td><code>uint8_t App_Sample_IsActive(void)</code></td><td>返回采样运行标志</td></tr>
+<tr><td><code>uint8_t App_Sample_GetEffectiveMask(void)</code></td><td>返回 channelMask 与已映射通道的交集掩码</td></tr>
+<tr><td><code>void App_Sample_AcquireBus(void) / ReleaseBus(void)</code></td><td>通过 NVIC_DisableIRQ/EnableIRQ(TIM6_DAC_IRQn)+DSB/ISB 屏蔽采样 ISR，保护主循环单次 I2C2 事务；成对调用，不支持嵌套</td></tr>
+<tr><td><code>ErrorStatus App_Generator_StartLinear/StartSawtooth/StartCosine(...)</code></td><td>启动三角波/锯齿/余弦发生器，配置参数后置 genMode 并启动 TIM6</td></tr>
+<tr><td><code>void App_Generator_Stop(void) / uint8_t App_Generator_IsRunning(void) / uint8_t App_Generator_GetWriteChannelCount(void)</code></td><td>停止发生器 / 查询运行 / 查询每节拍写通道数</td></tr>
+<tr><td><code>ErrorStatus App_Motor_ReadReg(uint16_t reg, uint16_t *pVal) / App_Motor_WriteReg(uint16_t reg, uint16_t val)</code></td><td>电机 IC 16-bit 大端寄存器读/写；g_motorIcAddr==0 返 ERROR</td></tr>
+</table>
+<h3>关键实现要点</h3>
+<div class="card"><b style="color:var(--hi)">双缓冲 ISR→主循环交接</b><p>s_isrBuf[2][8] 乒乓缓冲。ISR 写 bufIdx=s_isrWriteIdx，写完元数据后 s_isrWriteIdx ^= 1 并置 s_isrDataReady=1（app_sample.c:280-288）。Poll 在临界区读 readIdx=s_isrWriteIdx^1 并清 ready（:433-439），随后在临界区外 SendStreamFrame 读该 buffer（:447）</p></div>
+<div class="card"><b style="color:var(--hi)">有效掩码计算两处</b><p>ISR 内（:260-267）和 App_Sample_GetEffectiveMask（:547-561）逻辑完全重复：channelMask &amp; 已映射(!=0xFFFF) 通道</p></div>
+<div class="card"><b style="color:var(--hi)">余弦相位累加器与 2π wrap</b><p>k_twoPi=6.28318530f 局部 const（:184），s_cosPhaseAccum 每节拍 += s_cosDPhase，&gt;=2π 时减 2π 防 float 精度丢失（:204-208）；相位增量 dPhase=2πf·Δt 在 Start/SetInterval 预算（:636,:493）</p></div>
+<div class="card"><b style="color:var(--hi)">auto-stop / 告警守卫</b><p>连续全通道失败计数：&gt;=10 发降级告警 0x06，&gt;=50 发 EXEC_FAIL+调试串并 App_Sample_Stop()。已加 totalCount&gt;0 守卫防空映射 0&gt;=0 误触发（:342）</p></div>
+<div class="card"><b style="color:var(--hi)">总线锁实现</b><p>AcquireBus 用 NVIC_DisableIRQ(TIM6_DAC_IRQn)+__DSB+__ISB（:534-536），仅屏蔽采样 ISR；挂起的 TIM6 update 在 Release 后塌缩为 1 次 ISR。被 0x20/0x21/0x30/0x31 单次事务包裹（app_protocol.c:471,504,649,708）</p></div>
+<div class="card"><b style="color:var(--hi)">发生器入口边界由协议层把关</b><p>channelCount&lt;=APP_GEN_COS_MAX_CH(3) 的检查在 app_protocol.c:905-906，App_Generator_StartCosine 自身的 for 循环（app_sample.c:625-629）无上界保护</p></div>
+<div class="card"><b style="color:var(--hi)">电机寄存器大端</b><p>App_Motor_ReadReg buf[0]&lt;&lt;8|buf[1]，WriteReg buf[0]=高字节（app_motor.c:28,44），符合 CLAUDE.md 16-bit 大端规约</p></div>
+<h3>数据流 / 控制流</h3>
+<div class="callout"><div class="t">流程</div>采样：TIM6 ISR → SampleTimerISR：先做发生器写（按 divider 计数）→ 再按有效掩码逐通道 App_Motor_ReadReg(I2C2) → 写入 s_isrBuf[bufIdx][ch] → 更新 mask/fail/total 元数据 → 交换 writeIdx + 置 dataReady。主循环 App_Sample_Poll：TX 不忙且 dataReady → 临界区快照元数据与 readIdx + 清 ready → SendStreamFrame 从 s_isrBuf[readIdx] 组 0xBB 帧（mask/LEN/大端 int16/XOR）→ BSP_UART_Transmit(DMA)。发生器：ISR 内 Generator_DoWrite → 线性/锯齿/余弦计算值 → App_Motor_WriteReg(I2C2)。主循环单次寄存器事务用 AcquireBus(屏蔽 TIM6)→App_Motor_*→ReleaseBus 防与 ISR 采样争用 I2C2。</div>
+<h3>模块耦合关系</h3>
+<p>向下依赖 app_motor.c→bsp_i2c2（软件 bit-banging I2C2 + g_motorIcAddr/g_motorIcName）；依赖 bsp_tim（TIM6 Init/Start/Stop/SetFreq/GetPeriodUs/SetCallback）；依赖 bsp_uart（Transmit/IsTxBusy/DMA）；依赖 app_protocol（SendErrorResp/SendDebugInfo + 错误码宏）。被 app_protocol.c 命令分发调用（0x20/0x21/0x30/0x31 用总线锁，0x50~ 采样控制，发生器命令，0x54 SetRegMap）。与 app_protocol 的 s_bulkReadActive / IsActive / IsRunning 互锁实现 I2C2 并发保护。CCM 禁止 DMA，s_streamBuf/s_isrBuf 须在 SRAM1（默认 .bss 即 SRAM1，符合）。</p>
+<h3>本模块审查发现</h3>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> H-e：双缓冲数据与元数据可能不同源（通道错位/数据撕裂）</div>
+<div class="meta">📍 <code>App/Src/app_sample.c:432-447</code></div>
+<div class="row"><span class="lbl">问题：</span>Poll 在临界区(__disable_irq/__enable_irq, :433-439)只快照了 mask/failCnt/totalCnt/readIdx 并清 ready，但真正读取数据 buffer 的 SendStreamFrame(s_isrBuf[readIdx],...) 在 :447 临界区之外执行。SendStreamFrame 是纯内存拷贝+UART_Transmit 排队，本身较快，但若两次 TIM6 ISR 在此期间抢占（采样频率高/Poll 被其它 Poll 拖慢时可能），ISR 会再次写回 readIdx 这块 buffer（writeIdx 在两次翻转后回到 readIdx），导致 SendStreamFrame 读到的数据是新一帧的、而 mask/totalCount 仍是旧快照——极端时序下通道数据与掩码错位。这是 CLAUDE.md TODO 已登记的 H-e。</div>
+<div class="row"><span class="lbl">建议：</span>两种修复其一：①在临界区内把 s_isrBuf[readIdx] 的有效字节一次性 memcpy 到本地/发送缓冲再出临界区组帧；②采用三缓冲或在 ISR 侧检测 readIdx 即将被覆盖时跳过(dataReady 仍为 1 表示主循环未取走则不翻转覆盖)。推荐方案①，拷贝量最大 16 字节，临界区开销可控。</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> App_Generator_StartCosine API 自身无 channelCount 上界保护，存在栈/数组越界隐患</div>
+<div class="meta">📍 <code>App/Src/app_sample.c:611-629</code></div>
+<div class="row"><span class="lbl">问题：</span>s_cosAddr/s_cosPhaseX10 大小为 APP_GEN_COS_MAX_CH(3)，但 StartCosine 直接 for(i=0;i&lt;channelCount;i++) 写入(:625-629)，未对 channelCount 做上界裁剪。当前唯一调用方 app_protocol.c:905-906 已校验 channelCount&lt;=3，故现网安全；但 BSP/App 公开 API 不应依赖调用方校验（违反防御式编程，且测试代码/未来新调用方可越界写穿 s_cosAddr 后续静态变量）。</div>
+<div class="row"><span class="lbl">建议：</span>在 StartCosine 入口加 if(channelCount==0U||channelCount&gt;APP_GEN_COS_MAX_CH) return ERROR; 与 addrs/phaseX10 NULL 检查，使 API 自洽。</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> s_genMode 等发生器配置非原子更新，ISR 可能读到半套参数</div>
+<div class="meta">📍 <code>App/Src/app_sample.c:567-647</code></div>
+<div class="row"><span class="lbl">问题：</span>三个 Start 函数先置 s_genMode=GEN_NONE 再逐个写 s_linAddr/s_cos* 等配置，最后置 s_genMode=目标。但这些写之间不在临界区内，TIM6 ISR 若在配置写入过程中抢占：虽然 genMode 此刻为 GEN_NONE 不会执行写，问题较小；但 SetInterval(:484-494) 在 genMode 已=GEN_LINEAR/COSINE 时改 s_genDivider/s_cosDPhase，与 ISR 的 s_genCounter&gt;=s_genDivider 判定(:242)及 Generator_DoCosineWrite 读 s_cosDPhase(:204) 并发，非 volatile 字段(s_cosDPhase/s_lin* 等)的多字节读写可能撕裂。</div>
+<div class="row"><span class="lbl">建议：</span>对 ISR 与主循环共享的发生器配置(s_cosDPhase float、s_linStep 等)写入加 __disable_irq()/__enable_irq() 包裹，或在 Start/SetInterval 修改前临时 AcquireBus。至少 s_genDivider 已 volatile，s_cosDPhase 应同样处理。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> SampleTimerISR 内多通道 I2C 读为长阻塞操作，与协议层 mask-ISR 数 ms 风险对应</div>
+<div class="meta">📍 <code>App/Src/app_sample.c:270-282</code></div>
+<div class="row"><span class="lbl">问题：</span>软件 bit-banging I2C2 在 ISR 内逐通道读，最多 8 通道，每次含超时等待；这是 CLAUDE.md 认可的有意设计(采样时序精度)，非缺陷本身。但需注意 AcquireBus 用 NVIC mask TIM6 时，若主循环长事务(0x22 bulk)未被入口拒绝，会 mask ISR 数 ms。当前 0x22 已在入口拒绝采样+发生器，风险已缓解，仅作记录。</div>
+<div class="row"><span class="lbl">建议：</span>无需改动；保持 0x22 等长事务入口拒绝采样/发生器的策略，确保 AcquireBus 只用于单次短事务。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> App_Sample_SetChannelMask 未清 I2C 失败计数，且 mask 写入非临界区</div>
+<div class="meta">📍 <code>App/Src/app_sample.c:500-508</code></div>
+<div class="row"><span class="lbl">问题：</span>切换通道掩码后 s_i2cFailCount/s_i2cWarnSent 不复位，旧故障计数会延续到新掩码下，可能导致换通道后偏快触发降级/auto-stop。另 s_channelMask 是 volatile 单字节写入虽原子，但与 SetRegMap 的临界区不一致。CLAUDE.md TODO 低优先级已登记。</div>
+<div class="row"><span class="lbl">建议：</span>SetChannelMask 成功路径内 __disable_irq 包裹并复位 s_i2cFailCount=0/s_i2cWarnSent=0，与寄存器映射变更行为对齐。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> 发生器写返回值全部 (void) 丢弃，I2C 写失败上位机无感知</div>
+<div class="meta">📍 <code>App/Src/app_sample.c:117,151,200</code></div>
+<div class="row"><span class="lbl">问题：</span>Generator_DoLinearWrite/Sawtooth/Cosine 对 App_Motor_WriteReg 返回值一律 (void) 丢弃。发生器在 ISR 内运行不便直接回包，但若电机 IC 持续 NACK，上位机完全无法察觉写失败(不像采样有 fail 计数+auto-stop)。</div>
+<div class="row"><span class="lbl">建议：</span>参照采样的失败计数机制，为发生器加一个连续写失败计数，超阈值发 SendDebugInfo 告警(类似 :354)，避免静默失败。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> GetEffectiveMask 读 s_channelRegMap 非原子，与 SetRegMap 临界区写存在竞态</div>
+<div class="meta">📍 <code>App/Src/app_sample.c:547-561</code></div>
+<div class="row"><span class="lbl">问题：</span>GetEffectiveMask 在主循环(App_Sample_Start 及协议层 CheckTickOverrun)调用，逐元素读 s_channelRegMap[ch]；而 SetRegMap(:513-519) 在 __disable_irq 临界区内逐元素写。两者均在主循环上下文(非 ISR)通常串行，但 GetEffectiveMask 未保证读到一致快照。影响小但与 ISR 内同样的掩码计算共三处重复。</div>
+<div class="row"><span class="lbl">建议：</span>将有效掩码计算抽成单一 static helper，主循环调用处按需加临界区；消除 ISR(:260)/GetEffectiveMask(:552)/重复实现。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl"><span class="badge sev-style">风格</span> Generator_DoLinearWrite 与 Generator_DoSawtoothWrite 三角波推进逻辑完全重复</div>
+<div class="meta">📍 <code>App/Src/app_sample.c:114-180</code></div>
+<div class="row"><span class="lbl">问题：</span>两函数的‘升降三角波推进’代码逐字重复(:120-145 与 :154-179 一致)，仅写值前缀注释不同。维护时易只改一处导致行为分叉。</div>
+<div class="row"><span class="lbl">建议：</span>抽取公共 static void AdvanceTriangle(void) 推进 s_linCurrent/s_linAscending，两个 DoWrite 各自只保留 App_Motor_WriteReg 调用。</div>
+</div>
+<footer>STM32F429ZG 电机调试板固件 · 代码 WIKI · 生成于 2026-06-01 · 基于多代理深度审查（8 模块 / 110 代理 / 51 发现 40 确认）<br>
+本 WIKI 由结构化审查数据渲染；SPL V1.9.0 库与 Firmware_Flash/ 原始参考代码仅说明定位，不逐行讲解。</footer>
+</main></div></body></html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>通信协议 · STM32 固件 WIKI</title>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --bd:#2a3340;
+  --fg:#d7dde6; --mut:#8b97a7; --acc:#4ea1ff; --acc2:#7ee0c0;
+  --code:#0b0e13; --kw:#ff9d6b; --hi:#ffd479;
+  --hi-bg:#3a2f12;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.7}
+.layout{display:flex;min-height:100vh}
+nav.side{width:248px;flex:0 0 248px;background:var(--panel);border-right:1px solid var(--bd);
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 0}
+nav.side .brand{padding:0 20px 14px;border-bottom:1px solid var(--bd);margin-bottom:10px}
+nav.side .brand b{display:block;color:var(--acc);font-size:16px;letter-spacing:.3px}
+nav.side .brand span{color:var(--mut);font-size:12px}
+nav.side a{display:block;padding:9px 20px;color:var(--fg);text-decoration:none;font-size:14px;border-left:3px solid transparent}
+nav.side a:hover{background:var(--panel2);border-left-color:var(--acc)}
+nav.side a.active{background:var(--panel2);border-left-color:var(--acc);color:var(--acc);font-weight:600}
+nav.side .grp{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:14px 20px 4px}
+main{flex:1;min-width:0;padding:34px 46px 80px;max-width:1100px}
+h1{font-size:28px;margin:.2em 0 .1em;color:#fff;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:21px;margin:1.8em 0 .5em;color:var(--acc2);border-bottom:1px solid var(--bd);padding-bottom:6px}
+h3{font-size:17px;margin:1.4em 0 .4em;color:var(--hi)}
+p{margin:.5em 0}
+.lead{color:var(--mut);font-size:15px;margin:.4em 0 1.4em}
+code{background:var(--code);color:var(--kw);padding:1px 6px;border-radius:4px;font-family:"Cascadia Code","Consolas",monospace;font-size:.88em}
+pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;line-height:1.55}
+pre code{background:none;color:var(--fg);padding:0}
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:13.5px}
+th,td{border:1px solid var(--bd);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--acc2);font-weight:600}
+tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+td code{white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:18px 22px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:14px 0}
+.tile{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;text-decoration:none;color:var(--fg);transition:.15s}
+.tile:hover{border-color:var(--acc);transform:translateY(-2px)}
+.tile b{color:var(--acc);font-size:15px}
+.tile p{color:var(--mut);font-size:13px;margin:.4em 0 0}
+.badge{display:inline-block;padding:1px 9px;border-radius:11px;font-size:11px;font-weight:700;vertical-align:middle}
+.sev-high{background:#5b1418;color:#ff8a8a;border:1px solid #8a2228}
+.sev-med{background:#5a3a10;color:#ffc46b;border:1px solid #8a6018}
+.sev-low{background:#143a4a;color:#7ed0ff;border:1px solid #1f5e78}
+.sev-style{background:#2a313c;color:#a9b6c6;border:1px solid #3a4554}
+.callout{border-left:4px solid var(--acc);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+.callout.warn{border-left-color:#ffc46b}
+.callout.danger{border-left-color:#ff8a8a}
+.callout .t{font-weight:700;color:var(--acc);margin-bottom:4px}
+.callout.warn .t{color:#ffc46b}
+.callout.danger .t{color:#ff8a8a}
+.kv{color:var(--mut);font-size:12px}
+.finding{background:var(--panel);border:1px solid var(--bd);border-left-width:4px;border-radius:0 8px 8px 0;padding:14px 18px;margin:14px 0}
+.finding.sv-high{border-left-color:#ff8a8a}
+.finding.sv-medium{border-left-color:#ffc46b}
+.finding.sv-low{border-left-color:#7ed0ff}
+.finding.sv-style{border-left-color:#6b7686}
+.finding .ttl{font-weight:700;font-size:15px;color:#fff}
+.finding .meta{font-size:12px;color:var(--mut);margin:4px 0 8px}
+.finding .row{margin:6px 0}
+.finding .lbl{color:var(--acc2);font-weight:600;font-size:13px}
+.flow{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:16px;margin:14px 0;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;white-space:pre;overflow-x:auto;color:var(--acc2)}
+footer{color:var(--mut);font-size:12px;margin-top:50px;padding-top:18px;border-top:1px solid var(--bd)}
+a{color:var(--acc)}
+.toc{columns:2;gap:30px;margin:10px 0}
+.toc a{display:block;padding:3px 0;font-size:13.5px}
+@media(max-width:860px){.layout{flex-direction:column}nav.side{width:100%;height:auto;position:static}main{padding:24px}}
+</style></head>
+<body><div class="layout"><nav class="side"><div class="brand"><b>STM32F429ZG 电机调试板</b><span>固件代码 WIKI · 2026-06-01</span></div><div class="grp">导航</div><a href="0601_wiki_index.html">首页 / 总览</a><a href="0601_wiki_architecture.html">系统架构 (Core)</a><a href="0601_wiki_bsp.html">BSP 驱动层</a><a href="0601_wiki_protocol.html" class="active">通信协议 (App)</a><a href="0601_wiki_sample.html">采样 / 波形发生</a><a href="0601_wiki_flash.html">Flash 烧录 / 存储</a><a href="0601_wiki_build.html">构建 / 测试</a><a href="0601_wiki_review.html">代码审查报告</a><div class="grp">补充资料 (DOC/)</div><a href="0328_protocol_v1.4.html">协议 v1.4 专题</a><a href="0327_pmic_code_explain.html">PMIC 初始化</a><a href="0429_sw_i2c_explain.html">软件 I2C2 详解</a><a href="0519_aw_isp_walkthrough.html">AW ISP 走读</a><a href="0522_flash_burn_flow.html">Flash 烧录流程</a></nav>
+<main><h1>通信协议 (App 协议层)</h1>
+<p class="lead"><code>app_protocol.c</code>（1636 行）实现帧状态机解析、CRC16 校验、命令分发与所有 handler。协议定义见 <code>protocol.MD</code> v1.4。</p>
+<h2>帧格式</h2>
+<div class="flow">控制帧（双向，可靠性优先）：
+  [0xAA][0x55][SEQ][CMD][LEN][DATA n][CRC16_H][CRC16_L]
+  CRC 范围 = SEQ+CMD+LEN+DATA（不含帧头），结果大端
+
+数据流帧（STM32→PC，高频采样，只发不收）：
+  [0xBB][MASK][LEN][DATA n][XOR]
+  每通道 2 字节 int16 大端，按通道号从低到高；XOR = MASK^LEN^所有数据</div>
+<div class="callout danger"><div class="t">CRC16 注意：非标准 MODBUS</div>多项式 <code>0x8005</code>、初值 <code>0xFFFF</code>、<b>LSB 先行（右移）</b>、结果<b>大端</b>存放。注意这<b>不是</b>标准 CRC16-MODBUS（标准用反射多项式 0xA001）。PC 端实现需与此严格一致。</div>
+<h2>命令码全表</h2>
+<table><tr><th>命令码</th><th>名称</th><th>方向</th><th>数据段</th></tr>
+<tr><td><code>0x00</code></td><td>HEARTBEAT</td><td>双向</td><td>心跳，LEN=0</td></tr>
+<tr><td><code>0x01</code></td><td>ERROR_RESP</td><td>→PC</td><td>1 字节错误码</td></tr>
+<tr><td><code>0x02</code></td><td>SET_MOTOR_ADDR</td><td>PC→</td><td>设电机 IC 7-bit 地址</td></tr>
+<tr><td><code>0x03</code></td><td>SET_BAUDRATE</td><td>PC→</td><td>波特率索引</td></tr>
+<tr><td><code>0x04</code></td><td>RESET</td><td>PC→</td><td>软复位</td></tr>
+<tr><td><code>0x05</code></td><td>MOTOR_PING</td><td>PC→</td><td>测 I2C ACK</td></tr>
+<tr><td><code>0x06</code></td><td>DEBUG_INFO</td><td>→PC</td><td>ASCII 调试串</td></tr>
+<tr><td><code>0x07</code></td><td>I2C_SCAN</td><td>PC→</td><td>总线索引(1/2/3)→[count][addr…]</td></tr>
+<tr><td><code>0x08</code></td><td>PMIC_ENABLE</td><td>PC→</td><td>开 LDO 序列</td></tr>
+<tr><td><code>0x09</code></td><td>PMIC_SET_VOLT</td><td>PC→</td><td>6字节 DRVVDD/IOVDD/VCMVDD</td></tr>
+<tr><td><code>0x0A</code></td><td>PMIC_DISABLE</td><td>PC→</td><td>关 LDO 序列</td></tr>
+<tr><td><code>0x0B</code></td><td>BOOT_STATUS</td><td>→PC</td><td>启动状态码, SEQ=0xFF</td></tr>
+<tr><td><code>0x20</code></td><td>READ_REG</td><td>PC→</td><td>读 16bit 寄存器</td></tr>
+<tr><td><code>0x21</code></td><td>WRITE_REG</td><td>PC→</td><td>写 16bit 寄存器</td></tr>
+<tr><td><code>0x22</code></td><td>BULK_READ</td><td>PC→</td><td>连续读 N 个寄存器</td></tr>
+<tr><td><code>0x30</code></td><td>I2C_PASS_WRITE</td><td>PC→</td><td>AW Firmware I2C 写（透传）</td></tr>
+<tr><td><code>0x31</code></td><td>I2C_PASS_READ</td><td>PC→</td><td>AW Firmware I2C 读（透传）</td></tr>
+<tr><td><code>0x32~0x37</code></td><td>FLASH_*</td><td>PC→</td><td>AW 芯片 ISP 烧录（BEGIN/DATA/EXEC/STATUS/CANCEL/RESET）</td></tr>
+<tr><td><code>0x38</code></td><td>FLASH_EXEC_PROGRESS</td><td>→PC</td><td>EXEC 期间 erase/write 进度</td></tr>
+<tr><td><code>0x39~0x3F</code></td><td>FLASH_STORE_*</td><td>PC→</td><td>片上 Flash 文件存储（WRITE/READ/INFO/WIPE）</td></tr>
+<tr><td><code>0x50~0x54</code></td><td>采样控制</td><td>PC→</td><td>START/STOP/SET_INTERVAL/CHANNEL/REG_MAP</td></tr>
+<tr><td><code>0x55/0x58</code></td><td>线性/锯齿发生器</td><td>PC→</td><td>波形写入电机寄存器</td></tr>
+<tr><td><code>0x56</code></td><td>余弦发生器</td><td>PC→</td><td>amp+off+freq+N+channels</td></tr>
+<tr><td><code>0x57</code></td><td>STOP_GENERATOR</td><td>PC→</td><td>停止发生器</td></tr>
+</table>
+<div class="callout"><div class="t">错误码</div>
+<code>0x01</code> CRC 校验失败（SEQ 固定 0xFF）· <code>0x02</code> 未知命令码 · <code>0x03</code> 执行失败（如 I2C 通信失败）</div>
+<h2>模块详情</h2>
+<p>协议应用层，是 PC 上位机与 STM32 之间唯一的命令通道。职责：(1) 用字节级状态机从 UART 环形缓冲解析控制帧 [0xAA][0x55][SEQ][CMD][LEN][DATA][CRC16_H][CRC16_L]；(2) CRC16(poly=0x8005, init=0xFFFF, 右移/LSB, 结果大端) 校验；(3) 通过 DispatchFrame 将 36 个命令码 (0x00~0x58) 分发到各 handler；(4) 统一的发送路径 (SendFrame/重试/ErrorResp/DebugInfo/BootStatus/FlashExecProgress)。同时承载 AW ISP 烧录 session (0x32~0x37) 与 STM32 片内 Flash 文件存储 (0x39~0x3F) 的状态机与并发互斥逻辑。不直接碰硬件寄存器，所有 IO 经 BSP/App_Motor/App_Sample/App_FlashStore。</p>
+<h3>文件构成</h3>
+<table><tr><th>文件</th><th>职责</th></tr>
+<tr><td><code>App/Inc/app_protocol.h</code></td><td>帧常量/命令码枚举(Proto_Cmd_t)/错误码/Boot状态/帧结构 Proto_Frame_t/对外 API 声明。协议变更隔离点。</td></tr>
+<tr><td><code>App/Src/app_protocol.c</code></td><td>CRC16、TX 帮助函数、36 个命令 handler、DispatchFrame 分发、ProcessByte RX 状态机、Init/Poll 主循环入口。</td></tr>
+</table>
+<h3>公开 API</h3>
+<table><tr><th>签名</th><th>说明</th></tr>
+<tr><td><code>void App_Protocol_Init(void)</code></td><td>复位 RX 状态机及 bulk/flash session 标志，main 初始化最后一步调用。</td></tr>
+<tr><td><code>void App_Protocol_Poll(void)</code></td><td>主循环每轮调用：检查 I2C2 恢复标志与 UART 溢出计数(发 DebugInfo)，读环形缓冲全部字节逐字节喂 ProcessByte。</td></tr>
+<tr><td><code>void App_Protocol_SendDebugInfo(const char *msg)</code></td><td>发 0x06 ASCII 调试帧，SEQ=0xFF。msg 经 strlen 截成 uint8_t 长度。</td></tr>
+<tr><td><code>void App_Protocol_SendErrorResp(uint8_t seq, Proto_ErrCode_t err)</code></td><td>发 0x01 错误响应，1 字节错误码。</td></tr>
+<tr><td><code>void App_Protocol_SendBootStatus(Proto_BootStatus_t status)</code></td><td>发 0x0B 启动状态，SEQ=0xFF；可在 Init 前调用(仅依赖 BSP_UART)。</td></tr>
+<tr><td><code>void App_Protocol_SendFlashExecProgress(uint8_t phase, uint32_t done, uint32_t total)</code></td><td>发 0x38 烧录进度帧，SEQ=0xFF，LEN=9 全 LE；供 AW ISP on_progress 回调，丢帧容忍。</td></tr>
+</table>
+<h3>关键实现要点</h3>
+<div class="card"><b style="color:var(--hi)">RX 状态机 SOF 重同步</b><p>ProcessByte (app_protocol.c:1515)：8 态机。STATE_WAIT_SOF2 收到 0xAA 时停留在 SOF2(处理 0xAA 0xAA 0x55)，否则回 SOF1。LEN==0 直接跳 CRC_H。无帧超时机制——半截帧后若静默,状态机会停在中途态(见 findings)。</p></div>
+<div class="card"><b style="color:var(--hi)">CRC16 实现</b><p>CRC16_Update (app_protocol.c:126) 右移变体，init 0xFFFF，每字节异或后循环 8 次。注意非标准 MODBUS(注释已明示 poly 用 0x8005 非反射 0xA001)。RX 累加从 SEQ 起(1544)，TX 同范围(167-176)，结果大端存放(179-180)/比较(1577)，与 protocol.MD 一致。</p></div>
+<div class="card"><b style="color:var(--hi)">命令分发前置互斥闸</b><p>DispatchFrame (app_protocol.c:1361)：①s_bulkReadActive 时只回心跳;②s_flashSessionActive(仅 AW ISP 0x32 置位) 时只放行 flash 组+心跳,其余回 EXEC_FAIL;③采样运行时拒绝 0x30/0x31 透传(长事务不能 mask ISR)。</p></div>
+<div class="card"><b style="color:var(--hi)">I2C2 单次事务总线锁</b><p>0x20/0x21/0x30/0x31 用 App_Sample_AcquireBus/ReleaseBus 包裹(471/504/649/708)，防 TIM6 采样 ISR 抢占软件 bit-bang 中途(H-d 已闭环)。0x22 bulk read 为长事务,改在入口拒绝 sample+generator(561)。</p></div>
+<div class="card"><b style="color:var(--hi)">Bulk read 多包组帧</b><p>HandleBulkRead (app_protocol.c:518)：startReg+totalRegs*2 防 uint16 溢出(549)，BULK_MAX_TOTAL_REGS=32130 上界，ceil 分包，每包 [pktIdx][totalPkts][data]，静态 s_pktBuf。reg 地址 = startReg + idx*2(16-bit 字寻址)。</p></div>
+<div class="card"><b style="color:var(--hi)">AW ISP 烧录 staging</b><p>64KB s_fwBuf(SRAM1,占 57%)。BEGIN 校验 addr∈[0x01000000,0x01020000) 且 totalBytes 4 对齐≤64KB(1022)。DATA 按 pktSeq 严格递增累加+越界检查(1063)。EXEC 入口拒绝 sample/generator/bulkread 并发(1102)，阻塞 ~5-10s。</p></div>
+<div class="card"><b style="color:var(--hi)">片内 Flash 文件存储</b><p>0x39~0x3F 委托 App_FlashStore_*。0x39 BEGIN/0x3F WIPE 入口与 AW session/sample/generator/bulkread 互斥(1178/1318)。0x3A WriteData 用 uint16 chunkLen，0x3D ReadData 用 252B 栈缓冲。</p></div>
+<div class="card"><b style="color:var(--hi)">输入长度边界校验</b><p>各 handler 对 pFrame-&gt;len 做精确/最小校验。0x30 写透传(606)：先 len&gt;=3,再 len&gt;=3+addrSize,再算 dataLen 并要求 len==3+addrSize+dataLen,逐级防 data[] 越界。0x56 cos: APP_GEN_COS_MAX_CH=3 → 7+3*4=19 无 uint8 溢出。</p></div>
+<h3>数据流 / 控制流</h3>
+<div class="callout"><div class="t">流程</div>RX：USART1 RXNE ISR → BSP 环形缓冲(256B) → 主循环 App_Protocol_Poll() → BSP_UART_RxRead 批量取到 s_rxBuf → 逐字节 ProcessByte 状态机累加 CRC → CRC_L 态比对：失败发 0x01(SEQ=0xFF)/成功 DispatchFrame → 命令 handler → 经 App_Motor/App_Sample/App_FlashStore/BSP_I2Cx 执行 → SendFrame 回 ACK/数据 或 SendErrorResp。 TX：SendFrame 在静态 s_txBuf 组帧(SOF+SEQ+CMD+LEN+DATA+大端CRC) → BSP_UART_TxWait → BSP_UART_Transmit(DMA)。SendFrameWithRetry 在 BSP busy 时 TxWait 后重试 1 次,再失败静默丢(依赖 PC 100ms 超时×2 重发)。控制流互斥：bulk/flash session/采样三类闸门在 DispatchFrame 顶部短路。</div>
+<h3>模块耦合关系</h3>
+<p>向下依赖：bsp_uart(收发/波特率/溢出计数)、bsp_i2c1/2/3(Scan/Probe/Transparent RW/恢复标志)、bsp_pmic、bsp_tim(GetPeriodUs)、app_motor(ReadReg/WriteReg)、app_sample(IsActive/AcquireBus/ReleaseBus/GetEffectiveMask/SetRegMap/Start/Stop 及 App_Generator_*)、app_flashstore、aw_flash(AW_86008_86100_Flash_Run/aw_reset_chip/ISP_STATUS_E)。向上：被 main 主循环与 AW ISP on_progress 回调调用。是 BSP 与上位机间的唯一协议网关，命令码枚举即对外 ABI。</p>
+<h3>本模块审查发现</h3>
+<div class="finding sv-high">
+<div class="ttl"><span class="badge sev-high">严重</span> Flash 文件存储写 session(0x39→0x3B)期间未阻止采样/发生器启动 → I2C2 与片内 Flash 编程并发</div>
+<div class="meta">📍 <code>app_protocol.c:1361 (DispatchFrame) / 1168 HandleFlashStoreWriteBegin / 1201 HandleFlashStoreWriteData</code></div>
+<div class="row"><span class="lbl">问题：</span>s_flashSessionActive 只由 AW ISP 0x32 BEGIN 置位(1036)，0x39 flashstore BEGIN 不置任何 session 闸门，仅在 BEGIN/WIPE 入口一次性检查 sample/generator 未运行。0x39 之后、0x3B END 之前，DispatchFrame 仍放行 0x50 START_SAMPLE 与 0x55/0x56/0x58 生成器启动。一旦采样启动，TIM6 ISR 驱动 I2C2 软件 bit-bang，而 0x3A WriteData 调 App_FlashStore_WriteData 编程片内 Flash——STM32F4 Flash 编程/擦除会阻塞 Flash 总线，从 Flash 取指的 TIM6 ISR 在此期间无法执行,破坏采样时序甚至取指异常。属真实并发缺口,非已记录的 H-e。</div>
+<div class="row"><span class="lbl">建议：</span>为 flashstore 写 session 增加独立 active 标志(如 s_storeSessionActive)，在 0x39 成功后置位、0x3B/错误清零，并在 DispatchFrame 顶部像 AW session 一样拒绝该期间的 sample/generator/0x30/0x31/bulk 命令;或在 0x50/0x55/0x56/0x58 入口追加 flashstore-session 拒绝判断。</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> RX 状态机无半截帧超时,错误 LEN 会吞掉后续整帧</div>
+<div class="meta">📍 <code>app_protocol.c:1515 ProcessByte (STATE_WAIT_DATA 1561)</code></div>
+<div class="row"><span class="lbl">问题：</span>若线路噪声/丢字节导致进入 STATE_WAIT_DATA 后期望的 len 字节迟迟收不齐，状态机无限期停留，期间到来的真正 0xAA 0x55 帧头被当作 DATA 吞掉，直到凑满 len 字节才进入 CRC 比对(必失败发 0x01)。一个被破坏的 LEN(如 0xFF)会连吃 255+2 字节，吞掉多个后续合法帧。PC 端 100ms 超时重发可缓解但会放大单次误码的影响面。</div>
+<div class="row"><span class="lbl">建议：</span>引入帧内字节间超时(用 BSP_GetTick 记录上次收字节时刻,Poll 中若状态≠WAIT_SOF1 且超时则复位 s_state=STATE_WAIT_SOF1);或保留 SOF 双字节再同步作为兜底已部分覆盖,但 DATA 态无法借此恢复。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> s_bulkReadActive 缺 volatile,被多上下文读取</div>
+<div class="meta">📍 <code>app_protocol.c:83 / 读取点 1104(EXEC 守卫) 1181 1321 1364</code></div>
+<div class="row"><span class="lbl">问题：</span>s_bulkReadActive 在 HandleBulkRead 内置/清(主循环上下文)，但 DispatchFrame、HandleFlashExec/WriteBegin/Wipe 也读它做并发守卫。虽当前全部在主循环单线程上下文(bulk 期间 dispatch 只放行心跳,不会重入其他 handler)，无真正并发写,但编译器在 -O2 下可能将其缓存。已在 CLAUDE.md TODO 低优先级登记。</div>
+<div class="row"><span class="lbl">建议：</span>补 volatile uint8_t s_bulkReadActive，与 s_flashSessionActive 一致,消除编译器优化隐患并明确语义。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> HandleI2CScan 响应缓冲与协议上界一致但缺 count 上界断言</div>
+<div class="meta">📍 <code>app_protocol.c:361 HandleI2CScan</code></div>
+<div class="row"><span class="lbl">问题：</span>respBuf[1+127]，count 来自 BSP_I2Cx_Scan(&amp;count)。若某 BSP Scan 实现 bug 返回 count&gt;127，则 respBuf[1+i] 与发送长度 1+count 越界(SendFrame 入参 len 为 uint8_t,1+128=129 仍合法但读越界 addrList)。当前 BSP 受 7-bit 地址天然限 127,实际安全,但依赖被调方契约。</div>
+<div class="row"><span class="lbl">建议：</span>在 result==SUCCESS 后加 if (count&gt;127) count=127; 防御性裁剪,或断言;与 CLAUDE.md TODO 中 &#x27;Scan pAddrList 无上界&#x27; 呼应。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl"><span class="badge sev-style">风格</span> 长度/参数错误统一返回 EXEC_FAIL(0x03)而非更细错误码</div>
+<div class="meta">📍 <code>全部 handler 的 len 校验分支</code></div>
+<div class="row"><span class="lbl">问题：</span>protocol.MD/CLAUDE.md 仅定义 0x01 CRC/0x02 未知命令/0x03 执行失败三种错误码。所有长度不符、参数越界、范围错误均归并到 0x03,PC 端无法区分&#x27;帧结构错误&#x27;与&#x27;真实执行失败(如 I2C NACK)&#x27;。属协议设计取舍,不是 bug,但调试期定位困难。</div>
+<div class="row"><span class="lbl">建议：</span>如后续协议扩展,可考虑新增 0x04 参数错误码;当前阶段保持现状,在 PcTest 用例中以命令上下文区分即可。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl"><span class="badge sev-style">风格</span> DispatchFrame 巨型 switch,与 TODO 中&#x27;查找表&#x27;结构优化项一致</div>
+<div class="meta">📍 <code>app_protocol.c:1395-1508</code></div>
+<div class="row"><span class="lbl">问题：</span>36 路 case 全为 &#x27;Handler(pFrame); break&#x27; 模板,新增命令需同步改枚举+switch,易遗漏。CLAUDE.md TODO 结构项已记 &#x27;DispatchFrame 查找表&#x27;。</div>
+<div class="row"><span class="lbl">建议：</span>可改为 {cmd, fn_ptr} 静态查找表 + 前置闸门保留;非功能缺陷,优先级低。</div>
+</div>
+<footer>STM32F429ZG 电机调试板固件 · 代码 WIKI · 生成于 2026-06-01 · 基于多代理深度审查（8 模块 / 110 代理 / 51 发现 40 确认）<br>
+本 WIKI 由结构化审查数据渲染；SPL V1.9.0 库与 Firmware_Flash/ 原始参考代码仅说明定位，不逐行讲解。</footer>
+</main></div></body></html>

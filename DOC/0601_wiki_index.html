@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>首页 / 总览 · STM32 固件 WIKI</title>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --bd:#2a3340;
+  --fg:#d7dde6; --mut:#8b97a7; --acc:#4ea1ff; --acc2:#7ee0c0;
+  --code:#0b0e13; --kw:#ff9d6b; --hi:#ffd479;
+  --hi-bg:#3a2f12;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.7}
+.layout{display:flex;min-height:100vh}
+nav.side{width:248px;flex:0 0 248px;background:var(--panel);border-right:1px solid var(--bd);
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 0}
+nav.side .brand{padding:0 20px 14px;border-bottom:1px solid var(--bd);margin-bottom:10px}
+nav.side .brand b{display:block;color:var(--acc);font-size:16px;letter-spacing:.3px}
+nav.side .brand span{color:var(--mut);font-size:12px}
+nav.side a{display:block;padding:9px 20px;color:var(--fg);text-decoration:none;font-size:14px;border-left:3px solid transparent}
+nav.side a:hover{background:var(--panel2);border-left-color:var(--acc)}
+nav.side a.active{background:var(--panel2);border-left-color:var(--acc);color:var(--acc);font-weight:600}
+nav.side .grp{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:14px 20px 4px}
+main{flex:1;min-width:0;padding:34px 46px 80px;max-width:1100px}
+h1{font-size:28px;margin:.2em 0 .1em;color:#fff;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:21px;margin:1.8em 0 .5em;color:var(--acc2);border-bottom:1px solid var(--bd);padding-bottom:6px}
+h3{font-size:17px;margin:1.4em 0 .4em;color:var(--hi)}
+p{margin:.5em 0}
+.lead{color:var(--mut);font-size:15px;margin:.4em 0 1.4em}
+code{background:var(--code);color:var(--kw);padding:1px 6px;border-radius:4px;font-family:"Cascadia Code","Consolas",monospace;font-size:.88em}
+pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;line-height:1.55}
+pre code{background:none;color:var(--fg);padding:0}
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:13.5px}
+th,td{border:1px solid var(--bd);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--acc2);font-weight:600}
+tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+td code{white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:18px 22px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:14px 0}
+.tile{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;text-decoration:none;color:var(--fg);transition:.15s}
+.tile:hover{border-color:var(--acc);transform:translateY(-2px)}
+.tile b{color:var(--acc);font-size:15px}
+.tile p{color:var(--mut);font-size:13px;margin:.4em 0 0}
+.badge{display:inline-block;padding:1px 9px;border-radius:11px;font-size:11px;font-weight:700;vertical-align:middle}
+.sev-high{background:#5b1418;color:#ff8a8a;border:1px solid #8a2228}
+.sev-med{background:#5a3a10;color:#ffc46b;border:1px solid #8a6018}
+.sev-low{background:#143a4a;color:#7ed0ff;border:1px solid #1f5e78}
+.sev-style{background:#2a313c;color:#a9b6c6;border:1px solid #3a4554}
+.callout{border-left:4px solid var(--acc);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+.callout.warn{border-left-color:#ffc46b}
+.callout.danger{border-left-color:#ff8a8a}
+.callout .t{font-weight:700;color:var(--acc);margin-bottom:4px}
+.callout.warn .t{color:#ffc46b}
+.callout.danger .t{color:#ff8a8a}
+.kv{color:var(--mut);font-size:12px}
+.finding{background:var(--panel);border:1px solid var(--bd);border-left-width:4px;border-radius:0 8px 8px 0;padding:14px 18px;margin:14px 0}
+.finding.sv-high{border-left-color:#ff8a8a}
+.finding.sv-medium{border-left-color:#ffc46b}
+.finding.sv-low{border-left-color:#7ed0ff}
+.finding.sv-style{border-left-color:#6b7686}
+.finding .ttl{font-weight:700;font-size:15px;color:#fff}
+.finding .meta{font-size:12px;color:var(--mut);margin:4px 0 8px}
+.finding .row{margin:6px 0}
+.finding .lbl{color:var(--acc2);font-weight:600;font-size:13px}
+.flow{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:16px;margin:14px 0;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;white-space:pre;overflow-x:auto;color:var(--acc2)}
+footer{color:var(--mut);font-size:12px;margin-top:50px;padding-top:18px;border-top:1px solid var(--bd)}
+a{color:var(--acc)}
+.toc{columns:2;gap:30px;margin:10px 0}
+.toc a{display:block;padding:3px 0;font-size:13.5px}
+@media(max-width:860px){.layout{flex-direction:column}nav.side{width:100%;height:auto;position:static}main{padding:24px}}
+</style></head>
+<body><div class="layout"><nav class="side"><div class="brand"><b>STM32F429ZG 电机调试板</b><span>固件代码 WIKI · 2026-06-01</span></div><div class="grp">导航</div><a href="0601_wiki_index.html" class="active">首页 / 总览</a><a href="0601_wiki_architecture.html">系统架构 (Core)</a><a href="0601_wiki_bsp.html">BSP 驱动层</a><a href="0601_wiki_protocol.html">通信协议 (App)</a><a href="0601_wiki_sample.html">采样 / 波形发生</a><a href="0601_wiki_flash.html">Flash 烧录 / 存储</a><a href="0601_wiki_build.html">构建 / 测试</a><a href="0601_wiki_review.html">代码审查报告</a><div class="grp">补充资料 (DOC/)</div><a href="0328_protocol_v1.4.html">协议 v1.4 专题</a><a href="0327_pmic_code_explain.html">PMIC 初始化</a><a href="0429_sw_i2c_explain.html">软件 I2C2 详解</a><a href="0519_aw_isp_walkthrough.html">AW ISP 走读</a><a href="0522_flash_burn_flow.html">Flash 烧录流程</a></nav>
+<main><h1>STM32F429ZG 电机调试板 — 固件代码 WIKI</h1>
+<p class="lead">通用电机调试板固件（无闭环控制）。PC 上位机经 UART 下指令，STM32 作为 I2C 主机读写电机 IC / PMIC / INA，并把寄存器值以波形数据流上报。本 WIKI 覆盖 Core / BSP / App / Flash 全部自研代码。</p>
+<h2>系统全景</h2>
+<div class="flow">  PC 上位机
+    │  UART USART1 PA9/PA10  460800 8N1
+    │  ├─ 控制帧 0xAA55 [SEQ][CMD][LEN][DATA][CRC16]   （双向，可靠）
+    │  └─ 数据流 0xBB [MASK][LEN][DATA][XOR]            （STM32→PC，高频采样）
+    ▼
+┌──────────────── STM32F429ZGT6  180MHz ────────────────┐
+│  Core   启动 / 中断向量 / 主循环轮询                    │
+│  App    协议解析 · 采样示波器 · 波形发生 · Flash 存储    │
+│  BSP    UART(DMA) · I2C1/2/3 · PMIC · TIM6 · Flash      │
+└───┬────────────┬────────────┬───────────┬─────────────┘
+    │I2C1 PB6/7  │I2C2 PB10/11│I2C3 PA8/PC9│ 片上Flash
+    ▼            ▼ (软件bit-bang)▼          ▼ Sector5-11
+  INA          电机 IC        PMIC+GYRO    用户文件存储
+ (功耗/电流)   (16bit寄存器)  RT5112WSC    (917KB,CRC32)</div>
+<h2>分模块导航</h2>
+<div class="grid">
+<a class="tile" href="0601_wiki_architecture.html"><b>🏗️ 系统架构 (Core)</b><p>启动序列、中断优先级、主循环、内存布局、初始化依赖链</p></a>
+<a class="tile" href="0601_wiki_bsp.html"><b>🔌 BSP 驱动层</b><p>UART(环形缓冲+DMA)、I2C1/2/3、软件 I2C2、PMIC、TIM6、Flash</p></a>
+<a class="tile" href="0601_wiki_protocol.html"><b>📡 通信协议 (App)</b><p>帧状态机、CRC16、命令分发、全命令表 0x00~0x58</p></a>
+<a class="tile" href="0601_wiki_sample.html"><b>📊 采样 / 波形发生</b><p>示波器双缓冲、总线锁、线性/锯齿/余弦波形发生器</p></a>
+<a class="tile" href="0601_wiki_flash.html"><b>💾 Flash 烧录 / 存储</b><p>AW ISP 芯片烧录链、片上 Flash 文件存储</p></a>
+<a class="tile" href="0601_wiki_build.html"><b>🛠️ 构建 / 测试</b><p>Makefile、链接脚本、测试框架、PcTest 脚本</p></a>
+<a class="tile" href="0601_wiki_review.html"><b>🔍 代码审查报告</b><p>40 条对抗验证后确认的问题，按严重度分级</p></a>
+</div>
+<h2>硬件速查</h2>
+<table>
+<tr><th>项</th><th>值</th><th>说明</th></tr>
+<tr><td>MCU</td><td>STM32F429ZGT6</td><td>Cortex-M4F, 180MHz, HSE 8MHz, PLL ×45/2</td></tr>
+<tr><td>Flash</td><td>1 MB @0x0800_0000</td><td>固件限 128KB（链接脚本防呆），余 896KB 留存储</td></tr>
+<tr><td>SRAM1</td><td>112 KB @0x2000_0000</td><td>主运行内存（DMA 缓冲必须在此）</td></tr>
+<tr><td>CCM</td><td>64 KB @0x1000_0000</td><td><b>DMA 绝对禁止访问</b></td></tr>
+<tr><td>堆 / 栈</td><td>0 / 2 KB</td><td>全静态分配，禁止 malloc/free</td></tr>
+</table>
+<h2>中断优先级 (NVIC Group 4)</h2>
+<table>
+<tr><th>优先级</th><th>外设</th><th>ISR</th></tr>
+<tr><td>2</td><td>UART RX</td><td><code>USART1_IRQHandler</code></td></tr>
+<tr><td>5 / 6</td><td>I2C EV / ER</td><td>—</td></tr>
+<tr><td>7</td><td>TIM6 采样</td><td><code>TIM6_DAC_IRQHandler</code></td></tr>
+<tr><td>8</td><td>PMIC HWEN</td><td><code>EXTI4_IRQHandler</code></td></tr>
+<tr><td>10</td><td>UART TX DMA</td><td><code>DMA2_Stream7_IRQHandler</code></td></tr>
+<tr><td>15</td><td>SysTick</td><td><code>SysTick_Handler</code></td></tr>
+</table>
+<h2>审查结论速览</h2>
+<div class="callout"><div class="t">多代理深度审查（对抗验证后）</div>
+共 8 个模块、51 条原始发现，经多代理对抗验证保留 <b>40</b> 条确认问题：
+<span class="badge sev-high">严重 0</span>
+<span class="badge sev-med">中 5</span>
+<span class="badge sev-low">低 16</span>
+<span class="badge sev-style">风格 19</span>。
+无新发现的「严重」级 bug；中等级 5 条集中在 <b>Flash 写会话期间未阻止采样/发生器并发访问 I2C2</b> 与 <b>采样写返回值丢弃</b>。详见 <a href="0601_wiki_review.html">审查报告</a>。</div>
+<footer>STM32F429ZG 电机调试板固件 · 代码 WIKI · 生成于 2026-06-01 · 基于多代理深度审查（8 模块 / 110 代理 / 51 发现 40 确认）<br>
+本 WIKI 由结构化审查数据渲染；SPL V1.9.0 库与 Firmware_Flash/ 原始参考代码仅说明定位，不逐行讲解。</footer>
+</main></div></body></html>

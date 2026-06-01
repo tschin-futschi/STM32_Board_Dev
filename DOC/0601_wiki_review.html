@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>代码审查报告 · STM32 固件 WIKI</title>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --bd:#2a3340;
+  --fg:#d7dde6; --mut:#8b97a7; --acc:#4ea1ff; --acc2:#7ee0c0;
+  --code:#0b0e13; --kw:#ff9d6b; --hi:#ffd479;
+  --hi-bg:#3a2f12;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.7}
+.layout{display:flex;min-height:100vh}
+nav.side{width:248px;flex:0 0 248px;background:var(--panel);border-right:1px solid var(--bd);
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 0}
+nav.side .brand{padding:0 20px 14px;border-bottom:1px solid var(--bd);margin-bottom:10px}
+nav.side .brand b{display:block;color:var(--acc);font-size:16px;letter-spacing:.3px}
+nav.side .brand span{color:var(--mut);font-size:12px}
+nav.side a{display:block;padding:9px 20px;color:var(--fg);text-decoration:none;font-size:14px;border-left:3px solid transparent}
+nav.side a:hover{background:var(--panel2);border-left-color:var(--acc)}
+nav.side a.active{background:var(--panel2);border-left-color:var(--acc);color:var(--acc);font-weight:600}
+nav.side .grp{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:14px 20px 4px}
+main{flex:1;min-width:0;padding:34px 46px 80px;max-width:1100px}
+h1{font-size:28px;margin:.2em 0 .1em;color:#fff;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:21px;margin:1.8em 0 .5em;color:var(--acc2);border-bottom:1px solid var(--bd);padding-bottom:6px}
+h3{font-size:17px;margin:1.4em 0 .4em;color:var(--hi)}
+p{margin:.5em 0}
+.lead{color:var(--mut);font-size:15px;margin:.4em 0 1.4em}
+code{background:var(--code);color:var(--kw);padding:1px 6px;border-radius:4px;font-family:"Cascadia Code","Consolas",monospace;font-size:.88em}
+pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;line-height:1.55}
+pre code{background:none;color:var(--fg);padding:0}
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:13.5px}
+th,td{border:1px solid var(--bd);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--acc2);font-weight:600}
+tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+td code{white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:18px 22px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:14px 0}
+.tile{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;text-decoration:none;color:var(--fg);transition:.15s}
+.tile:hover{border-color:var(--acc);transform:translateY(-2px)}
+.tile b{color:var(--acc);font-size:15px}
+.tile p{color:var(--mut);font-size:13px;margin:.4em 0 0}
+.badge{display:inline-block;padding:1px 9px;border-radius:11px;font-size:11px;font-weight:700;vertical-align:middle}
+.sev-high{background:#5b1418;color:#ff8a8a;border:1px solid #8a2228}
+.sev-med{background:#5a3a10;color:#ffc46b;border:1px solid #8a6018}
+.sev-low{background:#143a4a;color:#7ed0ff;border:1px solid #1f5e78}
+.sev-style{background:#2a313c;color:#a9b6c6;border:1px solid #3a4554}
+.callout{border-left:4px solid var(--acc);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+.callout.warn{border-left-color:#ffc46b}
+.callout.danger{border-left-color:#ff8a8a}
+.callout .t{font-weight:700;color:var(--acc);margin-bottom:4px}
+.callout.warn .t{color:#ffc46b}
+.callout.danger .t{color:#ff8a8a}
+.kv{color:var(--mut);font-size:12px}
+.finding{background:var(--panel);border:1px solid var(--bd);border-left-width:4px;border-radius:0 8px 8px 0;padding:14px 18px;margin:14px 0}
+.finding.sv-high{border-left-color:#ff8a8a}
+.finding.sv-medium{border-left-color:#ffc46b}
+.finding.sv-low{border-left-color:#7ed0ff}
+.finding.sv-style{border-left-color:#6b7686}
+.finding .ttl{font-weight:700;font-size:15px;color:#fff}
+.finding .meta{font-size:12px;color:var(--mut);margin:4px 0 8px}
+.finding .row{margin:6px 0}
+.finding .lbl{color:var(--acc2);font-weight:600;font-size:13px}
+.flow{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:16px;margin:14px 0;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;white-space:pre;overflow-x:auto;color:var(--acc2)}
+footer{color:var(--mut);font-size:12px;margin-top:50px;padding-top:18px;border-top:1px solid var(--bd)}
+a{color:var(--acc)}
+.toc{columns:2;gap:30px;margin:10px 0}
+.toc a{display:block;padding:3px 0;font-size:13.5px}
+@media(max-width:860px){.layout{flex-direction:column}nav.side{width:100%;height:auto;position:static}main{padding:24px}}
+</style></head>
+<body><div class="layout"><nav class="side"><div class="brand"><b>STM32F429ZG 电机调试板</b><span>固件代码 WIKI · 2026-06-01</span></div><div class="grp">导航</div><a href="0601_wiki_index.html">首页 / 总览</a><a href="0601_wiki_architecture.html">系统架构 (Core)</a><a href="0601_wiki_bsp.html">BSP 驱动层</a><a href="0601_wiki_protocol.html">通信协议 (App)</a><a href="0601_wiki_sample.html">采样 / 波形发生</a><a href="0601_wiki_flash.html">Flash 烧录 / 存储</a><a href="0601_wiki_build.html">构建 / 测试</a><a href="0601_wiki_review.html" class="active">代码审查报告</a><div class="grp">补充资料 (DOC/)</div><a href="0328_protocol_v1.4.html">协议 v1.4 专题</a><a href="0327_pmic_code_explain.html">PMIC 初始化</a><a href="0429_sw_i2c_explain.html">软件 I2C2 详解</a><a href="0519_aw_isp_walkthrough.html">AW ISP 走读</a><a href="0522_flash_burn_flow.html">Flash 烧录流程</a></nav>
+<main><h1>代码审查报告</h1>
+<p class="lead">2026-06-01 多代理深度审查：8 个模块各派审查代理精读 → 每条发现派多个对抗式验证代理（默认倾向反驳，须引用代码事实）→ 非全员反驳者保留。共 51 条原始发现，确认 <b>40</b> 条。本报告仅出结论，未改动任何固件代码。</p>
+<div class="callout"><div class="t">严重度分布</div>
+<span class="badge sev-high">严重 0</span>
+<span class="badge sev-med">中 5</span>
+<span class="badge sev-low">低 16</span>
+<span class="badge sev-style">风格 19</span><br>
+<b>无新发现「严重」级 bug。</b>中等级问题集中于「Flash 写会话期间未阻止采样/发生器并发访问 I2C2」与「采样写返回值丢弃」。多数低/风格项与 CLAUDE.md 现有 TODO 重叠（已交叉标注）。</div>
+<h2><span class="badge sev-med">中</span> 中 (medium) · 5 项</h2>
+<div class="finding sv-medium">
+<div class="ttl">Flash 文件存储写 session(0x39→0x3B)期间未阻止采样/发生器启动 → I2C2 与片内 Flash 编程并发</div>
+<div class="meta">📦 App-Protocol (app_protocol.c / app_protocol.h) &nbsp;·&nbsp; 📍 <code>app_protocol.c:1361 (DispatchFrame) / 1168 HandleFlashStoreWriteBegin / 1201 HandleFlashStoreWriteData</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>s_flashSessionActive 只由 AW ISP 0x32 BEGIN 置位(1036)，0x39 flashstore BEGIN 不置任何 session 闸门，仅在 BEGIN/WIPE 入口一次性检查 sample/generator 未运行。0x39 之后、0x3B END 之前，DispatchFrame 仍放行 0x50 START_SAMPLE 与 0x55/0x56/0x58 生成器启动。一旦采样启动，TIM6 ISR 驱动 I2C2 软件 bit-bang，而 0x3A WriteData 调 App_FlashStore_WriteData 编程片内 Flash——STM32F4 Flash 编程/擦除会阻塞 Flash 总线，从 Flash 取指的 TIM6 ISR 在此期间无法执行,破坏采样时序甚至取指异常。属真实并发缺口,非已记录的 H-e。</div>
+<div class="row"><span class="lbl">建议：</span>为 flashstore 写 session 增加独立 active 标志(如 s_storeSessionActive)，在 0x39 成功后置位、0x3B/错误清零，并在 DispatchFrame 顶部像 AW session 一样拒绝该期间的 sample/generator/0x30/0x31/bulk 命令;或在 0x50/0x55/0x56/0x58 入口追加 flashstore-session 拒绝判断。</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl">RX 状态机无半截帧超时,错误 LEN 会吞掉后续整帧</div>
+<div class="meta">📦 App-Protocol (app_protocol.c / app_protocol.h) &nbsp;·&nbsp; 📍 <code>app_protocol.c:1515 ProcessByte (STATE_WAIT_DATA 1561)</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>若线路噪声/丢字节导致进入 STATE_WAIT_DATA 后期望的 len 字节迟迟收不齐，状态机无限期停留，期间到来的真正 0xAA 0x55 帧头被当作 DATA 吞掉，直到凑满 len 字节才进入 CRC 比对(必失败发 0x01)。一个被破坏的 LEN(如 0xFF)会连吃 255+2 字节，吞掉多个后续合法帧。PC 端 100ms 超时重发可缓解但会放大单次误码的影响面。</div>
+<div class="row"><span class="lbl">建议：</span>引入帧内字节间超时(用 BSP_GetTick 记录上次收字节时刻,Poll 中若状态≠WAIT_SOF1 且超时则复位 s_state=STATE_WAIT_SOF1);或保留 SOF 双字节再同步作为兜底已部分覆盖,但 DATA 态无法借此恢复。</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl">H-e：双缓冲数据与元数据可能不同源（通道错位/数据撕裂）</div>
+<div class="meta">📦 App-Sample / App-Motor（示波器采样 + 波形发生器 + 电机 IC 寄存器访问） &nbsp;·&nbsp; 📍 <code>App/Src/app_sample.c:432-447</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>Poll 在临界区(__disable_irq/__enable_irq, :433-439)只快照了 mask/failCnt/totalCnt/readIdx 并清 ready，但真正读取数据 buffer 的 SendStreamFrame(s_isrBuf[readIdx],...) 在 :447 临界区之外执行。SendStreamFrame 是纯内存拷贝+UART_Transmit 排队，本身较快，但若两次 TIM6 ISR 在此期间抢占（采样频率高/Poll 被其它 Poll 拖慢时可能），ISR 会再次写回 readIdx 这块 buffer（writeIdx 在两次翻转后回到 readIdx），导致 SendStreamFrame 读到的数据是新一帧的、而 mask/totalCount 仍是旧快照——极端时序下通道数据与掩码错位。这是 CLAUDE.md TODO 已登记的 H-e。</div>
+<div class="row"><span class="lbl">建议：</span>两种修复其一：①在临界区内把 s_isrBuf[readIdx] 的有效字节一次性 memcpy 到本地/发送缓冲再出临界区组帧；②采用三缓冲或在 ISR 侧检测 readIdx 即将被覆盖时跳过(dataReady 仍为 1 表示主循环未取走则不翻转覆盖)。推荐方案①，拷贝量最大 16 字节，临界区开销可控。</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl">发生器写返回值全部 (void) 丢弃，I2C 写失败上位机无感知</div>
+<div class="meta">📦 App-Sample / App-Motor（示波器采样 + 波形发生器 + 电机 IC 寄存器访问） &nbsp;·&nbsp; 📍 <code>App/Src/app_sample.c:117,151,200</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>Generator_DoLinearWrite/Sawtooth/Cosine 对 App_Motor_WriteReg 返回值一律 (void) 丢弃。发生器在 ISR 内运行不便直接回包，但若电机 IC 持续 NACK，上位机完全无法察觉写失败(不像采样有 fail 计数+auto-stop)。</div>
+<div class="row"><span class="lbl">建议：</span>参照采样的失败计数机制，为发生器加一个连续写失败计数，超阈值发 SendDebugInfo 告警(类似 :354)，避免静默失败。</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl">文件写会话(WriteData/WriteEnd)无协议层并发互斥，sampling/generator 可在写入中途启动</div>
+<div class="meta">📦 App-FlashStore（片上 Flash 用户文件存储） &nbsp;·&nbsp; 📍 <code>app_protocol.c:1200-1249 / app_flashstore.c:147-217</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>0x39 WRITE_BEGIN 和 0x3F WIPE 在入口拒绝 sampling/generator/bulkRead 并发(因 3-7s 擦区阻塞)，但 0x3A WRITE_DATA / 0x3B WRITE_END 没有任何互斥检查。一个文件写会话(s_writeActive=1)可能持续数秒到数十秒(逐包传输)，期间 PC 若发 0x50 START_SAMPLE 或发生器启动命令会被接受。虽然每次 ProgramBytes 仅 ~2ms 不构成 ISR 长阻塞，但 TIM6 采样 ISR 内做 I2C(有意设计)与主循环的 Flash Program 交织，且 STM32 在对自身 Flash 编程时取指会停顿(同一 Flash bank)，可能扰乱采样时序；逻辑上也允许在半写文件期间跑无关任务。建议：在 WriteBegin 成功后置一个协议层 file-store 会话标志，DispatchFrame 中比照 s_flashSessionActive 的做法，会话期内仅放行 flash-store 组+心跳，或至少拒绝 sampling/generator START。</div>
+<div class="row"><span class="lbl">建议：</span>新增 s_fileStoreSessionActive(volatile)，WriteBegin 成功置位、WriteEnd/失败/Wipe 清零；在 DispatchFrame 中拒绝会话期内的 sampling/generator START 命令(或全部非 flash-store 组命令)。</div>
+</div>
+<h2><span class="badge sev-low">低</span> 低 (low) · 16 项</h2>
+<div class="finding sv-low">
+<div class="ttl">g_pmicHwenFlag 读-清-用非原子（理论上可丢一次边沿）</div>
+<div class="meta">📦 Core (启动 / 中断 / 主循环框架层) &nbsp;·&nbsp; 📍 <code>Core/Src/main.c:154-158</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>主循环 if(g_pmicHwenFlag){g_pmicHwenFlag=0; EnableSequence();}。若 EXTI4 在『读到非0』与『写0』之间又触发置1，则该次写0会清掉新边沿，丢失一次重配请求。flag 已正确声明 volatile，且 HWEN 边沿极低频、丢失最多延迟到下次真实边沿，实际影响可忽略，但严格讲是 ISR/主循环共享变量的 RMW 竞态。</div>
+<div class="row"><span class="lbl">建议：</span>若需严格不丢边沿，可在 __disable_irq/__enable_irq 临界区内做读+清，或改用『先清后读硬件电平』模式。当前可保留并加注释说明可接受。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">无独立看门狗（IWDG），死循环/总线死锁无法自恢复</div>
+<div class="meta">📦 Core (启动 / 中断 / 主循环框架层) &nbsp;·&nbsp; 📍 <code>Core/Src/main.c:142 (主循环) / 全局</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>主循环与各 Halt 死循环均无看门狗喂狗机制。若主循环被某个 Poll 内的意外阻塞卡住（如 I2C 异常路径），或 fault handler 进入死循环，系统只能靠人工断电恢复。对电机调试板这类需长期挂机的设备，缺少 IWDG 自恢复是健壮性隐患。CLAUDE.md TODO 已列为结构性待办。</div>
+<div class="row"><span class="lbl">建议：</span>评估引入 IWDG：在 BSP 增加 bsp_iwdg，主循环每轮喂狗（Halt 死循环可故意不喂以触发复位或保留人工诊断窗口，需与诊断需求权衡）。属新增功能，按规约应先与开发者确认。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">BSP_I2C_Scan / BSP_I2C2_Scan 无 pAddrList 上界保护</div>
+<div class="meta">📦 BSP-comm (UART + I2C1/2/3) &nbsp;·&nbsp; 📍 <code>BSP/Src/bsp_i2c.c:362-410; BSP/Src/bsp_i2c2.c:439-453</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>两个 Scan 都无条件 pAddrList[(*pCount)++]=addr，扫描范围 1..126 最多写 126 项。当前唯一调用方 app_protocol.c:363 用 addrList[127] 足够，但 API 签名未带容量参数，纯依赖调用方约定。任何容量 &lt;126 的缓冲都会栈越界，且 CLAUDE.md TODO 已列『Scan pAddrList 无上界』为待修项。</div>
+<div class="row"><span class="lbl">建议：</span>给 Scan 增加 maxCount 入参或在头文件用宏约定最小缓冲尺寸(如 BSP_I2C_SCAN_LIST_MIN=127)并在调用处静态断言；至少在写入前判断 *pCount &lt; maxCount</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">RecoverBus 无法恢复从机钳死 SCL</div>
+<div class="meta">📦 BSP-comm (UART + I2C1/2/3) &nbsp;·&nbsp; 📍 <code>BSP/Src/bsp_i2c.c:183-234; BSP/Src/bsp_i2c2.c:457-488</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>恢复流程假定主机能自由驱动 SCL 做 9 脉冲。若从机一直把 SCL 拉低(钳死)，软件脉冲无效，恢复后 BUSY 仍置位（硬件路径 Init 会因此返 ERROR；软件路径 s_busRecovered 不会置位但无显式失败上报）。CLAUDE.md TODO 已记录此局限。</div>
+<div class="row"><span class="lbl">建议：</span>恢复前/后读 SCL_READ，若 SCL 被钳低则直接判失败上报诊断码（类似 g_i2c2InitDiag），避免误判恢复成功</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">BSP_UART_Init / BSP_UART_SetBaudrate 恒返 SUCCESS，掩盖潜在硬件故障</div>
+<div class="meta">📦 BSP-comm (UART + I2C1/2/3) &nbsp;·&nbsp; 📍 <code>BSP/Src/bsp_uart.c:143-150,184-225</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>两函数无任何失败路径，即使 GPIO/DMA/USART 配置异常也返 SUCCESS。main.c 已对 Init 返回值做 HaltNoUart 处理(H-c)，但实际永远不会触发该分支；SetBaudrate 失败(如 TC 永不置位仅 break)也对上位机透明。CLAUDE.md 要求 BSP 初始化统一返回 ErrorStatus 以供上层判断。</div>
+<div class="row"><span class="lbl">建议：</span>Init 可在末尾校验 USART_Cmd 后 USART-&gt;CR1 EN 位、SetBaudrate 校验 TC 排空是否超时(超时返 ERROR)，使返回值具备实际语义</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">SetEnable 非读改写，盲写固定值覆盖整寄存器</div>
+<div class="meta">📦 BSP-misc (PMIC / TIM6 / Flash / LED / Tick) &nbsp;·&nbsp; 📍 <code>BSP/Src/bsp_pmic.c:232</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>SetEnable 直接写固定 0x8C/0x0C 到 CTRL 寄存器，覆盖 Bit7 之外的所有位（模式位[3:2] 被硬编码为 0b11，其余位清 0）。若 RT5112WSC CTRL 寄存器还含 OCP/软启动/discharge 等配置位，或上电默认值非 0x0C，盲写会破坏这些设置；同时与 SetVout 配合时若器件要求保留某些位也会丢失。CLAUDE.md TODO 已将其列为低优先级待修项。</div>
+<div class="row"><span class="lbl">建议：</span>改为读-改-写：ReadReg 取当前值，仅置/清 Bit7（及确需的模式位），其余位保留后写回；或在 .h 用掩码宏明确定义需保留位。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">App_Generator_StartCosine API 自身无 channelCount 上界保护，存在栈/数组越界隐患</div>
+<div class="meta">📦 App-Sample / App-Motor（示波器采样 + 波形发生器 + 电机 IC 寄存器访问） &nbsp;·&nbsp; 📍 <code>App/Src/app_sample.c:611-629</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>s_cosAddr/s_cosPhaseX10 大小为 APP_GEN_COS_MAX_CH(3)，但 StartCosine 直接 for(i=0;i&lt;channelCount;i++) 写入(:625-629)，未对 channelCount 做上界裁剪。当前唯一调用方 app_protocol.c:905-906 已校验 channelCount&lt;=3，故现网安全；但 BSP/App 公开 API 不应依赖调用方校验（违反防御式编程，且测试代码/未来新调用方可越界写穿 s_cosAddr 后续静态变量）。</div>
+<div class="row"><span class="lbl">建议：</span>在 StartCosine 入口加 if(channelCount==0U||channelCount&gt;APP_GEN_COS_MAX_CH) return ERROR; 与 addrs/phaseX10 NULL 检查，使 API 自洽。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">s_genMode 等发生器配置非原子更新，ISR 可能读到半套参数</div>
+<div class="meta">📦 App-Sample / App-Motor（示波器采样 + 波形发生器 + 电机 IC 寄存器访问） &nbsp;·&nbsp; 📍 <code>App/Src/app_sample.c:567-647</code> &nbsp;·&nbsp; 🗳️ 验证 1/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>三个 Start 函数先置 s_genMode=GEN_NONE 再逐个写 s_linAddr/s_cos* 等配置，最后置 s_genMode=目标。但这些写之间不在临界区内，TIM6 ISR 若在配置写入过程中抢占：虽然 genMode 此刻为 GEN_NONE 不会执行写，问题较小；但 SetInterval(:484-494) 在 genMode 已=GEN_LINEAR/COSINE 时改 s_genDivider/s_cosDPhase，与 ISR 的 s_genCounter&gt;=s_genDivider 判定(:242)及 Generator_DoCosineWrite 读 s_cosDPhase(:204) 并发，非 volatile 字段(s_cosDPhase/s_lin* 等)的多字节读写可能撕裂。</div>
+<div class="row"><span class="lbl">建议：</span>对 ISR 与主循环共享的发生器配置(s_cosDPhase float、s_linStep 等)写入加 __disable_irq()/__enable_irq() 包裹，或在 Start/SetInterval 修改前临时 AcquireBus。至少 s_genDivider 已 volatile，s_cosDPhase 应同样处理。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">App_Sample_SetChannelMask 未清 I2C 失败计数，且 mask 写入非临界区</div>
+<div class="meta">📦 App-Sample / App-Motor（示波器采样 + 波形发生器 + 电机 IC 寄存器访问） &nbsp;·&nbsp; 📍 <code>App/Src/app_sample.c:500-508</code> &nbsp;·&nbsp; 🗳️ 验证 1/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>切换通道掩码后 s_i2cFailCount/s_i2cWarnSent 不复位，旧故障计数会延续到新掩码下，可能导致换通道后偏快触发降级/auto-stop。另 s_channelMask 是 volatile 单字节写入虽原子，但与 SetRegMap 的临界区不一致。CLAUDE.md TODO 低优先级已登记。</div>
+<div class="row"><span class="lbl">建议：</span>SetChannelMask 成功路径内 __disable_irq 包裹并复位 s_i2cFailCount=0/s_i2cWarnSent=0，与寄存器映射变更行为对齐。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">ReadData 在 maxLen &lt; 剩余 chunk 时静默截断，调用方用更小 buffer 会造成静默丢数据</div>
+<div class="meta">📦 App-FlashStore（片上 Flash 用户文件存储） &nbsp;·&nbsp; 📍 <code>app_flashstore.c:272-277</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>chunkLen 先按 min(remaining, 252) 计算，再 if (chunkLen &gt; maxLen) chunkLen = maxLen 二次钳位，且 actualLenOut 只报告钳位后的值、返回 FS_OK。由于 ReadData 的语义是 offset=pktSeq*FS_CHUNK_MAX_BYTES(固定 252 步进)，若某次调用 maxLen&lt;252 导致读到 &lt;252，下一包 pktSeq+1 的 offset 仍按 252 步进，会跳过 (252-actualLen) 个未读字节——表现为静默数据丢失而非报错。当前唯一调用方(app_protocol.c:1296)固定传 sizeof(buf)=252，所以现网安全，但这是一个脆弱的隐式契约。</div>
+<div class="row"><span class="lbl">建议：</span>若 maxLen&lt;FS_CHUNK_MAX_BYTES 且本包不是末包，应返回 FS_OUT_OF_RANGE 而非静默截断；或在 .h 契约中显式要求 maxLen&gt;=FS_CHUNK_MAX_BYTES 并加 assert/早退。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">jump_check 为永真 stub，烧录&quot;成功&quot;不代表固件可运行</div>
+<div class="meta">📦 Flash-AW (AW86008/AW86100 ISP 烧录链) &nbsp;·&nbsp; 📍 <code>Flash/AW/AW86008_86100/Src/aw_uboot_isp.c:276-326</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>aw_flash_jump_check 始终返回 ISP_OK，vendor 真实现被注释。aw_i2c_isp_download 返回 ISP_OK 只代表 erase+write 子步骤 ACK，并不代表 jump 成功或新固件运行。与路线图 4.6 &quot;未做回读验证&quot;一致，属已知风险但应用层/PC 端若把 ISP_OK 当作&quot;烧录成功&quot;会误判。</div>
+<div class="row"><span class="lbl">建议：</span>已在代码注释明确，属可接受的已知 stub。建议：PC 端必须用 0x33 回读校验或 0x37 RESET + 可达性测试二次确认；联调拿到 vendor 真 ACK 格式后启用真实现。文档化即可，不改 vendor 代码。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">pack_read 的 ACK 校验弱于 erase/write（仅查 r_buff[9]==0）</div>
+<div class="meta">📦 Flash-AW (AW86008/AW86100 ISP 烧录链) &nbsp;·&nbsp; 📍 <code>Flash/AW/AW86008_86100/Src/aw_uboot_isp.c:364-371</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>erase/write/hank 均用 aw_uboot_buff_built 重建期望 ACK 帧再 memcmp 比对(:453/508/607)，而 pack_read 仅检查 r_buff[9]==0(一个状态字节)，不校验地址/长度/校验和是否匹配。回读到错位或部分损坏的数据不会被发现，启用 0x33 回读校验时可能给出假阳性。</div>
+<div class="row"><span class="lbl">建议：</span>启用回读校验前，建议(在 vendor 注释框内记录后)补一致性检查：至少校验返回帧的 module/event/校验和，或对 r_buff 头部做 memcmp，与 erase/write 路径对齐。属只审范畴，留待联调启用回读时处理。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">block_write 循环计数器 i 为 uint8_t，len&gt;63 时溢出死循环</div>
+<div class="meta">📦 Flash-AW (AW86008/AW86100 ISP 烧录链) &nbsp;·&nbsp; 📍 <code>Flash/AW/AW86008_86100/Src/aw_uboot_isp.c:465,475</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>aw_flash_block_write_ckeck 中 i 为 uint8_t，循环 for(i=0;i&lt;len*4;i++)。当前所有调用 len≤16(i&lt;64)安全；但若 vendor/未来调用传 len≥64，len*4≥256 截断为 uint8_t 后比较恒成立，i 回绕，造成 l_buff[i+4] 越界写(l_buff 仅 68)且死循环。属潜在脆弱点而非现触发 bug。</div>
+<div class="row"><span class="lbl">建议：</span>调用方(download_check)硬编码块大小为 16，当前无法触发。建议在 download_check/aw_flash.h 文档中明确&quot;单块 len 上限 16 字&quot;的不变量约束；若担心可把 i 提升为 uint32_t(与其它函数一致，pack_read/download_check 的 i 已是 uint32_t)。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">reset/boot 后未验证芯片实际状态，纯发命令 + 固定延时</div>
+<div class="meta">📦 Flash-AW (AW86008/AW86100 ISP 烧录链) &nbsp;·&nbsp; 📍 <code>Flash/AW/AW86008_86100/Src/aw_uboot_isp.c:165-193</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>aw_reset_chip/aw_boot_control 在 AwWakeSequence 成功后仅 delay_ms 收尾即返 ISP_OK；20×stop_uboot 为 fire-and-forget 不检查返回(按 vendor 原意)。无法确认芯片真进入/退出 uboot。与 jump stub 同源——成功返回信息量有限。</div>
+<div class="row"><span class="lbl">建议：</span>已知 vendor 行为，文档化即可。回读校验启用后端到端确认。不改 vendor 代码。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">PC 测试脚本默认波特率 115200 与固件默认 460800 不匹配</div>
+<div class="meta">📦 Build &amp; Test (Makefile / Linker / Test framework / PcTest) &nbsp;·&nbsp; 📍 <code>PcTest/firmware_test_protocol_0331.py:36,726; firmware_test_i2C_command_0329.py:29; vs bsp_uart.h:17</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>固件 BSP_UART_BAUDRATE_DEFAULT=460800U(CLAUDE.md §2 亦标注 460800 默认)，但所有 PC 主测脚本 CFG[&#x27;baud&#x27;]/argparse default 均为 115200。开箱即用直接运行脚本会因波特率不符而完全收不到固件响应(心跳超时),需用户每次手动 --baud 460800。这是常见的联调踩坑点。</div>
+<div class="row"><span class="lbl">建议：</span>将脚本默认波特率改为 460800 与固件出厂值对齐；或在脚本启动时先试 460800、失败再回退低速并打印明确提示。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl">outline.py 未指定 UTF-8 编码，对含中文的 PcTest 脚本崩溃</div>
+<div class="meta">📦 Build &amp; Test (Makefile / Linker / Test framework / PcTest) &nbsp;·&nbsp; 📍 <code>outline.py:3-4 (open(sys.argv[1]) 无 encoding)</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>CLAUDE.md §12 强制要求读 Python 文件前先跑 <code>python outline.py &lt;file&gt;</code>，但 outline.py 用 open() 默认 GBK 编码(Windows)，遇到 PcTest 脚本里的中文 docstring 抛 UnicodeDecodeError(&#x27;gbk&#x27; codec can&#x27;t decode byte 0xae)，导致该工作流对本项目所有含中文的 .py 完全不可用。</div>
+<div class="row"><span class="lbl">建议：</span>改为 open(sys.argv[1], encoding=&#x27;utf-8&#x27;)。</div>
+</div>
+<h2><span class="badge sev-style">风格</span> 风格 (style) · 19 项</h2>
+<div class="finding sv-style">
+<div class="ttl">HardFault_Handler 裸写端口寄存器位（魔法数字 + 绕过 BSP 分层）</div>
+<div class="meta">📦 Core (启动 / 中断 / 主循环框架层) &nbsp;·&nbsp; 📍 <code>Core/Src/stm32f4xx_it.c:30-43</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>用 (1U&lt;&lt;5) 直接置 RCC-&gt;AHB1ENR GPIOF 时钟位、(1U&lt;&lt;13)/(3U&lt;&lt;(13*2)) 直配 PF13。违反 CLAUDE.md「.c 中禁止裸写端口/引脚数字、必须引用宏」。虽然 HardFault 下故意不依赖 SPL/BSP（避免状态损坏时调库）有其合理性，但 13/5 这些位号是裸魔法数字，且与 BSP_LED 引脚定义重复，换 LED 引脚时此处会被漏改导致故障指示失效。CLAUDE.md TODO 已记录此项（HardFault 引脚魔法数字）。</div>
+<div class="row"><span class="lbl">建议：</span>把 PF13/GPIOF 时钟位号定义为带注释的本地宏（如 HARDFAULT_LED_PORT_RCC_BIT / HARDFAULT_LED_PIN），或在注释中明确「故意独立于 BSP_LED 宏，换引脚需同步此处」，避免静默失效。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">MemManage / BusFault / UsageFault 静默 while(1)，无任何指示</div>
+<div class="meta">📦 Core (启动 / 中断 / 主循环框架层) &nbsp;·&nbsp; 📍 <code>Core/Src/stm32f4xx_it.c:47-60</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>三个 fault handler 直接空死循环，既不闪灯也不发串口，现场无法与「正常运行卡死」区分。与 HardFault 有明确闪灯指示不一致。CLAUDE.md TODO 已列为低优先级。注：默认 SCB SHCSR 未使能这三个 fault 时它们会上升为 HardFault，但项目若启用 fpv4/MPU 仍可能直达此处。</div>
+<div class="row"><span class="lbl">建议：</span>复用 HardFault_Handler 的闪灯逻辑（或让三者 b 到同一指示例程），保证任何 CPU fault 都有可见指示。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">主循环对 now 取一次后供多处使用，测试 Poll 用到偏旧时刻</div>
+<div class="meta">📦 Core (启动 / 中断 / 主循环框架层) &nbsp;·&nbsp; 📍 <code>Core/Src/main.c:144-165</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>now=BSP_GetTick() 在循环头取一次，随后 Protocol_Poll/Sample_Poll 可能耗时数百微秒至毫秒，Test_PMIC_PidRead_Poll(now) 与心跳判断使用的是循环开始的时刻。仅影响时间基准精度，且测试代码默认不编译；心跳用 &gt;= 比较不会漏翻转。属轻微风格问题。</div>
+<div class="row"><span class="lbl">建议：</span>如需更准可在心跳判断前重取 tick；当前实现可接受，无需改动。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">system_stm32f4xx.c 头部模板注释残留 25MHz / 168MHz 等非实际配置值</div>
+<div class="meta">📦 Core (启动 / 中断 / 主循环框架层) &nbsp;·&nbsp; 📍 <code>Core/Src/system_stm32f4xx.c:35,47,59 等头部注释块</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>文件头大段 SPL 模板注释列出 25MHz HSE、168MHz、PLL_M=25 等多套预设，与本项目实际生效的 HSE 8MHz/180MHz/PLL_M=8（:364/388/390）不符。实际宏定义正确，仅注释误导。该文件为 SPL 模板属只读复用范畴，按规约不逐行审，仅记录提醒。</div>
+<div class="row"><span class="lbl">建议：</span>无需修改源（遵循『SPL 模板直接复用』规约）。如担心误导可在 CLAUDE.md/WIKI 注明『实际时钟以 :364 起 PLL 宏为准』。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">软件 I2C2 全程在主循环执行且事务可达数百微秒以上，依赖 App 层 NVIC mask 期间 TIM6/UART RX 中断被屏蔽</div>
+<div class="meta">📦 BSP-comm (UART + I2C1/2/3) &nbsp;·&nbsp; 📍 <code>BSP/Src/bsp_i2c2.c:271-424</code> &nbsp;·&nbsp; 🗳️ 验证 1/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>WaitSclHigh 单 bit 最坏阻塞 200us(STRETCH_TIMEOUT)，多字节透传读写在从机异常拉伸时累计可达毫秒级。App 层 AcquireBus 对单次事务 mask TIM6_DAC_IRQ，长事务(如 0x22 bulk)改在入口拒绝采样/发生器——这是有意设计(memory project_isr_sampling_intentional)，非缺陷，但拉伸超时窗口偏大时仍会拉长 mask 时间，记录供 WIKI 标注。</div>
+<div class="row"><span class="lbl">建议：</span>无需改 BSP；建议在 WIKI 明确 STRETCH_TIMEOUT=200us×事务字节数为 mask 上界，供上位机超时预算参考</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">PeriphInit 使用未初始化的 I2C_InitTypeDef（未 {0} 清零）</div>
+<div class="meta">📦 BSP-comm (UART + I2C1/2/3) &nbsp;·&nbsp; 📍 <code>BSP/Src/bsp_i2c.c:46</code> &nbsp;·&nbsp; 🗳️ 验证 1/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>I2C_InitTypeDef i2cInit; 未做 ={0} 初始化，逐字段赋值覆盖了所有 SPL 用到的成员，当前 SPL I2C_Init 仅读这些字段故无实际影响；但与 bsp_uart.c 中 GPIO/USART/DMA 一律 ={0} 的风格不一致，属潜在坏味道（未来 SPL 升级新增字段时会读到栈垃圾）。</div>
+<div class="row"><span class="lbl">建议：</span>统一改为 I2C_InitTypeDef i2cInit = {0}; 与 ConfigGpioAF 的 GPIO_InitTypeDef 同样补 {0}</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">BSP_UART_Transmit 的 s_txDone 检查-置位非原子（良性，建议注释）</div>
+<div class="meta">📦 BSP-comm (UART + I2C1/2/3) &nbsp;·&nbsp; 📍 <code>BSP/Src/bsp_uart.c:160-165</code> &nbsp;·&nbsp; 🗳️ 验证 1/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>读 s_txDone==0 与写 s_txDone=0 之间无临界区。因 TX DMA ISR 只会把 s_txDone 由 0 写为 1（单向），且 Transmit 仅在 s_txDone==1 时继续，竞态结果良性。但缺少注释说明该不变式，后续若有人让 ISR 也写 0 会引入隐患。</div>
+<div class="row"><span class="lbl">建议：</span>加注释说明『s_txDone 只在 ISR 中置 1、只在 Transmit 中置 0，单向写故无需临界区』，固化该不变式</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">bsp_led.h 文件头注释与实际硬件不符（PG13/PG14 vs PF13）</div>
+<div class="meta">📦 BSP-misc (PMIC / TIM6 / Flash / LED / Tick) &nbsp;·&nbsp; 📍 <code>BSP/Inc/bsp_led.h:3</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>头注释写 ‘PG13 (heartbeat), PG14 (error)’，但宏实际为 GPIOF/Pin_13（PF13），且项目仅一个 LED。注释陈旧会误导换引脚的人。</div>
+<div class="row"><span class="lbl">建议：</span>更新注释为 ‘PF13 (heartbeat, sole LED)’，删除 PG14 error 描述。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">s_bulkReadActive 缺 volatile,被多上下文读取</div>
+<div class="meta">📦 App-Protocol (app_protocol.c / app_protocol.h) &nbsp;·&nbsp; 📍 <code>app_protocol.c:83 / 读取点 1104(EXEC 守卫) 1181 1321 1364</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>s_bulkReadActive 在 HandleBulkRead 内置/清(主循环上下文)，但 DispatchFrame、HandleFlashExec/WriteBegin/Wipe 也读它做并发守卫。虽当前全部在主循环单线程上下文(bulk 期间 dispatch 只放行心跳,不会重入其他 handler)，无真正并发写,但编译器在 -O2 下可能将其缓存。已在 CLAUDE.md TODO 低优先级登记。</div>
+<div class="row"><span class="lbl">建议：</span>补 volatile uint8_t s_bulkReadActive，与 s_flashSessionActive 一致,消除编译器优化隐患并明确语义。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">长度/参数错误统一返回 EXEC_FAIL(0x03)而非更细错误码</div>
+<div class="meta">📦 App-Protocol (app_protocol.c / app_protocol.h) &nbsp;·&nbsp; 📍 <code>全部 handler 的 len 校验分支</code> &nbsp;·&nbsp; 🗳️ 验证 1/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>protocol.MD/CLAUDE.md 仅定义 0x01 CRC/0x02 未知命令/0x03 执行失败三种错误码。所有长度不符、参数越界、范围错误均归并到 0x03,PC 端无法区分&#x27;帧结构错误&#x27;与&#x27;真实执行失败(如 I2C NACK)&#x27;。属协议设计取舍,不是 bug,但调试期定位困难。</div>
+<div class="row"><span class="lbl">建议：</span>如后续协议扩展,可考虑新增 0x04 参数错误码;当前阶段保持现状,在 PcTest 用例中以命令上下文区分即可。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">DispatchFrame 巨型 switch,与 TODO 中&#x27;查找表&#x27;结构优化项一致</div>
+<div class="meta">📦 App-Protocol (app_protocol.c / app_protocol.h) &nbsp;·&nbsp; 📍 <code>app_protocol.c:1395-1508</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>36 路 case 全为 &#x27;Handler(pFrame); break&#x27; 模板,新增命令需同步改枚举+switch,易遗漏。CLAUDE.md TODO 结构项已记 &#x27;DispatchFrame 查找表&#x27;。</div>
+<div class="row"><span class="lbl">建议：</span>可改为 {cmd, fn_ptr} 静态查找表 + 前置闸门保留;非功能缺陷,优先级低。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">Generator_DoLinearWrite 与 Generator_DoSawtoothWrite 三角波推进逻辑完全重复</div>
+<div class="meta">📦 App-Sample / App-Motor（示波器采样 + 波形发生器 + 电机 IC 寄存器访问） &nbsp;·&nbsp; 📍 <code>App/Src/app_sample.c:114-180</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>两函数的‘升降三角波推进’代码逐字重复(:120-145 与 :154-179 一致)，仅写值前缀注释不同。维护时易只改一处导致行为分叉。</div>
+<div class="row"><span class="lbl">建议：</span>抽取公共 static void AdvanceTriangle(void) 推进 s_linCurrent/s_linAscending，两个 DoWrite 各自只保留 App_Motor_WriteReg 调用。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">CRC32 表为运行时生成的可写 .bss(1KB)，可改为 static const 预计算表</div>
+<div class="meta">📦 App-FlashStore（片上 Flash 用户文件存储） &nbsp;·&nbsp; 📍 <code>app_flashstore.c:31-47</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>s_crcTable[256] 占用 1KB SRAM 且需启动时计算 256*8 次循环。项目堆为 0、栈 2KB、SRAM 资源紧张(SRAM1 112KB 仍宜节省)。若改为编译期 static const 表则移入 Flash、省去 crc32_init_table 与 s_crcTableReady 状态，并消除该表被意外改写的风险。属优化非缺陷。</div>
+<div class="row"><span class="lbl">建议：</span>用预生成的 256 项 static const uint32_t 表替换运行时生成；或保留现状(可接受)。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">.h 文档命令范围注释与实际实现的 0x3F 不一致</div>
+<div class="meta">📦 App-FlashStore（片上 Flash 用户文件存储） &nbsp;·&nbsp; 📍 <code>app_flashstore.h:24,55-60</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>头文件多处注释写 &quot;see app_protocol.c handlers for 0x39 ~ 0x3E commands&quot;，但 Wipe 实际映射到 0x3F(见 app_protocol.c:1476 与 .c 文件注释 0x3F)。任务描述也明确为 0x39~0x3F。文档少列了 0x3F WIPE，易误导维护者。</div>
+<div class="row"><span class="lbl">建议：</span>将头文件注释范围更正为 0x39 ~ 0x3F，并补充 0x3F→Wipe 的映射说明。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">两个 I2C 从机地址 0x6F/0x6B 均为推断值，未经实测确认</div>
+<div class="meta">📦 Flash-AW (AW86008/AW86100 ISP 烧录链) &nbsp;·&nbsp; 📍 <code>Flash/AW/AW86008_86100/Src/aw_uboot_isp.c:66,70</code> &nbsp;·&nbsp; 🗳️ 验证 1/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>AW_UBOOT_I2C_ADDR=0x6F 与 AW_CHIP_I2C_ADDR=0x6B 注释自承&quot;推断自序列&quot;&quot;如实测不对改这里&quot;。地址错则整个 wake/握手在 hank_connect_check 即失败返 ISP_HANK_ERROR。属联调阻塞项而非代码缺陷。</div>
+<div class="row"><span class="lbl">建议：</span>联调首步用逻辑分析仪/I2C 抓包确认这两个地址；确认后更新注释去掉&quot;推断&quot;措辞。无需现在改。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">pack_read 中 tmp 初值 -1 赋给 uint8_t（隐式截断为 0xFF）</div>
+<div class="meta">📦 Flash-AW (AW86008/AW86100 ISP 烧录链) &nbsp;·&nbsp; 📍 <code>Flash/AW/AW86008_86100/Src/aw_uboot_isp.c:335</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>uint8_t tmp = -1; 依赖隐式截断为 0xFF 表达&quot;未成功&quot;，配合 r_buff[9]==0 时置 0。逻辑正确但 -Wconversion 下可能告警，且语义晦涩(vendor 笔法)。</div>
+<div class="row"><span class="lbl">建议：</span>vendor 原始风格，不改。如未来重写可用 uint8_t tmp = 0xFFU 或布尔语义。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">PC 脚本 CRC 函数名 &#x27;crc16_modbus&#x27; 误导(实际非标准 MODBUS)</div>
+<div class="meta">📦 Build &amp; Test (Makefile / Linker / Test framework / PcTest) &nbsp;·&nbsp; 📍 <code>PcTest/firmware_test_protocol_0331.py:54-55; firmware_test_i2C_command_0329.py:46-47; test_pmic_cmd09_0420.py:15</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>函数命名/docstring 称 &#x27;CRC16-MODBUS poly=0x8005 LSB-first&#x27;，但标准 MODBUS 的 LSB-first(右移)实现必须用反射多项式 0xA001;用 0x8005 右移是项目自定义算法。固件 app_protocol.h:9-10 已明确标注 &#x27;NOT standard CRC16-MODBUS&#x27;。算法本身与固件一致(实测匹配)，仅命名误导，新人易据名错改成 0xA001 而导致整链路 CRC 失配。aw_passthru 脚本(:56)命名已正确标注&#x27;与 firmware 一致&#x27;。</div>
+<div class="row"><span class="lbl">建议：</span>将三个脚本里的 crc16_modbus 重命名为 crc16_proto 并修正 docstring 为 &#x27;项目自定义 CRC16, poly=0x8005 右移, 非标准 MODBUS&#x27;，与 firmware/aw 脚本口径统一。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">四个 PC 脚本各自重复实现 CRC16/build_frame/parse_frame</div>
+<div class="meta">📦 Build &amp; Test (Makefile / Linker / Test framework / PcTest) &nbsp;·&nbsp; 📍 <code>PcTest/firmware_test_protocol_0331.py:54-68 等四处</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>crc16、build_frame、parse_frame 在 4 个脚本中各复制一份。协议帧格式或 CRC 一旦演进(协议已到 v2.x，aw 脚本标注 v2.5)，需同步改 4 处，极易漏改造成脚本间行为不一致。属坏味道,非功能 bug。</div>
+<div class="row"><span class="lbl">建议：</span>抽出 PcTest/proto_common.py(crc16/build_frame/parse_frame/recv_control_frame)供各脚本 import，单点维护。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl">CLAUDE.md §3 文档与 Makefile 实际宏/启动文件名不一致</div>
+<div class="meta">📦 Build &amp; Test (Makefile / Linker / Test framework / PcTest) &nbsp;·&nbsp; 📍 <code>Makefile:104 (-DSTM32F429_439xx), :83 (startup_stm32f429_439xx.s) vs CLAUDE.md §3 &#x27;STM32F429xx&#x27; / §4 &#x27;startup_stm32f429zgtx.s&#x27;</code> &nbsp;·&nbsp; 🗳️ 验证 2/2 支持</div>
+<div class="row"><span class="lbl">问题：</span>CLAUDE.md 列预定义宏为 STM32F429xx、启动文件为 startup_stm32f429zgtx.s(HAL/CubeMX 命名)，而 Makefile 用 SPL V1.9.0 正确命名 STM32F429_439xx 与 startup_stm32f429_439xx.s。已核 SPL 设备头 stm32f4xx.h:61/70 只识别 STM32F429_439xx，故 Makefile 正确、文档不精确。实测编译通过，非缺陷,仅为防止后续依据文档误改。</div>
+<div class="row"><span class="lbl">建议：</span>更新 CLAUDE.md §3/§4 的宏名与启动文件名为 SPL 实际值,或加注&#x27;SPL 命名&#x27;说明。</div>
+</div>
+<div class="callout warn"><div class="t">与现有 TODO 的关系</div>本次确认项中，HardFault 引脚魔法数字、IWDG 缺失、H-e 双缓冲快照、Scan 无上界、SetEnable 读改写、s_bulkReadActive 缺 volatile、DispatchFrame 查找表、CRC 命名等，均与 CLAUDE.md 第7节「2026-06-01 全量代码审查」剩余待修项及 0513 review 重叠，本报告予以独立验证确认，未引入重复条目。</div>
+<footer>STM32F429ZG 电机调试板固件 · 代码 WIKI · 生成于 2026-06-01 · 基于多代理深度审查（8 模块 / 110 代理 / 51 发现 40 确认）<br>
+本 WIKI 由结构化审查数据渲染；SPL V1.9.0 库与 Firmware_Flash/ 原始参考代码仅说明定位，不逐行讲解。</footer>
+</main></div></body></html>

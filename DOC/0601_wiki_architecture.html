@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>系统架构 · STM32 固件 WIKI</title>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --bd:#2a3340;
+  --fg:#d7dde6; --mut:#8b97a7; --acc:#4ea1ff; --acc2:#7ee0c0;
+  --code:#0b0e13; --kw:#ff9d6b; --hi:#ffd479;
+  --hi-bg:#3a2f12;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.7}
+.layout{display:flex;min-height:100vh}
+nav.side{width:248px;flex:0 0 248px;background:var(--panel);border-right:1px solid var(--bd);
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 0}
+nav.side .brand{padding:0 20px 14px;border-bottom:1px solid var(--bd);margin-bottom:10px}
+nav.side .brand b{display:block;color:var(--acc);font-size:16px;letter-spacing:.3px}
+nav.side .brand span{color:var(--mut);font-size:12px}
+nav.side a{display:block;padding:9px 20px;color:var(--fg);text-decoration:none;font-size:14px;border-left:3px solid transparent}
+nav.side a:hover{background:var(--panel2);border-left-color:var(--acc)}
+nav.side a.active{background:var(--panel2);border-left-color:var(--acc);color:var(--acc);font-weight:600}
+nav.side .grp{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:14px 20px 4px}
+main{flex:1;min-width:0;padding:34px 46px 80px;max-width:1100px}
+h1{font-size:28px;margin:.2em 0 .1em;color:#fff;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:21px;margin:1.8em 0 .5em;color:var(--acc2);border-bottom:1px solid var(--bd);padding-bottom:6px}
+h3{font-size:17px;margin:1.4em 0 .4em;color:var(--hi)}
+p{margin:.5em 0}
+.lead{color:var(--mut);font-size:15px;margin:.4em 0 1.4em}
+code{background:var(--code);color:var(--kw);padding:1px 6px;border-radius:4px;font-family:"Cascadia Code","Consolas",monospace;font-size:.88em}
+pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;line-height:1.55}
+pre code{background:none;color:var(--fg);padding:0}
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:13.5px}
+th,td{border:1px solid var(--bd);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--acc2);font-weight:600}
+tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+td code{white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:18px 22px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:14px 0}
+.tile{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;text-decoration:none;color:var(--fg);transition:.15s}
+.tile:hover{border-color:var(--acc);transform:translateY(-2px)}
+.tile b{color:var(--acc);font-size:15px}
+.tile p{color:var(--mut);font-size:13px;margin:.4em 0 0}
+.badge{display:inline-block;padding:1px 9px;border-radius:11px;font-size:11px;font-weight:700;vertical-align:middle}
+.sev-high{background:#5b1418;color:#ff8a8a;border:1px solid #8a2228}
+.sev-med{background:#5a3a10;color:#ffc46b;border:1px solid #8a6018}
+.sev-low{background:#143a4a;color:#7ed0ff;border:1px solid #1f5e78}
+.sev-style{background:#2a313c;color:#a9b6c6;border:1px solid #3a4554}
+.callout{border-left:4px solid var(--acc);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+.callout.warn{border-left-color:#ffc46b}
+.callout.danger{border-left-color:#ff8a8a}
+.callout .t{font-weight:700;color:var(--acc);margin-bottom:4px}
+.callout.warn .t{color:#ffc46b}
+.callout.danger .t{color:#ff8a8a}
+.kv{color:var(--mut);font-size:12px}
+.finding{background:var(--panel);border:1px solid var(--bd);border-left-width:4px;border-radius:0 8px 8px 0;padding:14px 18px;margin:14px 0}
+.finding.sv-high{border-left-color:#ff8a8a}
+.finding.sv-medium{border-left-color:#ffc46b}
+.finding.sv-low{border-left-color:#7ed0ff}
+.finding.sv-style{border-left-color:#6b7686}
+.finding .ttl{font-weight:700;font-size:15px;color:#fff}
+.finding .meta{font-size:12px;color:var(--mut);margin:4px 0 8px}
+.finding .row{margin:6px 0}
+.finding .lbl{color:var(--acc2);font-weight:600;font-size:13px}
+.flow{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:16px;margin:14px 0;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;white-space:pre;overflow-x:auto;color:var(--acc2)}
+footer{color:var(--mut);font-size:12px;margin-top:50px;padding-top:18px;border-top:1px solid var(--bd)}
+a{color:var(--acc)}
+.toc{columns:2;gap:30px;margin:10px 0}
+.toc a{display:block;padding:3px 0;font-size:13.5px}
+@media(max-width:860px){.layout{flex-direction:column}nav.side{width:100%;height:auto;position:static}main{padding:24px}}
+</style></head>
+<body><div class="layout"><nav class="side"><div class="brand"><b>STM32F429ZG 电机调试板</b><span>固件代码 WIKI · 2026-06-01</span></div><div class="grp">导航</div><a href="0601_wiki_index.html">首页 / 总览</a><a href="0601_wiki_architecture.html" class="active">系统架构 (Core)</a><a href="0601_wiki_bsp.html">BSP 驱动层</a><a href="0601_wiki_protocol.html">通信协议 (App)</a><a href="0601_wiki_sample.html">采样 / 波形发生</a><a href="0601_wiki_flash.html">Flash 烧录 / 存储</a><a href="0601_wiki_build.html">构建 / 测试</a><a href="0601_wiki_review.html">代码审查报告</a><div class="grp">补充资料 (DOC/)</div><a href="0328_protocol_v1.4.html">协议 v1.4 专题</a><a href="0327_pmic_code_explain.html">PMIC 初始化</a><a href="0429_sw_i2c_explain.html">软件 I2C2 详解</a><a href="0519_aw_isp_walkthrough.html">AW ISP 走读</a><a href="0522_flash_burn_flow.html">Flash 烧录流程</a></nav>
+<main><h1>系统架构 (Core 框架层)</h1>
+<p class="lead">Core 是固件骨架：上电启动、向量表、时钟、NVIC 分组、外设初始化序列与主循环调度，全部 ISR 集中于 <code>stm32f4xx_it.c</code>。本身不含业务逻辑。</p>
+<h2>启动序列</h2>
+<div class="flow">上电 → Reset_Handler (.s) 拷贝 .data / 清 .bss
+     → SystemInit  (配 180MHz 时钟, VTOR=0x08000000)
+     → __libc_init_array
+     → main():
+        NVIC_PriorityGroup_4   ← 必须第一行
+        BSP_Tick_Init          (SysTick 1ms)
+        BSP_LED_Init
+        BSP_UART_Init          ✗→ HaltNoUart (100ms 快闪, 无串口)
+        BSP_I2C1_Init          ✗→ HaltOnInitFail(I2C1)
+        BSP_I2C3_Init          ✗→ ... (PMIC 总线, 必须先于 I2C2)
+        BSP_PMIC_Init          ✗→ 预设电压
+        BSP_PMIC_EnableSequence✗→ 开 LDO, 给电机 IC 上拉供电
+        BSP_PMIC_HwenInit         (EXTI4 武装)
+        BSP_I2C2_Init          ✗→ 电机 IC 总线 (上拉已上电)
+        aw_isp_init            ✗→ 注册 ISP 回调
+        App_Protocol/Sample/FlashStore_Init
+        → 发 PROTO_BOOT_OK → 进主循环</div>
+<div class="callout warn"><div class="t">关键依赖：PMIC 必须先于 I2C2</div>电机 IC 的 SDA/SCL 上拉电阻由 PMIC 的 IOVDD 供电，因此初始化顺序严格为 <code>I2C3 → PMIC_Init → PMIC_EnableSequence → I2C2</code>。颠倒会导致 I2C2 总线无上拉而初始化失败。</div>
+<h2>主循环</h2>
+<pre><code>while (1) {
+    now = BSP_GetTick();
+    App_Protocol_Poll();        // 解析 UART 环形缓冲里的帧并响应
+    App_Sample_Poll();          // 组帧经 DMA 发 0xBB 数据流
+    if (g_pmicHwenFlag) {       // HWEN 上升沿 → 重跑 PMIC 使能
+        g_pmicHwenFlag = 0;
+        BSP_PMIC_EnableSequence();
+    }
+    if (now - prevTick >= 500)  // 心跳 LED
+        BSP_LED1_Toggle();
+}</code></pre>
+<div class="callout"><div class="t">双通道故障指示</div>UART 可用时：发 <code>0x0B BOOT_STATUS</code> 帧（6 种 <code>PROTO_INIT_FAIL_*</code> 区分模块）+ 500ms 慢闪；UART 自身故障：退化为 100ms 快闪，现场可目视区分。</div>
+<h2>模块详情</h2>
+<p>Core 层是固件的框架骨架，负责上电启动、向量表、时钟、NVIC 分组、外设初始化序列与主循环调度，以及全部中断服务程序（ISR 集中于 stm32f4xx_it.c）。它本身不含业务逻辑，按依赖关系依次拉起 BSP/App，并在初始化失败时通过串口 0x0B BOOT_STATUS 帧 + LED 闪烁双通道指示故障。主循环以非阻塞轮询方式驱动协议解析、采样发送、PMIC HWEN 重配与 LED 心跳。内存布局通过链接脚本约束：固件仅占前 128KB Flash，余 896KB 留给 Flash 文件存储；堆为 0，栈 2KB，禁止动态分配。</p>
+<h3>文件构成</h3>
+<table><tr><th>文件</th><th>职责</th></tr>
+<tr><td><code>Core/Src/main.c</code></td><td>启动序列编排（NVIC→SysTick→LED→UART→I2C1→I2C3→PMIC→PMIC使能→HWEN→I2C2→AW ISP→App）、两个 Halt 死循环、主轮询循环</td></tr>
+<tr><td><code>Core/Src/stm32f4xx_it.c</code></td><td>全部 ISR：Cortex-M 异常处理 + SysTick + USART1 RX + DMA2_Stream7 TX + TIM6 采样 + EXTI4 PMIC HWEN</td></tr>
+<tr><td><code>Core/Inc/stm32f4xx_it.h</code></td><td>ISR 函数声明，与向量表一一对应</td></tr>
+<tr><td><code>Core/Inc/main.h</code></td><td>仅包含 stm32f4xx.h 的薄头文件</td></tr>
+<tr><td><code>Core/Inc/stm32f4xx_conf.h</code></td><td>SPL 模块裁剪：使能 rcc/gpio/usart/dma/i2c/exti/syscfg/tim/flash/misc</td></tr>
+<tr><td><code>Core/Startup/startup_stm32f429_439xx.s</code></td><td>复位向量、.data/.bss 初始化、SystemInit/__libc_init_array/main 调用、完整中断向量表 + 弱别名</td></tr>
+<tr><td><code>Linker/STM32F429ZGTX_FLASH.ld</code></td><td>内存布局：FLASH 128K（防溢出蚕食存储区）/ SRAM1 112K / CCM 64K；堆0 栈2K；段分配</td></tr>
+<tr><td><code>Core/Src/system_stm32f4xx.c</code></td><td>SPL 模板时钟配置（HSE 8M, PLL_M=8/N=360/P=2 → 180MHz, VTOR=FLASH_BASE），不逐行审</td></tr>
+</table>
+<h3>公开 API</h3>
+<table><tr><th>签名</th><th>说明</th></tr>
+<tr><td><code>int main(void)</code></td><td>程序入口。先 NVIC_PriorityGroup_4，依次拉起各外设，任一失败进 Halt；成功后发 PROTO_BOOT_OK 并进主循环</td></tr>
+<tr><td><code>static void HaltOnInitFail(Proto_BootStatus_t status)</code></td><td>非 UART 模块初始化失败：发 0x0B 故障帧 + TxWait，再 500ms 慢闪 LED 死循环</td></tr>
+<tr><td><code>static void HaltNoUart(void)</code></td><td>UART 自身失败（诊断通道不可用）：100ms 快闪 LED 死循环，无串口帧</td></tr>
+<tr><td><code>void SysTick_Handler(void)</code></td><td>调 BSP_Tick_Increment，1ms 毫秒计数</td></tr>
+<tr><td><code>void USART1_IRQHandler(void)</code></td><td>RXNE 中断 → BSP_UART_RxISR_Callback 写环形缓冲 → 清标志</td></tr>
+<tr><td><code>void DMA2_Stream7_IRQHandler(void)</code></td><td>TX DMA 传输完成 → BSP_UART_TxDmaISR_Callback → 清 TCIF7</td></tr>
+<tr><td><code>void TIM6_DAC_IRQHandler(void)</code></td><td>采样定时器 Update → 清标志 → BSP_SampleTim_ISR_Callback（ISR 内做 I2C 采样，有意设计）</td></tr>
+<tr><td><code>void EXTI4_IRQHandler(void)</code></td><td>PMIC HWEN(PE4) 上升沿 → 清挂起 → 重采样过滤毛刺 → 置 g_pmicHwenFlag</td></tr>
+<tr><td><code>void HardFault_Handler(void)</code></td><td>裸寄存器开 GPIOF 时钟、配 PF13 输出，~50ms CPU 空转闪烁死循环</td></tr>
+</table>
+<h3>关键实现要点</h3>
+<div class="card"><b style="color:var(--hi)">初始化依赖顺序（核心正确性）</b><p>main.c:87-112 严格保证 I2C3→PMIC_Init→PMIC_EnableSequence→HwenInit→I2C2，注释明确 PMIC LDO 先于 I2C2 上电以给电机 IC 的 SDA/SCL 上拉供电。aw_isp_init(main.c:115) 在 I2C2+Tick 之后注册回调，顺序正确</p></div>
+<div class="card"><b style="color:var(--hi)">NVIC 优先级分配与 CLAUDE.md 完全一致</b><p>Group_4（main.c:67）。UART RX=2(bsp_uart.h:47)、I2C EV/ER=5/6、TIM6=7(bsp_tim.h:22)、HWEN EXTI4=8(bsp_pmic.h:113)、UART TX DMA=10(bsp_uart.h:39)、SysTick=15。数值越小优先级越高，符合分组语义</p></div>
+<div class="card"><b style="color:var(--hi)">向量表完整且与 ISR 一一对应</b><p>startup .s 中 EXTI4(157)/USART1(184)/TIM6_DAC(201)/DMA2_Stream7(217) 入口齐全；it.h 声明的 13 个 handler 均在向量表有对应 .word，未实现的全部弱别名指向 Default_Handler 自旋</p></div>
+<div class="card"><b style="color:var(--hi)">时钟配置结论</b><p>system_stm32f4xx.c:364 PLL_M=8（HSE 8MHz→VCO输入1MHz），PLL_N=360/PLL_P=2 → SYSCLK 180MHz，与 CLAUDE.md 硬件规格吻合；VTOR=FLASH_BASE|0x00（:513），向量表在 0x08000000</p></div>
+<div class="card"><b style="color:var(--hi)">内存布局防呆</b><p>ld:28 FLASH LENGTH 故意缩到 128K，固件增长越界会触发链接错误而非静默覆盖 [0x08020000,0x08100000) 的 Flash 文件存储区；_Min_Heap_Size=0 强约束无 malloc；_estack 取 SRAM1 顶</p></div>
+<div class="card"><b style="color:var(--hi)">ISR 最小化</b><p>除 HardFault（故意死循环闪灯）外，所有 ISR 仅做 清标志+回调/置位，无阻塞调用，符合 ISR 规约。EXTI4 多一次 GPIO 重读做毛刺过滤（非阻塞，可接受）</p></div>
+<div class="card"><b style="color:var(--hi)">启动失败双通道指示</b><p>UART 可用时走 0x0B BOOT_STATUS 帧（6 种 PROTO_INIT_FAIL_* 枚举区分模块，app_protocol.h:109-116）+ 500ms 慢闪；UART 自身故障退化为 100ms 快闪，现场可目视区分</p></div>
+<h3>数据流 / 控制流</h3>
+<div class="callout"><div class="t">流程</div>上电→Reset_Handler(.s:65) 拷贝.data/清.bss→SystemInit（配 180MHz 时钟、VTOR）→__libc_init_array→main()。main 内串行初始化各外设，任一返 !=SUCCESS 即跳 Halt 死循环。初始化完成后进主循环：每轮 BSP_GetTick 取时刻→App_Protocol_Poll（解析 UART 环形缓冲里的帧并响应）→App_Sample_Poll（组帧经 DMA 发 0xBB 数据流）→检查 g_pmicHwenFlag 决定是否重跑 PMIC 使能→按 500ms 翻转心跳 LED。中断侧：USART1 RX 填缓冲，TIM6 触发采样置标志/采集，DMA2_S7 完成发送回调，EXTI4 置 HWEN 标志，SysTick 累加毫秒。ISR 与主循环经 volatile 标志（g_pmicHwenFlag、s_sampleFlag、s_txDone、g_tick）单向通信。</div>
+<h3>模块耦合关系</h3>
+<p>Core 是顶层编排者，向下强依赖 BSP 全部模块（tick/led/uart/i2c1/i2c2/i2c3/pmic/tim）与 App 层（protocol/sample/flashstore）及 vendor AW 端口（aw_port_stm32 的 g_awOpsStm32 + aw_isp_init）。stm32f4xx_it.c 依赖 BSP 回调（BSP_UART_RxISR_Callback、BSP_UART_TxDmaISR_Callback、BSP_SampleTim_ISR_Callback、BSP_Tick_Increment）与 g_pmicHwenFlag。向量表符号名（TIM6_DAC_IRQHandler 等）与 startup .s 弱别名硬绑定。所有引脚/优先级宏来自 BSP/Inc，Core 不裸写端口（HardFault_Handler 除外，见 findings）。</p>
+<h3>本模块审查发现</h3>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> 无独立看门狗（IWDG），死循环/总线死锁无法自恢复</div>
+<div class="meta">📍 <code>Core/Src/main.c:142 (主循环) / 全局</code></div>
+<div class="row"><span class="lbl">问题：</span>主循环与各 Halt 死循环均无看门狗喂狗机制。若主循环被某个 Poll 内的意外阻塞卡住（如 I2C 异常路径），或 fault handler 进入死循环，系统只能靠人工断电恢复。对电机调试板这类需长期挂机的设备，缺少 IWDG 自恢复是健壮性隐患。CLAUDE.md TODO 已列为结构性待办。</div>
+<div class="row"><span class="lbl">建议：</span>评估引入 IWDG：在 BSP 增加 bsp_iwdg，主循环每轮喂狗（Halt 死循环可故意不喂以触发复位或保留人工诊断窗口，需与诊断需求权衡）。属新增功能，按规约应先与开发者确认。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> HardFault_Handler 裸写端口寄存器位（魔法数字 + 绕过 BSP 分层）</div>
+<div class="meta">📍 <code>Core/Src/stm32f4xx_it.c:30-43</code></div>
+<div class="row"><span class="lbl">问题：</span>用 (1U&lt;&lt;5) 直接置 RCC-&gt;AHB1ENR GPIOF 时钟位、(1U&lt;&lt;13)/(3U&lt;&lt;(13*2)) 直配 PF13。违反 CLAUDE.md「.c 中禁止裸写端口/引脚数字、必须引用宏」。虽然 HardFault 下故意不依赖 SPL/BSP（避免状态损坏时调库）有其合理性，但 13/5 这些位号是裸魔法数字，且与 BSP_LED 引脚定义重复，换 LED 引脚时此处会被漏改导致故障指示失效。CLAUDE.md TODO 已记录此项（HardFault 引脚魔法数字）。</div>
+<div class="row"><span class="lbl">建议：</span>把 PF13/GPIOF 时钟位号定义为带注释的本地宏（如 HARDFAULT_LED_PORT_RCC_BIT / HARDFAULT_LED_PIN），或在注释中明确「故意独立于 BSP_LED 宏，换引脚需同步此处」，避免静默失效。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> MemManage / BusFault / UsageFault 静默 while(1)，无任何指示</div>
+<div class="meta">📍 <code>Core/Src/stm32f4xx_it.c:47-60</code></div>
+<div class="row"><span class="lbl">问题：</span>三个 fault handler 直接空死循环，既不闪灯也不发串口，现场无法与「正常运行卡死」区分。与 HardFault 有明确闪灯指示不一致。CLAUDE.md TODO 已列为低优先级。注：默认 SCB SHCSR 未使能这三个 fault 时它们会上升为 HardFault，但项目若启用 fpv4/MPU 仍可能直达此处。</div>
+<div class="row"><span class="lbl">建议：</span>复用 HardFault_Handler 的闪灯逻辑（或让三者 b 到同一指示例程），保证任何 CPU fault 都有可见指示。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> g_pmicHwenFlag 读-清-用非原子（理论上可丢一次边沿）</div>
+<div class="meta">📍 <code>Core/Src/main.c:154-158</code></div>
+<div class="row"><span class="lbl">问题：</span>主循环 if(g_pmicHwenFlag){g_pmicHwenFlag=0; EnableSequence();}。若 EXTI4 在『读到非0』与『写0』之间又触发置1，则该次写0会清掉新边沿，丢失一次重配请求。flag 已正确声明 volatile，且 HWEN 边沿极低频、丢失最多延迟到下次真实边沿，实际影响可忽略，但严格讲是 ISR/主循环共享变量的 RMW 竞态。</div>
+<div class="row"><span class="lbl">建议：</span>若需严格不丢边沿，可在 __disable_irq/__enable_irq 临界区内做读+清，或改用『先清后读硬件电平』模式。当前可保留并加注释说明可接受。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl"><span class="badge sev-style">风格</span> 主循环对 now 取一次后供多处使用，测试 Poll 用到偏旧时刻</div>
+<div class="meta">📍 <code>Core/Src/main.c:144-165</code></div>
+<div class="row"><span class="lbl">问题：</span>now=BSP_GetTick() 在循环头取一次，随后 Protocol_Poll/Sample_Poll 可能耗时数百微秒至毫秒，Test_PMIC_PidRead_Poll(now) 与心跳判断使用的是循环开始的时刻。仅影响时间基准精度，且测试代码默认不编译；心跳用 &gt;= 比较不会漏翻转。属轻微风格问题。</div>
+<div class="row"><span class="lbl">建议：</span>如需更准可在心跳判断前重取 tick；当前实现可接受，无需改动。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl"><span class="badge sev-style">风格</span> system_stm32f4xx.c 头部模板注释残留 25MHz / 168MHz 等非实际配置值</div>
+<div class="meta">📍 <code>Core/Src/system_stm32f4xx.c:35,47,59 等头部注释块</code></div>
+<div class="row"><span class="lbl">问题：</span>文件头大段 SPL 模板注释列出 25MHz HSE、168MHz、PLL_M=25 等多套预设，与本项目实际生效的 HSE 8MHz/180MHz/PLL_M=8（:364/388/390）不符。实际宏定义正确，仅注释误导。该文件为 SPL 模板属只读复用范畴，按规约不逐行审，仅记录提醒。</div>
+<div class="row"><span class="lbl">建议：</span>无需修改源（遵循『SPL 模板直接复用』规约）。如担心误导可在 CLAUDE.md/WIKI 注明『实际时钟以 :364 起 PLL 宏为准』。</div>
+</div>
+<footer>STM32F429ZG 电机调试板固件 · 代码 WIKI · 生成于 2026-06-01 · 基于多代理深度审查（8 模块 / 110 代理 / 51 发现 40 确认）<br>
+本 WIKI 由结构化审查数据渲染；SPL V1.9.0 库与 Firmware_Flash/ 原始参考代码仅说明定位，不逐行讲解。</footer>
+</main></div></body></html>

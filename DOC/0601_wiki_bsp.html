@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BSP 驱动层 · STM32 固件 WIKI</title>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --bd:#2a3340;
+  --fg:#d7dde6; --mut:#8b97a7; --acc:#4ea1ff; --acc2:#7ee0c0;
+  --code:#0b0e13; --kw:#ff9d6b; --hi:#ffd479;
+  --hi-bg:#3a2f12;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.7}
+.layout{display:flex;min-height:100vh}
+nav.side{width:248px;flex:0 0 248px;background:var(--panel);border-right:1px solid var(--bd);
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 0}
+nav.side .brand{padding:0 20px 14px;border-bottom:1px solid var(--bd);margin-bottom:10px}
+nav.side .brand b{display:block;color:var(--acc);font-size:16px;letter-spacing:.3px}
+nav.side .brand span{color:var(--mut);font-size:12px}
+nav.side a{display:block;padding:9px 20px;color:var(--fg);text-decoration:none;font-size:14px;border-left:3px solid transparent}
+nav.side a:hover{background:var(--panel2);border-left-color:var(--acc)}
+nav.side a.active{background:var(--panel2);border-left-color:var(--acc);color:var(--acc);font-weight:600}
+nav.side .grp{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:14px 20px 4px}
+main{flex:1;min-width:0;padding:34px 46px 80px;max-width:1100px}
+h1{font-size:28px;margin:.2em 0 .1em;color:#fff;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:21px;margin:1.8em 0 .5em;color:var(--acc2);border-bottom:1px solid var(--bd);padding-bottom:6px}
+h3{font-size:17px;margin:1.4em 0 .4em;color:var(--hi)}
+p{margin:.5em 0}
+.lead{color:var(--mut);font-size:15px;margin:.4em 0 1.4em}
+code{background:var(--code);color:var(--kw);padding:1px 6px;border-radius:4px;font-family:"Cascadia Code","Consolas",monospace;font-size:.88em}
+pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;line-height:1.55}
+pre code{background:none;color:var(--fg);padding:0}
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:13.5px}
+th,td{border:1px solid var(--bd);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:var(--acc2);font-weight:600}
+tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+td code{white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:18px 22px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:14px 0}
+.tile{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;text-decoration:none;color:var(--fg);transition:.15s}
+.tile:hover{border-color:var(--acc);transform:translateY(-2px)}
+.tile b{color:var(--acc);font-size:15px}
+.tile p{color:var(--mut);font-size:13px;margin:.4em 0 0}
+.badge{display:inline-block;padding:1px 9px;border-radius:11px;font-size:11px;font-weight:700;vertical-align:middle}
+.sev-high{background:#5b1418;color:#ff8a8a;border:1px solid #8a2228}
+.sev-med{background:#5a3a10;color:#ffc46b;border:1px solid #8a6018}
+.sev-low{background:#143a4a;color:#7ed0ff;border:1px solid #1f5e78}
+.sev-style{background:#2a313c;color:#a9b6c6;border:1px solid #3a4554}
+.callout{border-left:4px solid var(--acc);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0}
+.callout.warn{border-left-color:#ffc46b}
+.callout.danger{border-left-color:#ff8a8a}
+.callout .t{font-weight:700;color:var(--acc);margin-bottom:4px}
+.callout.warn .t{color:#ffc46b}
+.callout.danger .t{color:#ff8a8a}
+.kv{color:var(--mut);font-size:12px}
+.finding{background:var(--panel);border:1px solid var(--bd);border-left-width:4px;border-radius:0 8px 8px 0;padding:14px 18px;margin:14px 0}
+.finding.sv-high{border-left-color:#ff8a8a}
+.finding.sv-medium{border-left-color:#ffc46b}
+.finding.sv-low{border-left-color:#7ed0ff}
+.finding.sv-style{border-left-color:#6b7686}
+.finding .ttl{font-weight:700;font-size:15px;color:#fff}
+.finding .meta{font-size:12px;color:var(--mut);margin:4px 0 8px}
+.finding .row{margin:6px 0}
+.finding .lbl{color:var(--acc2);font-weight:600;font-size:13px}
+.flow{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:16px;margin:14px 0;font-family:"Cascadia Code","Consolas",monospace;font-size:13px;white-space:pre;overflow-x:auto;color:var(--acc2)}
+footer{color:var(--mut);font-size:12px;margin-top:50px;padding-top:18px;border-top:1px solid var(--bd)}
+a{color:var(--acc)}
+.toc{columns:2;gap:30px;margin:10px 0}
+.toc a{display:block;padding:3px 0;font-size:13.5px}
+@media(max-width:860px){.layout{flex-direction:column}nav.side{width:100%;height:auto;position:static}main{padding:24px}}
+</style></head>
+<body><div class="layout"><nav class="side"><div class="brand"><b>STM32F429ZG 电机调试板</b><span>固件代码 WIKI · 2026-06-01</span></div><div class="grp">导航</div><a href="0601_wiki_index.html">首页 / 总览</a><a href="0601_wiki_architecture.html">系统架构 (Core)</a><a href="0601_wiki_bsp.html" class="active">BSP 驱动层</a><a href="0601_wiki_protocol.html">通信协议 (App)</a><a href="0601_wiki_sample.html">采样 / 波形发生</a><a href="0601_wiki_flash.html">Flash 烧录 / 存储</a><a href="0601_wiki_build.html">构建 / 测试</a><a href="0601_wiki_review.html">代码审查报告</a><div class="grp">补充资料 (DOC/)</div><a href="0328_protocol_v1.4.html">协议 v1.4 专题</a><a href="0327_pmic_code_explain.html">PMIC 初始化</a><a href="0429_sw_i2c_explain.html">软件 I2C2 详解</a><a href="0519_aw_isp_walkthrough.html">AW ISP 走读</a><a href="0522_flash_burn_flow.html">Flash 烧录流程</a></nav>
+<main><h1>BSP 驱动层</h1>
+<p class="lead">每个外设一对 <code>bsp_xxx.h/.c</code>，硬件参数只在 .h 宏中定义。BSP 只管硬件字节收发，不知道「帧」与「电机」，初始化统一返回 <code>ErrorStatus</code>，错误时向上层返回 ERROR，不做本地重试。</p>
+<div class="callout"><div class="t">外设引脚总览</div>
+<table>
+<tr><th>外设</th><th>配置</th><th>说明</th></tr>
+<tr><td>LED1</td><td>PF13, 高电平点亮</td><td>心跳（500ms 翻转）</td></tr>
+<tr><td>UART</td><td>USART1 PA9/PA10 AF7, 460800</td><td>APB2, 环形缓冲 RX + DMA2_S7 TX</td></tr>
+<tr><td>I2C1 (INA)</td><td>PB6/PB7 AF4, 400kHz</td><td>硬件 I2C, 功耗/电流, 地址 0x40</td></tr>
+<tr><td>I2C2 (电机)</td><td>PB10/PB11, 软件 bit-bang</td><td>16-bit 寄存器大端, 目标 1MHz</td></tr>
+<tr><td>I2C3 (PMIC)</td><td>PA8/PC9 AF4</td><td>硬件 I2C, RT5112WSC(0x20)+GYRO(0x68)</td></tr>
+<tr><td>TIM6</td><td>APB1×2=90MHz, PSC=89→1MHz</td><td>采样定时器, ISR <code>TIM6_DAC_IRQHandler</code></td></tr>
+</table></div>
+<div class="callout warn"><div class="t">为何 I2C2 用软件 bit-banging？</div>电机 IC 需要最高 1 MHz 的 I2C 时钟，而 STM32F4 硬件 I2C 最高只能到 400 kHz，因此 I2C2 改用基于 <code>DWT->CYCCNT</code> 周期计数延时的软件位翻转实现，并支持 16-bit 寄存器地址（大端）。</div>
+<h2>BSP 通信驱动 — UART / I2C1 / I2C2 / I2C3</h2>
+<p>BSP 通信驱动层，封装 USART1（环形缓冲 RX 中断 + DMA TX）与三路 I2C 总线。I2C1（INA）/I2C3（PMIC+GYRO）为硬件 I2C，经 bsp_i2c.c 公共实例化驱动（轮询 + 软件超时 + RecoverBus）复用；I2C2（电机 IC）为独立的软件 bit-banging 实现，用 DWT-&gt;CYCCNT 做半周期延时以达到 1 MHz，并支持 16-bit 大端寄存器地址与 AW Firmware 透传读写。该层只做字节级收发与总线恢复，不含协议/业务逻辑；并发保护（NVIC mask）由 App 层在 I2C2 调用外侧完成。</p>
+<h3>文件构成</h3>
+<table><tr><th>文件</th><th>职责</th></tr>
+<tr><td><code>BSP/Src/bsp_uart.c</code></td><td>USART1 驱动：RXNE 中断写 512B 环形缓冲，DMA2 Stream7 单缓冲 264B TX，波特率切换，TxWait/IsTxBusy</td></tr>
+<tr><td><code>BSP/Inc/bsp_uart.h</code></td><td>UART 硬件宏（引脚/DMA/优先级/缓冲尺寸）与 API 声明</td></tr>
+<tr><td><code>BSP/Src/bsp_i2c.c</code></td><td>硬件 I2C 公共驱动：实例化 Init/RecoverBus/WriteReg/ReadReg/Scan，含 WritePhase 与 8/16-bit 寄存器地址分支</td></tr>
+<tr><td><code>BSP/Inc/bsp_i2c.h</code></td><td>BSP_I2C_Config_t 实例配置结构、恢复常量、公共 API</td></tr>
+<tr><td><code>BSP/Src/bsp_i2c1.c</code></td><td>I2C1(INA) 薄封装，static const k_i2c1Cfg，8-bit 寄存器</td></tr>
+<tr><td><code>BSP/Inc/bsp_i2c1.h</code></td><td>I2C1 硬件宏与 API</td></tr>
+<tr><td><code>BSP/Src/bsp_i2c2.c</code></td><td>I2C2(电机IC) 软件 bit-bang：DWT 延时、bit/byte 原语、START/STOP/RepeatedStart、16-bit 大端、透传读写、ProbeAddr/Scan/RecoverBus、s_busTimeout 守卫</td></tr>
+<tr><td><code>BSP/Inc/bsp_i2c2.h</code></td><td>I2C2 软件 I2C 时序宏、g_motorIcAddr/g_motorIcName 声明、API</td></tr>
+<tr><td><code>BSP/Src/bsp_i2c3.c</code></td><td>I2C3(PMIC) 薄封装，static const k_i2c3Cfg，8-bit 寄存器</td></tr>
+<tr><td><code>BSP/Inc/bsp_i2c3.h</code></td><td>I2C3 硬件宏与 API</td></tr>
+</table>
+<h3>公开 API</h3>
+<table><tr><th>签名</th><th>说明</th></tr>
+<tr><td><code>ErrorStatus BSP_UART_Init(void)</code></td><td>初始化 GPIO/DMA/USART1/NVIC，固定返回 SUCCESS（无失败路径）</td></tr>
+<tr><td><code>ErrorStatus BSP_UART_Transmit(const uint8_t *pData, uint16_t len)</code></td><td>DMA 发送。pData==NULL/len==0/len&gt;264 或上一帧未完成(s_txDone==0)时返 ERROR(BUSY)；否则 memcpy 到 s_txBuf 并重启 DMA 流</td></tr>
+<tr><td><code>ErrorStatus BSP_UART_SetBaudrate(uint32_t baudrate)</code></td><td>停 RXNE/DMA/USART，排空 TC，DeInit 后用新波特率重初始化。固定返回 SUCCESS</td></tr>
+<tr><td><code>void BSP_UART_TxWait(void) / uint8_t BSP_UART_IsTxBusy(void)</code></td><td>阻塞等待 DMA TX 完成(50ms 超时强制置 s_txDone=1)/非阻塞查询忙状态</td></tr>
+<tr><td><code>uint16_t BSP_UART_RxRead(uint8_t *pBuf, uint16_t maxLen)</code></td><td>从环形缓冲取出已收字节，临界区仅快照 head</td></tr>
+<tr><td><code>void BSP_UART_RxFlush(void) / uint32_t BSP_UART_GetAndClearOverflowCount(void)</code></td><td>清空 RX 缓冲 / 取并清溢出计数（均 __disable_irq 临界区）</td></tr>
+<tr><td><code>ErrorStatus BSP_I2C_Init/WriteReg/ReadReg/Scan(const BSP_I2C_Config_t*, ...)</code></td><td>硬件 I2C 公共实现，超时后自动 RecoverBus；ReadReg 区分 N=1/N&gt;1 的 ACK/STOP 时序</td></tr>
+<tr><td><code>ErrorStatus BSP_I2C2_WriteReg/ReadReg/ReadRegs(uint8_t devAddr, uint16_t reg, ...)</code></td><td>软件 I2C，16-bit 寄存器地址大端先发高字节；任一 SendByte NACK 或 s_busTimeout 置位即 STOP+RecoverBus 返 ERROR</td></tr>
+<tr><td><code>ErrorStatus BSP_I2C2_TransparentWrite/Read(uint8_t devAddr, const uint8_t *pAddr, uint8_t addrSize, ...)</code></td><td>AW Firmware 透传：按数组序逐字节发地址/数据；addrSize==0 跳过地址相，读时直接 START+addr|R</td></tr>
+<tr><td><code>ErrorStatus BSP_I2C2_ProbeAddr(uint8_t devAddr) / BSP_I2C2_Scan(uint8_t*, uint8_t*)</code></td><td>ACK 探测单地址 / 扫描 1..126；Scan 无 pAddrList 上界检查（依赖调用方 ≥126 字节）</td></tr>
+<tr><td><code>uint8_t BSP_I2C2_GetAndClearRecoveryFlag(void)</code></td><td>取并清 s_busRecovered 标志</td></tr>
+</table>
+<h3>关键实现要点</h3>
+<div class="card"><b style="color:var(--hi)">UART RX 环形缓冲溢出处理</b><p>bsp_uart.c:261-275 RXNE ISR 计算 nextHead=(head+1)%512，nextHead==tail 时丢弃新字节并 s_rxOverflowCount++（符合 CLAUDE.md『溢出丢弃新数据』）。head 仅 ISR 写、tail 仅主循环写，单生产者单消费者无锁安全</p></div>
+<div class="card"><b style="color:var(--hi)">DMA TX 单缓冲忙判断</b><p>bsp_uart.c:160-181 先查 s_txDone==0 返 BUSY，否则置 0、memcpy、按 RM0090 §10.3.17 五步重启流（DISABLE→等 EN 清→清 5 个 flag→设 M0AR/NDTR→ENABLE）。wait_dma_disable_or_recover() 10ms 超时则 DeInit+重初始化兜底。TC ISR 仅置 s_txDone=1</p></div>
+<div class="card"><b style="color:var(--hi)">软件 I2C2 时序</b><p>bsp_i2c2.h:33 HALF_CYCLE=180MHz/1MHz/2=90 周期(500ns)；DELAY_LOW 扣减 SCL_LOW_ADJ=6 补偿 GPIO 操作开销。bit 原语用 DWT-&gt;CYCCNT 计时，BSRR 直接置位、IDR 读线。WaitSclHigh 支持从机时钟拉伸，STRETCH_TIMEOUT=36000 周期(200us)</p></div>
+<div class="card"><b style="color:var(--hi)">s_busTimeout 拉伸守卫</b><p>bsp_i2c2.c:36 每次事务入口清 0，任一 WaitSclHigh 超时即置 1；SUCCESS 返回前(WriteReg:292/ReadReg:330/Transparent:370,416)检查，避免把拉伸期间读到的脏数据当真实返回（修复历史 S3）。注释明确非 volatile 因事务不跨 ISR/main 边界</p></div>
+<div class="card"><b style="color:var(--hi)">16-bit 大端寄存器地址</b><p>bsp_i2c.c:103-119(硬件)与 bsp_i2c2.c:283-284/316-317(软件)均先发 reg&gt;&gt;8 再发 reg&amp;0xFF。reg 参数全程 uint16_t，i2c1/i2c3 封装用 (uint16_t)reg 上提 8-bit，符合 CLAUDE.md 禁止强转 uint8_t</p></div>
+<div class="card"><b style="color:var(--hi)">总线恢复 RecoverBus</b><p>硬件(bsp_i2c.c:183)：软件复位+引脚转 GPIO OD 拉高+9 个 SCL 脉冲+手动 STOP+恢复 AF 重初始化+可选回调。软件(bsp_i2c2.c:457)：9 个 SCL 脉冲+手动 STOP，成功置 s_busRecovered。两者均无法解决从机把 SCL 钳死的场景（已在 CLAUDE.md TODO 记录）</p></div>
+<div class="card"><b style="color:var(--hi)">硬件 I2C 单字节读时序</b><p>bsp_i2c.c:296-316 N=1 路径：等 ADDR→先 DISABLE ACK→读 SR1/SR2 清 ADDR→GenerateSTOP→等 RXNE→读 1 字节，符合 STM32F4 参考手册单字节接收规范</p></div>
+<h3>数据流 / 控制流</h3>
+<div class="callout"><div class="t">流程</div>RX：USART1 RXNE 中断→stm32f4xx_it.c:83→BSP_UART_RxISR_Callback 写环形缓冲→主循环 App_Protocol_Poll 调 BSP_UART_RxRead 取出解析。TX：App 层组帧→BSP_UART_Transmit→memcpy s_txBuf(SRAM1)→DMA2 Stream7 搬运→TC 中断→stm32f4xx_it.c:92→TxDmaISR 置 s_txDone=1。I2C：App handler→(I2C2 由 App 层 Acquire/ReleaseBus NVIC mask 包裹)→BSP_I2Cx_*→硬件经 bsp_i2c.c 公共实现，软件 I2C2 经 bit-bang 原语；任一超时/NACK 触发 RecoverBus 并向上返 ERROR，App 层据此回 NACK（BSP 不本地重试）。</div>
+<h3>模块耦合关系</h3>
+<p>依赖 SPL（GPIO/USART/DMA/I2C/RCC/NVIC）与 CMSIS（DWT/CoreDebug）；bsp_uart.c 依赖 bsp_tick.c 的 BSP_GetTick 做超时。被 App 层调用：app_protocol.c（控制帧收发、Scan、寄存器读写、AW 透传）、app_sample.c（0xBB 数据流 Transmit）。I2C2 并发保护逻辑位于 App 层（app_protocol.c/app_sample.c 的 AcquireBus/ReleaseBus），BSP 自身不做 NVIC mask。stm32f4xx_it.c 提供 ISR 入口转调 BSP 回调。g_motorIcAddr/g_motorIcName 全局由协议层设置。</p>
+<h3>本模块审查发现</h3>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> BSP_I2C_Scan / BSP_I2C2_Scan 无 pAddrList 上界保护</div>
+<div class="meta">📍 <code>BSP/Src/bsp_i2c.c:362-410; BSP/Src/bsp_i2c2.c:439-453</code></div>
+<div class="row"><span class="lbl">问题：</span>两个 Scan 都无条件 pAddrList[(*pCount)++]=addr，扫描范围 1..126 最多写 126 项。当前唯一调用方 app_protocol.c:363 用 addrList[127] 足够，但 API 签名未带容量参数，纯依赖调用方约定。任何容量 &lt;126 的缓冲都会栈越界，且 CLAUDE.md TODO 已列『Scan pAddrList 无上界』为待修项。</div>
+<div class="row"><span class="lbl">建议：</span>给 Scan 增加 maxCount 入参或在头文件用宏约定最小缓冲尺寸(如 BSP_I2C_SCAN_LIST_MIN=127)并在调用处静态断言；至少在写入前判断 *pCount &lt; maxCount</div>
+</div>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> RecoverBus 无法恢复从机钳死 SCL</div>
+<div class="meta">📍 <code>BSP/Src/bsp_i2c.c:183-234; BSP/Src/bsp_i2c2.c:457-488</code></div>
+<div class="row"><span class="lbl">问题：</span>恢复流程假定主机能自由驱动 SCL 做 9 脉冲。若从机一直把 SCL 拉低(钳死)，软件脉冲无效，恢复后 BUSY 仍置位（硬件路径 Init 会因此返 ERROR；软件路径 s_busRecovered 不会置位但无显式失败上报）。CLAUDE.md TODO 已记录此局限。</div>
+<div class="row"><span class="lbl">建议：</span>恢复前/后读 SCL_READ，若 SCL 被钳低则直接判失败上报诊断码（类似 g_i2c2InitDiag），避免误判恢复成功</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> 软件 I2C2 全程在主循环执行且事务可达数百微秒以上，依赖 App 层 NVIC mask 期间 TIM6/UART RX 中断被屏蔽</div>
+<div class="meta">📍 <code>BSP/Src/bsp_i2c2.c:271-424</code></div>
+<div class="row"><span class="lbl">问题：</span>WaitSclHigh 单 bit 最坏阻塞 200us(STRETCH_TIMEOUT)，多字节透传读写在从机异常拉伸时累计可达毫秒级。App 层 AcquireBus 对单次事务 mask TIM6_DAC_IRQ，长事务(如 0x22 bulk)改在入口拒绝采样/发生器——这是有意设计(memory project_isr_sampling_intentional)，非缺陷，但拉伸超时窗口偏大时仍会拉长 mask 时间，记录供 WIKI 标注。</div>
+<div class="row"><span class="lbl">建议：</span>无需改 BSP；建议在 WIKI 明确 STRETCH_TIMEOUT=200us×事务字节数为 mask 上界，供上位机超时预算参考</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> s_busRecovered 在软件 I2C2 恢复成功后置位但事务仍返 ERROR，标志读取与事务结果不联动</div>
+<div class="meta">📍 <code>BSP/Src/bsp_i2c2.c:296-299,484-487,492-497</code></div>
+<div class="row"><span class="lbl">问题：</span>WriteReg/ReadReg 出错路径调用 RecoverBus 后无条件返 ERROR，同时 RecoverBus 可能置 s_busRecovered=1。App 层若仅看返回值会回 NACK，而 GetAndClearRecoveryFlag 另路径读到『已恢复』，两者语义可能让上位机误判『失败但已自愈』。属设计耦合点而非 bug。</div>
+<div class="row"><span class="lbl">建议：</span>在 WIKI 注明 s_busRecovered 仅用于诊断/统计，不应作为事务成功依据；或将恢复标志改为计数器便于上位机观测自愈频率</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> BSP_UART_Init / BSP_UART_SetBaudrate 恒返 SUCCESS，掩盖潜在硬件故障</div>
+<div class="meta">📍 <code>BSP/Src/bsp_uart.c:143-150,184-225</code></div>
+<div class="row"><span class="lbl">问题：</span>两函数无任何失败路径，即使 GPIO/DMA/USART 配置异常也返 SUCCESS。main.c 已对 Init 返回值做 HaltNoUart 处理(H-c)，但实际永远不会触发该分支；SetBaudrate 失败(如 TC 永不置位仅 break)也对上位机透明。CLAUDE.md 要求 BSP 初始化统一返回 ErrorStatus 以供上层判断。</div>
+<div class="row"><span class="lbl">建议：</span>Init 可在末尾校验 USART_Cmd 后 USART-&gt;CR1 EN 位、SetBaudrate 校验 TC 排空是否超时(超时返 ERROR)，使返回值具备实际语义</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> PeriphInit 使用未初始化的 I2C_InitTypeDef（未 {0} 清零）</div>
+<div class="meta">📍 <code>BSP/Src/bsp_i2c.c:46</code></div>
+<div class="row"><span class="lbl">问题：</span>I2C_InitTypeDef i2cInit; 未做 ={0} 初始化，逐字段赋值覆盖了所有 SPL 用到的成员，当前 SPL I2C_Init 仅读这些字段故无实际影响；但与 bsp_uart.c 中 GPIO/USART/DMA 一律 ={0} 的风格不一致，属潜在坏味道（未来 SPL 升级新增字段时会读到栈垃圾）。</div>
+<div class="row"><span class="lbl">建议：</span>统一改为 I2C_InitTypeDef i2cInit = {0}; 与 ConfigGpioAF 的 GPIO_InitTypeDef 同样补 {0}</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl"><span class="badge sev-style">风格</span> BSP_UART_Transmit 的 s_txDone 检查-置位非原子（良性，建议注释）</div>
+<div class="meta">📍 <code>BSP/Src/bsp_uart.c:160-165</code></div>
+<div class="row"><span class="lbl">问题：</span>读 s_txDone==0 与写 s_txDone=0 之间无临界区。因 TX DMA ISR 只会把 s_txDone 由 0 写为 1（单向），且 Transmit 仅在 s_txDone==1 时继续，竞态结果良性。但缺少注释说明该不变式，后续若有人让 ISR 也写 0 会引入隐患。</div>
+<div class="row"><span class="lbl">建议：</span>加注释说明『s_txDone 只在 ISR 中置 1、只在 Transmit 中置 0，单向写故无需临界区』，固化该不变式</div>
+</div>
+<h2>BSP 其它驱动 — PMIC / TIM6 / Flash / LED / Tick</h2>
+<p>BSP 杂项驱动层，覆盖五个外设：bsp_pmic（RT5112WSC 电源管理 IC，经 I2C3，含上电/掉电时序、HWEN/PE4 EXTI4 中断、SetVout/SetEnable）；bsp_tim（TIM6 采样定时器，PSC=89→1MHz，7 档频率索引表，ISR 仅置 s_sampleFlag 并回调）；bsp_flash（片上 Flash 擦/写/读，带数据区地址下界保护防变砖）；bsp_led（PF13 心跳 LED）；bsp_tick（SysTick 1ms 计数器）。这些驱动均遵守 BSP 分层（只做硬件字节级操作，不含协议），初始化先使能 RCC 时钟，对外返回 ErrorStatus/状态码。</p>
+<h3>文件构成</h3>
+<table><tr><th>文件</th><th>职责</th></tr>
+<tr><td><code>BSP/Src/bsp_pmic.c</code></td><td>RT5112WSC PMIC 驱动实现：Init 预设电压、EnableSequence/DisableSequence 顺序使能/禁用 LDO（带回读校验）、HwenInit 配置 PE4/EXTI4、SetVout 电压换算、SetEnable 通道使能、ReadPid 自检</td></tr>
+<tr><td><code>BSP/Inc/bsp_pmic.h</code></td><td>PMIC 寄存器/通道/控制位宏、电压公式宏、默认电压、HWEN 引脚与 EXTI 宏、g_pmicHwenFlag/g_pmicVoltage 外部声明、API 原型</td></tr>
+<tr><td><code>BSP/Src/bsp_tim.c</code></td><td>TIM6 采样定时器：k_arrTable 频率索引表、Init/SetFreq/Start/Stop、GetFlag/ClearFlag、回调注册、ISR_Callback</td></tr>
+<tr><td><code>BSP/Inc/bsp_tim.h</code></td><td>TIM6 硬件宏（PERIPH/IRQn/PSC/默认与最大索引）、频率表注释、回调类型、API 原型</td></tr>
+<tr><td><code>BSP/Src/bsp_flash.c</code></td><td>片上 Flash 驱动：扇区映射表、EraseSectors（扇区范围校验）、ProgramBytes（地址区间+对齐校验、整字+尾字 0xFF 补齐）、ReadBytes（memcpy）</td></tr>
+<tr><td><code>BSP/Inc/bsp_flash.h</code></td><td>Flash 状态码枚举、可写数据区边界宏（0x08020000~0x08100000, Sector5~11）、API 原型与线程/缓存/阻塞说明</td></tr>
+<tr><td><code>BSP/Src/bsp_led.c</code></td><td>PF13 LED 初始化与 On/Off/Toggle</td></tr>
+<tr><td><code>BSP/Inc/bsp_led.h</code></td><td>LED 引脚/端口/时钟宏与 API</td></tr>
+<tr><td><code>BSP/Src/bsp_tick.c</code></td><td>SysTick 1ms 配置、BSP_GetTick 读计数、BSP_Tick_Increment（ISR 调用）</td></tr>
+<tr><td><code>BSP/Inc/bsp_tick.h</code></td><td>tick API 原型</td></tr>
+</table>
+<h3>公开 API</h3>
+<table><tr><th>签名</th><th>说明</th></tr>
+<tr><td><code>ErrorStatus BSP_PMIC_Init(void)</code></td><td>按 g_pmicVoltage 预设 LDO2/LDO1/LDO3 输出电压，不使能 LDO</td></tr>
+<tr><td><code>ErrorStatus BSP_PMIC_EnableSequence(void)</code></td><td>先 Init 预设电压，再按 LDO2→10ms→LDO1→10ms→LDO3 顺序使能，并回读校验 Bit7=1</td></tr>
+<tr><td><code>ErrorStatus BSP_PMIC_DisableSequence(void)</code></td><td>按 LDO3→LDO1→LDO2 逆序禁用并回读校验 Bit7=0</td></tr>
+<tr><td><code>void BSP_PMIC_HwenInit(void)</code></td><td>配置 PE4 为浮空输入 + EXTI4 上升沿中断（优先级 8），应在 Init 后调用</td></tr>
+<tr><td><code>ErrorStatus BSP_PMIC_ReadPid(uint8_t *pPid)</code></td><td>读 PRODUCT_ID 寄存器，用于启动自检</td></tr>
+<tr><td><code>ErrorStatus BSP_PMIC_SetVout(uint8_t ch, float voltV)</code></td><td>按 reg=(V-0.6)*80+0.5 四舍五入设置通道电压，范围 0.6~3.775V</td></tr>
+<tr><td><code>ErrorStatus BSP_PMIC_SetEnable(uint8_t ch, FunctionalState state)</code></td><td>向通道 CTRL 寄存器写固定值 0x8C(使能)/0x0C(禁用)</td></tr>
+<tr><td><code>ErrorStatus BSP_SampleTim_Init(void)</code></td><td>初始化 TIM6（默认 idx3=400us）并配置 NVIC，不启动</td></tr>
+<tr><td><code>ErrorStatus BSP_SampleTim_SetFreq(uint8_t idx)</code></td><td>按索引 0~6 设置 ARR；越界返回 ERROR</td></tr>
+<tr><td><code>void BSP_SampleTim_Start(void)/Stop(void)</code></td><td>启停 TIM6 计数与更新中断，并清 s_sampleFlag</td></tr>
+<tr><td><code>uint8_t BSP_SampleTim_GetFlag(void)/void ClearFlag(void)</code></td><td>读/清采样标志</td></tr>
+<tr><td><code>uint16_t BSP_SampleTim_GetPeriodUs(void)</code></td><td>返回当前采样周期 us（ARR+1）</td></tr>
+<tr><td><code>void BSP_SampleTim_SetCallback / ISR_Callback(void)</code></td><td>注册采样回调 / ISR 内先调回调再置标志</td></tr>
+<tr><td><code>BSP_Flash_Status BSP_Flash_EraseSectors(uint8_t startSector, uint8_t endSector)</code></td><td>擦除扇区区间（仅 5~11），含 Unlock/Lock 配对</td></tr>
+<tr><td><code>BSP_Flash_Status BSP_Flash_ProgramBytes(uint32_t addr, const uint8_t *data, uint32_t len)</code></td><td>按字编程，4 字节对齐，地址须落在数据区，尾部不足一字补 0xFF</td></tr>
+<tr><td><code>void BSP_Flash_ReadBytes(uint32_t addr, uint8_t *out, uint32_t len)</code></td><td>memcpy 读 Flash 映射区</td></tr>
+<tr><td><code>void BSP_LED_Init/On/Off/Toggle(void)</code></td><td>PF13 LED 控制（高电平点亮）</td></tr>
+<tr><td><code>void BSP_Tick_Init(void); uint32_t BSP_GetTick(void); void BSP_Tick_Increment(void)</code></td><td>SysTick 1ms 计数器初始化/读取/递增</td></tr>
+</table>
+<h3>关键实现要点</h3>
+<div class="card"><b style="color:var(--hi)">PMIC 上电时序</b><p>EnableSequence (bsp_pmic.c:86) 固定顺序 LDO2(DRVVDD 1.8V)→10ms→LDO1(IOVDD 2.8V)→10ms→LDO3(VCMVDD 3.2V)，每步用 WaitMs 阻塞延时（基于 BSP_GetTick）；末尾三次回读校验 Bit7。Disable 为逆序。LDO4 永久禁用。</p></div>
+<div class="card"><b style="color:var(--hi)">电压换算</b><p>SetVout (bsp_pmic.c:211) regVal=(uint8_t)((voltV-0.6)*80+0.5f)，含 +0.5 四舍五入；范围检查用 !(&gt;=min &amp;&amp; &lt;=max) 同时拦截 NaN。步进 12.5mV。</p></div>
+<div class="card"><b style="color:var(--hi)">HWEN 中断</b><p>EXTI4_IRQHandler (stm32f4xx_it.c:106) 上升沿触发，清 pending 后再读 PE4 电平做简单去毛刺，置 g_pmicHwenFlag=1；main.c:154 主循环消费该标志并调 EnableSequence。ISR 不做 I2C，符合规约。</p></div>
+<div class="card"><b style="color:var(--hi)">TIM6 频率换算</b><p>PSC=89 使 90MHz/90=1MHz 计数时钟，ARR=interval_us-1。k_arrTable 7 档 (bsp_tim.c:17)，与 .h 注释一致。SetFreq 改 ARR 后 GenerateEvent(Update) 立即装载并清 IT pending，避免立即误触发。</p></div>
+<div class="card"><b style="color:var(--hi)">TIM6 ISR</b><p>TIM6_DAC_IRQHandler 清 IT 后调 ISR_Callback；回调内先执行 s_callback（按 memory 是有意在 ISR 内做 I2C 采样以保证时序）再置 s_sampleFlag=1。s_sampleFlag/s_callback 均 volatile。</p></div>
+<div class="card"><b style="color:var(--hi)">Flash 地址保护</b><p>ProgramBytes (bsp_flash.c:61) 拒绝 addr&lt;0x08020000 / addr&gt;=0x08100000 / len&gt;END-addr（用减法防溢出），再校验 4 字节对齐；EraseSectors 校验 start&gt;=5 &amp;&amp; start&lt;=end &amp;&amp; end&lt;=11。固件扇区 0~4 受保护。</p></div>
+<div class="card"><b style="color:var(--hi)">Flash 扇区映射</b><p>s_sectorMap[12] 将平面索引 0~11 映射到 SPL 的 FLASH_Sector_x 宏（非线性 SNB 编码）；每次操作自带 Unlock/ClearFlag/Lock 配对。</p></div>
+<h3>数据流 / 控制流</h3>
+<div class="callout"><div class="t">流程</div>控制流：main 初始化序列里 LED→...→PMIC(Init+HwenInit)→采样定时器。运行期：(1) SysTick 每 1ms 触发 BSP_Tick_Increment，全系统时间基准；(2) PC 指令经协议层调用 BSP_PMIC_SetVout/SetEnable/EnableSequence 等读写 PMIC（I2C3）；(3) 硬件 HWEN 上升沿→EXTI4 ISR 置 g_pmicHwenFlag→主循环异步触发 EnableSequence 重新上电；(4) 采样开启后 TIM6 周期中断→ISR 内回调采样+置 s_sampleFlag→主循环 App_Sample_Poll 消费；(5) Flash 擦写由 App_FlashStore 调用，长时间阻塞 CPU（单 bank）。PMIC 依赖 bsp_i2c3 做实际字节收发，依赖 bsp_tick 做延时。</div>
+<h3>模块耦合关系</h3>
+<p>bsp_pmic 依赖 bsp_i2c3（WriteReg/ReadReg）和 bsp_tick（WaitMs）；EXTI4 ISR 与 main.c 通过 g_pmicHwenFlag 单向耦合。bsp_tim 与 stm32f4xx_it.c（TIM6_DAC_IRQHandler）及 App_Sample（回调+标志）耦合。bsp_tick 被几乎所有需要超时/延时的模块依赖（I2C 超时、PMIC 延时、主循环心跳）。bsp_flash 被 App 层 flashstore/AW ISP 调用，独立无外设依赖。bsp_led 仅被 main 心跳调用。所有驱动经 .h 宏隔离硬件参数。</p>
+<h3>本模块审查发现</h3>
+<div class="finding sv-medium">
+<div class="ttl"><span class="badge sev-med">中</span> SetEnable 非读改写，盲写固定值覆盖整寄存器</div>
+<div class="meta">📍 <code>BSP/Src/bsp_pmic.c:232</code></div>
+<div class="row"><span class="lbl">问题：</span>SetEnable 直接写固定 0x8C/0x0C 到 CTRL 寄存器，覆盖 Bit7 之外的所有位（模式位[3:2] 被硬编码为 0b11，其余位清 0）。若 RT5112WSC CTRL 寄存器还含 OCP/软启动/discharge 等配置位，或上电默认值非 0x0C，盲写会破坏这些设置；同时与 SetVout 配合时若器件要求保留某些位也会丢失。CLAUDE.md TODO 已将其列为低优先级待修项。</div>
+<div class="row"><span class="lbl">建议：</span>改为读-改-写：ReadReg 取当前值，仅置/清 Bit7（及确需的模式位），其余位保留后写回；或在 .h 用掩码宏明确定义需保留位。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> BSP_PMIC_EnableSequence 内部含阻塞延时与多次 I2C，违反 BSP 不阻塞精神且无超时上限</div>
+<div class="meta">📍 <code>BSP/Src/bsp_pmic.c:86-113</code></div>
+<div class="row"><span class="lbl">问题：</span>EnableSequence 通过 WaitMs 阻塞约 20ms 并串行做约 9 次 I2C 事务。它在主循环上下文（HWEN 标志处理 main.c:157）被调用尚可，但 WaitMs(bsp_pmic.c:35) 依赖 SysTick 持续运行；若在更高优先级临界区或 SysTick 被长时间屏蔽的场景调用会死等。属设计性阻塞，非缺陷，但应在 .h/注释中明确‘仅可在主循环上下文调用’。</div>
+<div class="row"><span class="lbl">建议：</span>在头注释标注调用上下文约束；如未来需在非阻塞场景使用，将时序拆成状态机。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> g_pmicHwenFlag 边沿处理为电平重采样，非真正去抖，快速抖动可能漏触发或多触发</div>
+<div class="meta">📍 <code>Core/Src/stm32f4xx_it.c:112-116</code></div>
+<div class="row"><span class="lbl">问题：</span>ISR 注释自承认非真去抖：上升沿到来时清 pending 再读电平，若毛刺已回落则丢弃。但若 HWEN 在使能时序进行中再次抖动，main 循环只在每轮处理一次标志，期间多次置位被合并；又因 EnableSequence 约 20ms 阻塞，期间新边沿仅置标志不会重入，行为可接受但未文档化重入语义。</div>
+<div class="row"><span class="lbl">建议：</span>若硬件抖动明显，增加基于 BSP_GetTick 的最小重触发间隔（消抖窗口）；并在注释中明确‘处理期间的重复边沿被合并为一次’。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> bsp_flash.h 文档电流读区缓存说明与 CLAUDE.md ART 行为需核实</div>
+<div class="meta">📍 <code>BSP/Inc/bsp_flash.h:9-13</code></div>
+<div class="row"><span class="lbl">问题：</span>头注释断言数据区(0x08020000+)不被 ART 缓存因而写后读保持一致。STM32F429 的 ART 仅缓存指令预取，数据读经 AHB 不走 ART 缓存，结论方向正确；但写 Flash 后若该地址此前曾被取指（不适用于数据区）才需失效。此为文档项，逻辑无误，仅提示：ReadBytes 紧跟 ProgramBytes 后无显式 DSB/隔离，FLASH_Lock 内部已等 BSY 清除，通常足够。</div>
+<div class="row"><span class="lbl">建议：</span>可在 ReadBytes 前由调用方保证 Program 已返回（同步）；当前同步实现已满足，无需改动，建议补一句‘Program 返回即数据已落盘’。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> ProgramBytes 尾字补齐隐式扩展写入范围，可能越过 len 校验意图</div>
+<div class="meta">📍 <code>BSP/Src/bsp_flash.c:90-104</code></div>
+<div class="row"><span class="lbl">问题：</span>当 len 非 4 的倍数时，尾字按整字 ProgramWord(addr+i) 写入 4 字节（多写的 1~3 字节为 0xFF）。范围校验 len&gt;END-addr 基于原始 len，未计入尾部对齐到 4 字节后的实际写入末地址。极端情形：addr 接近 END_ADDR 且 len 使 addr+对齐后的字超出 END_ADDR 时仍会写。实际上 addr 已要求 4 字节对齐且数据区按扇区(128KB)对齐，addr+roundup(len,4) 不会越扇区，风险极低；但严格性上校验未覆盖补齐扩展。</div>
+<div class="row"><span class="lbl">建议：</span>将范围校验改为基于对齐后长度：len_aligned=(len+3)&amp;~3U，校验 len_aligned&gt;END-addr。</div>
+</div>
+<div class="finding sv-low">
+<div class="ttl"><span class="badge sev-low">低</span> SetFreq 在采样运行中改 ARR 与 ISR 共享 s_currentIdx 无临界区</div>
+<div class="meta">📍 <code>BSP/Src/bsp_tim.c:80-91, 96-99</code></div>
+<div class="row"><span class="lbl">问题：</span>s_currentIdx 为普通（非 volatile）uint8_t，由 SetFreq(主循环) 写、GetPeriodUs(主循环) 读；ISR 不访问 s_currentIdx，故无 ISR 竞争。但 GetPeriodUs 若在采样中被组帧逻辑读取而 SetFreq 同帧改动，得到的是新周期——属可接受。真正注意点：SetFreq 在 TIM 运行中调用会 GenerateEvent 立即复位计数器，可能与正在进行的采样节拍冲突，造成一次不规则间隔。非缺陷，提示文档化‘运行中改频会产生一次过渡周期’。</div>
+<div class="row"><span class="lbl">建议：</span>在 API 注释说明运行中 SetFreq 会重置计数并产生一次非标准间隔；如需无缝切换，要求调用方先 Stop 再 SetFreq 再 Start。</div>
+</div>
+<div class="finding sv-style">
+<div class="ttl"><span class="badge sev-style">风格</span> bsp_led.h 文件头注释与实际硬件不符（PG13/PG14 vs PF13）</div>
+<div class="meta">📍 <code>BSP/Inc/bsp_led.h:3</code></div>
+<div class="row"><span class="lbl">问题：</span>头注释写 ‘PG13 (heartbeat), PG14 (error)’，但宏实际为 GPIOF/Pin_13（PF13），且项目仅一个 LED。注释陈旧会误导换引脚的人。</div>
+<div class="row"><span class="lbl">建议：</span>更新注释为 ‘PF13 (heartbeat, sole LED)’，删除 PG14 error 描述。</div>
+</div>
+<footer>STM32F429ZG 电机调试板固件 · 代码 WIKI · 生成于 2026-06-01 · 基于多代理深度审查（8 模块 / 110 代理 / 51 发现 40 确认）<br>
+本 WIKI 由结构化审查数据渲染；SPL V1.9.0 库与 Firmware_Flash/ 原始参考代码仅说明定位，不逐行讲解。</footer>
+</main></div></body></html>
