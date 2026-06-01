@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>H-d 讲解：采样/发生器运行时 I²C2 并发保护补不全</title>
+<style>
+  :root { --bg:#0d1117; --fg:#c9d1d9; --kw:#ff7b72; --num:#79c0ff; --cmt:#8b949e;
+          --hl:#f85149; --ok:#3fb950; --warn:#e3b341; --card:#161b22; --bd:#30363d; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:2rem; background:var(--bg); color:var(--fg);
+         font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; line-height:1.7; }
+  .wrap { max-width:980px; margin:0 auto; }
+  h1 { font-size:1.6rem; border-bottom:2px solid var(--bd); padding-bottom:.6rem; }
+  h2 { font-size:1.2rem; margin-top:2rem; color:#58a6ff; }
+  code,pre { font-family:"Cascadia Code","Consolas",monospace; }
+  pre { background:var(--card); border:1px solid var(--bd); border-radius:8px;
+        padding:1rem 1.2rem; overflow-x:auto; font-size:.88rem; }
+  .kw{color:var(--kw)} .num{color:var(--num)} .cmt{color:var(--cmt)}
+  .tag { display:inline-block; padding:.15rem .6rem; border-radius:999px; font-size:.8rem; font-weight:600; }
+  .t-sev { background:rgba(248,81,73,.18); color:#ff7b72; border:1px solid #f85149; }
+  .t-todo { background:rgba(210,153,34,.18); color:#e3b341; border:1px solid #9e6a03; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; }
+  th,td { border:1px solid var(--bd); padding:.5rem .8rem; text-align:left; font-size:.92rem; }
+  th { background:var(--card); }
+  .ok{color:var(--ok); font-weight:700;} .bad{color:var(--hl); font-weight:700;}
+  .diagram { background:#010409; border:1px solid var(--bd); border-radius:8px; padding:1.2rem;
+             font-family:"Cascadia Code",monospace; font-size:.82rem; white-space:pre; overflow-x:auto; line-height:1.5; }
+  .lbad { color:#ff7b72; } .lok { color:#3fb950; } .ldim { color:#8b949e; } .lwarn{color:#e3b341;}
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:1rem 1.3rem; margin:1rem 0; }
+  .fix { border-left:4px solid var(--ok); padding-left:1rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>H-d：采样/发生器运行时 I²C2 事务的并发保护「补不全」</h1>
+  <p>
+    <span class="tag t-sev">高优先</span>
+    <span class="tag t-todo">待修（≡ 历史 H1，架构级）</span>
+  </p>
+
+  <h2>① 根因：软件 bit-bang 不可被打断</h2>
+  <p>电机 IC 走 <strong>I²C2 软件 bit-banging</strong> —— 逐位翻转 GPIO + DWT 精确延时的事务。
+     有两处都会操作 I²C2：</p>
+  <table>
+    <tr><th>谁</th><th>何时用 I²C2</th></tr>
+    <tr><td><strong>TIM6 采样 ISR</strong>（中断上下文）</td><td>采样 / 信号发生器运行时，读/写电机寄存器（有意设计，为采样时序精度）</td></tr>
+    <tr><td><strong>主循环寄存器 IO</strong></td><td><code>0x20</code>/<code>0x21</code>/<code>0x22</code>/<code>0x30</code>/<code>0x31</code> handler</td></tr>
+  </table>
+
+  <h2>② 冲突：事务做一半被 ISR 抢断 → 时序损坏</h2>
+  <div class="diagram"><span class="ldim">主循环正在发 bulk read 的一个 I²C2 字节（bit-bang 中）：</span>
+
+主循环:  SCL↑ SDA=b6 SCL↓ SCL↑ SDA=b5 <span class="lbad">┊╳━━━━━━━━━━━━━━╳┊</span> SCL↓ ...继续 b4
+                                    <span class="lbad">▲</span>              <span class="lbad">▲</span>
+TIM6 ISR:                          <span class="lbad">└─ 抢断！ISR 也翻 SCL/SDA 读采样 ─┘</span>
+
+<span class="lbad">结果：两个事务的电平翻转交错 → SDA/SCL 乱跳 → 读到错数据 / 总线挂死</span></div>
+
+  <h2>③ 锁机制：屏蔽 TIM6 ISR</h2>
+  <pre><span class="cmt">/* app_sample.c — Acquire = 屏蔽采样 ISR，Release = 恢复 */</span>
+App_Sample_AcquireBus();   <span class="cmt">// NVIC_DisableIRQ(TIM6_DAC_IRQn)</span>
+... I²C2 事务 ...          <span class="cmt">// 此间 ISR 不会抢断</span>
+App_Sample_ReleaseBus();   <span class="cmt">// NVIC_EnableIRQ(TIM6_DAC_IRQn)</span></pre>
+
+  <h2>④ 现状：只补了一半</h2>
+  <table>
+    <tr><th>命令</th><th>位置</th><th>是否已包锁</th></tr>
+    <tr><td><code>0x20</code> 读寄存器</td><td>app_protocol.c:471-473</td><td class="ok">✅ 已包</td></tr>
+    <tr><td><code>0x21</code> 写寄存器</td><td>app_protocol.c:504-506</td><td class="ok">✅ 已包</td></tr>
+    <tr><td><code>0x22</code> 批量读</td><td>app_protocol.c:567-588</td><td class="bad">❌ 未包（最危险，最多 255 包）</td></tr>
+    <tr><td><code>0x30</code>/<code>0x31</code> AW 透传</td><td>HandleI2cPass*</td><td class="bad">❌ 未包</td></tr>
+  </table>
+  <pre><span class="cmt">/* 0x20 已包锁（正例） */</span>
+App_Sample_AcquireBus();
+ErrorStatus s = App_Motor_ReadReg(reg, &val);
+App_Sample_ReleaseBus();
+
+<span class="cmt">/* 0x22 bulk read 循环 —— 无锁（H-d） */</span>
+<span class="kw">for</span> (pktIdx = 0; pktIdx &lt; totalPkts; pktIdx++) {
+    <span class="kw">for</span> (i = 0; i &lt; regsThisPkt; i++) {
+        App_Motor_ReadReg(...);   <span class="lbad">// ← 无 AcquireBus 保护</span>
+    }
+    BSP_UART_TxWait();
+    SendFrameWithRetry(...);
+}</pre>
+
+  <h2>⑤ 当前两道弱防线 + 漏洞</h2>
+  <div class="card">
+    <p>bulk read 现在靠：① 入口 <code>App_Sample_IsActive()</code> 拒绝（:559）；② 置 <code>s_bulkReadActive=1</code>（:566）。</p>
+    <p class="lwarn">⚠ 漏洞：入口只挡「采样（0x50）」，<strong>不挡信号发生器（0x55/0x56/0x58）</strong>
+       —— 发生器同样在 TIM6 ISR 里写 I²C2。发生器运行时来一条 bulk read，入口放行 → ISR 抢断 → 总线损坏。</p>
+  </div>
+
+  <h2>⑥ 为什么没顺手修</h2>
+  <div class="card fix">
+    <p>不能把整个 bulk read 循环包进一对 <code>AcquireBus/ReleaseBus</code> —— 那会连续屏蔽采样 ISR
+       几百毫秒（255 包 × (I²C 读 + UART 发)），把采样饿死。</p>
+    <p>正确做法需<strong>按包/按事务粒度</strong>加锁：</p>
+    <ul>
+      <li>只锁每包的 I²C 读循环，放开 UART 发送间隙（让 ISR 能在包之间运行）</li>
+      <li>入口补 <code>App_Generator_IsRunning()</code> 校验，堵住发生器漏洞</li>
+      <li><code>0x30</code>/<code>0x31</code> 透传同样按事务包锁</li>
+    </ul>
+    <p>因需设计取舍，列为待修（CLAUDE.md <code>## TODO</code> 高优先 H-d / H1）。</p>
+  </div>
+
+  <p style="color:var(--cmt); font-size:.85rem; margin-top:2.5rem; border-top:1px solid var(--bd); padding-top:1rem;">
+    生成于 2026-06-01 · 对应审查发现 H-d（≡ 历史 H1）· app_protocol.c / app_sample.c</p>
+
+</div>
+</body>
+</html>
