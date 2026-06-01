@@ -287,16 +287,41 @@ API：`BSP_SampleTim_Init(freq)`、`SetFreq(freq)`、`Start()`、`Stop()`。ISR 
 | 4.3 | 寄存器读写命令（`0x20~0x22`，新建 `app_motor.c`） | 读写 PMIC/INA 寄存器验证 | **完成** |
 | 4.4 | 采样控制命令（`0x50~0x54`，新建 `app_sample.c`） | 上位机能看到持续 `0xBB` 数据流 | **完成** |
 | 4.5 | AW Firmware I2C 透传读写（`0x30`/`0x31`，扩展 `bsp_i2c2.c` + `app_protocol.c`） | 上位机可对任意 DevId / 任意 AddrSize（含 0）/ 任意 DataLen 完成读写透传，服务 AW SDK DLL 回调 | **完成** |
-| 4.6 | AW86008/AW86100 本地 ISP 烧录（`0x32~0x37`，新建 `Flash/AW/`） | EXEC 端到端 5-10s 完成，芯片可运行新固件 | **完成**（注：32KB 测试 bin 烧录返 ISP_OK 且 I2C 抓包字节匹配，但"芯片可运行新固件"未做回读验证，需后续真固件联调时确认） |
+| 4.6 | AW86008/AW86100 本地 ISP 烧录（`0x32~0x37`，新建 `Flash/AW/`） | EXEC 端到端 5-10s 完成，芯片可运行新固件 | **完成**（注：32KB 测试 bin 烧录返 ISP_OK 且 I2C 抓包字节匹配，但"芯片可运行新固件"未做回读验证，需后续真固件联调时确认。2026-06-01 健壮性加固：已修 H-b（回读路径 `aw_flash_pack_read` 栈越界）+ H-a（ISP I2C 返回值检查），为后续启用 `0x33` 回读校验扫除障碍） |
 
 ---
 
 ## TODO
 
+### 2026-06-01 全量代码审查
+
+**已修复**（commit `10d3e5b` + `bf1b591`，均 `make DEBUG=1` 通过）：
+
+| 编号 | 项目 | 备注 |
+|------|------|------|
+| S1 | `bsp_flash` 写/擦地址下界保护（防变砖） | EraseSectors/ProgramBytes 校验目标落在数据区 [Sector5, `0x08020000`) |
+| S3 | `bsp_i2c2` 软件 I2C 拉伸超时：SCL 停 HIGH + 读脏数据静默 | 新增 `s_busTimeout`；超时补 `SCL_LOW()`，读路径置位则返 ERROR 计入失败计数 |
+| H-a | AW ISP I2C 返回值全 `(void)` 丢弃 | 5 个子步骤改为检查返回值快速失败，跳过无谓长延时；成功路径不变 |
+| H-b | `aw_flash_pack_read` `r_buff[69]` 栈越界 | → `r_buff[78]`，仅 `0x33` 回读/upload 路径触发 |
+| H-c | `main.c` `BSP_UART_Init()` 返回值丢弃 | 新增 `HaltNoUart()`，UART 自身故障用 100ms 快闪（区别 500ms）指示 |
+| ~~S2~~ | ~~TIM6 ISR 内做 I2C 采样~~ | **撤销**：有意设计（采样时序精度），非缺陷。见 memory `project_isr_sampling_intentional` |
+
+**剩余待修**：
+
+| 优先级 | 编号 | 项目 |
+|--------|------|------|
+| 高 | H-d（≡旧 H1） | 并发总线锁：`0x20`/`0x21` 已包 `AcquireBus`，**`0x30`/`0x31` 透传 + bulk read 仍未包**；详见下方 H1 |
+| 中 | H-e | `app_sample` 双缓冲组帧：`mask`/`totalCount` 快照与数据 buffer 可能不同源（极端时序下通道错位） |
+| 中 | — | `bsp_i2c2` `RecoverBus` 无法恢复 SCL 被从机钳死 / `Scan` `pAddrList` 无上界 |
+| 低 | — | `SetChannelMask` 清失败计数+临界区 / `StartCosine` 入口边界 / `bsp_pmic` `SetEnable` 读改写 / MemManage·BusFault·UsageFault 静默 `while(1)` / `s_bulkReadActive` 缺 `volatile` |
+| 结构 | — | 重复代码（session 复位×3·三角波·handler 入口）/ 魔法数字（2π·响应长度·HardFault 引脚）/ IWDG 看门狗 / `DispatchFrame` 查找表 |
+
+### 历史（0513 review）
+
 | 优先级 | 项目 | 说明 |
 |--------|------|------|
-| 高 | **H1: 采样运行中 I2C 总线并发保护** | TIM6 ISR (采样读/发生器写) 与主循环寄存器 IO (`0x20`/`0x21`/`0x30`/`0x31`) 共用 I2C2 无锁，存在抢断时总线时序损坏风险。**当前先不修，留待后续处理**。计划方案：`app_sample.c` 暴露 `AcquireBus/ReleaseBus` API（NVIC mask TIM6_DAC_IRQ），4 个 IO handler 包装 acquire-execute-release；详见 `TRACKING/0513_code_review.md` H1 与对话历史 |
-| 中 | 其它 review 发现 (H2~H4 / M2~M8 / L1~L5) | 完整清单见 `TRACKING/0513_code_review.md`，按优先级处理。重点项：H2 (`app_sample.h` 默认 idx 注释错)、H3 (totalCount=0 误触发 auto-stop)、H4 (TIM6 ISR clock-stretch 阻塞 10 ms)。M1 (LED 心跳频率) 已通过本次改动消除 |
+| 高 | **H1（≡本次 H-d）：采样运行中 I2C 总线并发保护** | TIM6 ISR (采样读/发生器写) 与主循环寄存器 IO 共用 I2C2 无锁。**进度**：`0x20`/`0x21`（ReadReg/WriteReg）已用 `AcquireBus/ReleaseBus` 包装（`app_protocol.c:471`/`:504`）；`0x30`/`0x31` 透传与 bulk read 仍未包，待补。计划：`AcquireBus/ReleaseBus` 内 NVIC mask `TIM6_DAC_IRQ`；详见 `TRACKING/0513_code_review.md` |
+| 中 | 其它 review (H2 / H4 / M2~M8 / L1~L5) | 完整清单见 `TRACKING/0513_code_review.md`。**H3**（totalCount=0 误触发 auto-stop）**已修**（`app_sample.c:342` 加 `totalCount>0` 守卫）；**M1**（LED 心跳频率）已消除；H2 (`app_sample.h` 默认 idx 注释错)、H4 (TIM6 ISR clock-stretch 阻塞，注：S3 已让超时可返错) 待处理 |
 
 ---
 
