@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>H-b 讲解：aw_flash_pack_read 栈缓冲区越界</title>
+<style>
+  :root { --bg:#0d1117; --fg:#c9d1d9; --kw:#ff7b72; --num:#79c0ff; --cmt:#8b949e;
+          --str:#a5d6ff; --hl:#f85149; --ok:#3fb950; --card:#161b22; --bd:#30363d; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:2rem; background:var(--bg); color:var(--fg);
+         font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; line-height:1.7; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:1.7rem; border-bottom:2px solid var(--bd); padding-bottom:.6rem; }
+  h2 { font-size:1.25rem; margin-top:2rem; color:#58a6ff; }
+  code, pre { font-family:"Cascadia Code","Consolas",monospace; }
+  pre { background:var(--card); border:1px solid var(--bd); border-radius:8px;
+        padding:1rem 1.2rem; overflow-x:auto; font-size:.9rem; }
+  .kw{color:var(--kw)} .num{color:var(--num)} .cmt{color:var(--cmt)} .str{color:var(--str)}
+  .bad{background:rgba(248,81,73,.15); color:#ffa198; padding:0 .2rem; border-radius:3px;}
+  .tag { display:inline-block; padding:.15rem .6rem; border-radius:999px; font-size:.8rem;
+         font-weight:600; }
+  .t-sev { background:rgba(248,81,73,.18); color:#ff7b72; border:1px solid #f85149; }
+  .t-cond { background:rgba(210,153,34,.18); color:#e3b341; border:1px solid #9e6a03; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:8px;
+          padding:1rem 1.3rem; margin:1rem 0; }
+  .calc { font-family:"Cascadia Code",monospace; background:#010409; border-radius:6px;
+          padding:1rem; border:1px solid var(--bd); }
+  .calc .res { color:var(--hl); font-weight:700; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; }
+  th,td { border:1px solid var(--bd); padding:.5rem .8rem; text-align:left; font-size:.92rem; }
+  th { background:var(--card); }
+  .arrow { color:var(--hl); font-weight:700; }
+  .fix { border-left:4px solid var(--ok); padding-left:1rem; }
+  .flow { font-family:monospace; color:var(--cmt); }
+  .flow b { color:#58a6ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>H-b：<code>aw_flash_pack_read</code> 栈缓冲区越界</h1>
+  <p>
+    <span class="tag t-sev">严重度：栈破坏（越界写）</span>
+    <span class="tag t-cond">触发：仅 0x33 回读 / upload 路径</span>
+  </p>
+  <p>文件：<code>Flash/AW/AW86008_86100/Src/aw_uboot_isp.c:313</code> —
+     AW 芯片 flash 的「按包回读」函数，供 0x33 回读 / upload 校验使用。</p>
+
+  <h2>① 问题：接收缓冲区开小了</h2>
+  <pre><span class="cmt">/* :317-318 */</span>
+<span class="kw">uint8_t</span> w_buff[<span class="num">78</span>] = { <span class="num">0</span> };   <span class="cmt">// 发送缓冲，78 字节</span>
+<span class="kw">uint8_t</span> r_buff[<span class="bad">69</span>] = { <span class="num">0</span> };   <span class="cmt">// 接收缓冲，只有 69 字节 ← 隐患</span></pre>
+  <p>供应商原始代码两个缓冲尺寸<strong>不对称</strong>：发送给了 78，接收却只给 69。</p>
+
+  <h2>② 越界点 A — 写越界（:342）</h2>
+  <pre><span class="cmt">/* :342 */</span>
+(<span class="kw">void</span>)aw_i2c_read(AW_UBOOT_I2C_ADDR, <span class="num">0U</span>, NULL,
+                  (<span class="kw">uint8_t</span>)(u32ReadLen * <span class="num">4</span> + <span class="num">1</span> + <span class="num">4</span> + <span class="num">9</span>), r_buff);
+<span class="cmt">//                读取长度 = u32ReadLen*4 + 14，直接透传给 BSP_I2C2_TransparentRead 写入 r_buff</span></pre>
+  <p><code>aw_flash_read</code>(:372-376）把数据按 16 字一块切分，每块以
+     <code>u32ReadLen = 16</code> 调用本函数。代入最大值：</p>
+  <div class="calc">
+    读取长度 = <span class="num">16</span> * 4 + 14 = 64 + 14 = <span class="res">78 字节</span><br>
+    r_buff 容量&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = <span class="res">69 字节</span><br>
+    ────────────────────────────<br>
+    向 69 字节缓冲写入 78 字节 <span class="arrow">→ 越界写 9 字节</span>
+  </div>
+  <p>这 9 字节会踩踏栈上相邻数据（相邻局部变量 / 返回地址附近），属<strong>栈破坏</strong>，
+     行为不可预测：可能 HardFault，也可能静默改写其他变量。</p>
+
+  <h2>③ 越界点 B — 读越界（:353-354）</h2>
+  <pre><span class="cmt">/* :353-354 */</span>
+<span class="kw">for</span> (i = <span class="num">0</span>; i &lt; u32ReadLen * <span class="num">4</span>; i++) {            <span class="cmt">// i 最大到 63</span>
+    byDataBuff[u32PackNum * <span class="num">64</span> + i] = r_buff[<span class="num">14</span> + i];   <span class="cmt">// 14 + 63 = 77</span>
+}</pre>
+  <div class="calc">
+    最大读取索引 = r_buff[14 + 63] = r_buff[<span class="res">77</span>]，超出 69 的边界 <span class="arrow">→ 越界读</span>
+  </div>
+
+  <h2>④ 触发条件（为什么现在"还没炸"）</h2>
+  <p class="flow">
+    <b>aw_i2c_isp_upload</b>(:254) → <b>aw_flash_read</b>(:360) → <b>aw_flash_pack_read</b>(..., 16)
+  </p>
+  <table>
+    <tr><th>路径</th><th>是否经过 pack_read</th><th>结果</th></tr>
+    <tr><td>主烧录 EXEC（0x32 download）</td><td>否</td><td>当前烧录<strong>不触发</strong></td></tr>
+    <tr><td>回读 / upload 校验（0x33）</td><td>是（u32ReadLen=16）</td><td><span style="color:#ff7b72">触发栈破坏</span></td></tr>
+  </table>
+  <p>CLAUDE.md 路线图 4.6 记着「芯片可运行新固件未做回读验证」——
+     <strong>一旦启用 0x33 回读来确认烧录成功，这个栈破坏立刻发生</strong>。
+     因此它属于「启用回读校验前必修」。</p>
+
+  <h2>⑤ 修复</h2>
+  <div class="card fix">
+    <p>两个越界点的最大需求都是 78（读取长度 78、最大索引 77）。
+       把接收缓冲改到 78 即可：</p>
+    <pre><span class="kw">uint8_t</span> r_buff[<span class="bad">69</span>] = { 0 };   <span class="arrow">→</span>   <span class="kw">uint8_t</span> r_buff[<span style="color:#3fb950">78</span>] = { 0 };</pre>
+    <p>因属供应商代码，按项目约定需在文件头补一条修改注释说明本次改动。</p>
+  </div>
+
+  <p style="color:var(--cmt); font-size:.85rem; margin-top:2.5rem; border-top:1px solid var(--bd); padding-top:1rem;">
+    生成于 2026-06-01 · 对应代码审查发现 H-b · 文件 aw_uboot_isp.c</p>
+
+</div>
+</body>
+</html>

@@ -35,6 +35,18 @@
  *              对应协议 0x38 FLASH_EXEC_PROGRESS：erase 前/后 各一次 (phase=0)，
  *              write 块循环每次成功后一次 (phase=1)。32 KB 固件典型上报 ~514 次。
  *              vendor 流程与返回值完全不变；on_progress=NULL 时无任何运行时差异。
+ *  2026-06-01  aw_flash_pack_read 接收缓冲 r_buff[69] → r_buff[78]（vendor 尺寸 bug）。
+ *              根因：读长度 = u32ReadLen*4 + 14，整块读 u32ReadLen=16 时 = 78 字节，
+ *              且数据拷贝最大索引 r_buff[14+63]=r_buff[77]，二者均超出原 69 → 栈越界
+ *              写/读。w_buff 本就是 78，r_buff 给 69 属不对称笔误。仅 0x33 回读/upload
+ *              路径触发（EXEC download 不经过），启用回读校验前必修。对应审查发现 H-b。
+ *  2026-06-01  I2C 写/读返回值从全部 (void) 丢弃 → 关键调用点检查并提前返回错误
+ *              （AwWakeSequence / aw_hank_connect_check / aw_flash_block_erase_check /
+ *               aw_flash_block_write_ckeck / aw_flash_pack_read）。配合 S3（bsp_i2c2
+ *              超时/NACK 现可返回 ERROR）后，写失败可立即返错而非白等 delay_ms(25*len)
+ *              /delay_ms(10) 再靠 memcmp 兜底；成功路径行为不变。对应审查发现 H-a。
+ *              注：aw_i2c_stop_uboot 的 20× fire-and-forget 序列按 vendor 原意保持尽力发，
+ *              不检查返回值。
  * ============================================================================
  */
 
@@ -119,30 +131,33 @@ void aw_i2c_stop_uboot(void)
 
 static ISP_STATUS_E AwWakeSequence(void)
 {
-	(void)aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xa3, 0x02 });
+	/* 任一写 NACK/超时 = 芯片不应答，提前返回而非走完整序列。 */
+	if (aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xa3, 0x02 }) != 0) { return ISP_FLASH_ERROR; }
 	delay_ms(2);
-	(void)aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xb7, 0x5a });
+	if (aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xb7, 0x5a }) != 0) { return ISP_FLASH_ERROR; }
 	delay_ms(2);
-	(void)aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xb7, 0x00 });
+	if (aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xb7, 0x00 }) != 0) { return ISP_FLASH_ERROR; }
 	delay_ms(15);
-	(void)aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 10U,
-	    (uint8_t[]){ 0xff, 0xf0, 0x20, 0x20, 0x02, 0x02, 0x19, 0x29, 0x19, 0x29 });
+	if (aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 10U,
+	    (uint8_t[]){ 0xff, 0xf0, 0x20, 0x20, 0x02, 0x02, 0x19, 0x29, 0x19, 0x29 }) != 0) { return ISP_FLASH_ERROR; }
 
 	{
 		uint8_t rdval = 0U;
-		(void)aw_i2c_read(AW_CHIP_I2C_ADDR, 2U,
-		    (uint8_t[]){ 0xff, 0xf0 }, 1U, &rdval);
+		if (aw_i2c_read(AW_CHIP_I2C_ADDR, 2U,
+		    (uint8_t[]){ 0xff, 0xf0 }, 1U, &rdval) != 0) {
+			return ISP_FLASH_ERROR;
+		}
 		if (rdval != 0x01U) {
 			return ISP_FLASH_ERROR;
 		}
 	}
 	delay_ms(2);
 
-	(void)aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xb4, 0x00 });
+	if (aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xb4, 0x00 }) != 0) { return ISP_FLASH_ERROR; }
 	delay_ms(2);
-	(void)aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xa3, 0x00 });
+	if (aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xa3, 0x00 }) != 0) { return ISP_FLASH_ERROR; }
 	delay_ms(2);
-	(void)aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xb4, 0x01 });
+	if (aw_i2c_write(AW_CHIP_I2C_ADDR, 0U, NULL, 3U, (uint8_t[]){ 0xff, 0xb4, 0x01 }) != 0) { return ISP_FLASH_ERROR; }
 
 	return ISP_OK;
 }
@@ -315,7 +330,7 @@ ISP_STATUS_E aw_flash_pack_read(uint32_t u32Addr, uint32_t u32PackNum, uint8_t* 
 	ISP_STATUS_E ret = ISP_OK;
 	uint8_t l_buff[6] = { 0 };
 	uint8_t w_buff[78] = { 0 };
-	uint8_t r_buff[69] = { 0 };
+	uint8_t r_buff[78] = { 0 };   /* 78 = 读长度上限(u32ReadLen=16): 16*4+14；勿改回 69 */
 	uint32_t i = 0;
 	uint8_t tmp = -1;
 
@@ -335,11 +350,16 @@ ISP_STATUS_E aw_flash_pack_read(uint32_t u32Addr, uint32_t u32PackNum, uint8_t* 
 	uboot_struct.p_uboot_data = l_buff;
 	aw_uboot_buff_built(w_buff, &uboot_struct);
 
-	(void)aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, 15U, w_buff);
+	if (aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, 15U, w_buff) != 0) {
+		return ISP_FLASH_ERROR;
+	}
 
 	delay_ms(1);
 
-	(void)aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, (uint8_t)(u32ReadLen * 4 + 1 + 4 + 9), r_buff);
+	if (aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL,
+	                (uint8_t)(u32ReadLen * 4 + 1 + 4 + 9), r_buff) != 0) {
+		return ISP_FLASH_ERROR;
+	}
 
 	if (r_buff[9] == 0) {
 		tmp = 0;
@@ -414,11 +434,15 @@ ISP_STATUS_E aw_flash_block_erase_check(uint32_t addr, uint32_t len)
 	uboot_structure.p_uboot_data = l_buff;
 	aw_uboot_buff_built(w_buff, &uboot_structure);
 
-	(void)aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, 15U, w_buff);
+	if (aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, 15U, w_buff) != 0) {
+		return ISP_FLASH_ERROR;   /* 写失败：跳过 delay_ms(25*len) 长等待 */
+	}
 
 	delay_ms(25 * len);
 
-	(void)aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, 10U, r_buff);
+	if (aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, 10U, r_buff) != 0) {
+		return ISP_FLASH_ERROR;
+	}
 
 	uboot_structure.uboot_event = FLASH_ERASE_BLOCK_ACK;
 	uboot_structure.uboot_ack = UBOOT_ACK;
@@ -461,7 +485,9 @@ ISP_STATUS_E aw_flash_block_write_ckeck(uint32_t addr, uint32_t block_num, uint8
 	uboot_structure.p_uboot_data = l_buff;
 	aw_uboot_buff_built(w_buff, &uboot_structure);
 
-	(void)aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, (uint8_t)(13 + 4 * len), w_buff);
+	if (aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, (uint8_t)(13 + 4 * len), w_buff) != 0) {
+		return ISP_FLASH_ERROR;   /* 写失败：跳过 delay_ms(10) 等待 */
+	}
 
 	/* 2026-05-23 本地改动：vendor 原 delay_ms(1) 太短，AW 物理 Flash 写完成前
 	 * master 已发起 read，读回全 0x00，memcmp 失败返 ISP_FLASH_ERROR。
@@ -469,7 +495,9 @@ ISP_STATUS_E aw_flash_block_write_ckeck(uint32_t addr, uint32_t block_num, uint8
 	 * 收紧到 10ms 以缩短烧录时间（512 块 ×15ms 累计省 ~7.7s）。 */
 	delay_ms(10);
 
-	(void)aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, 10U, r_buff);
+	if (aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, 10U, r_buff) != 0) {
+		return ISP_FLASH_ERROR;
+	}
 
 	uboot_structure.uboot_event = FLASH_WRITE_ACK;
 	uboot_structure.uboot_ack = UBOOT_ACK;
@@ -560,11 +588,15 @@ ISP_STATUS_E aw_hank_connect_check(void)
 	uboot_structure.p_uboot_data =  0;
 	aw_uboot_buff_built(w_buff, &uboot_structure);
 
-	(void)aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, 9U, w_buff);
+	if (aw_i2c_write(AW_UBOOT_I2C_ADDR, 0U, NULL, 9U, w_buff) != 0) {
+		return ISP_HANK_ERROR;
+	}
 
 	delay_ms(2);
 
-	(void)aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, 14U, r_buff);
+	if (aw_i2c_read(AW_UBOOT_I2C_ADDR, 0U, NULL, 14U, r_buff) != 0) {
+		return ISP_HANK_ERROR;
+	}
 
 	uboot_structure.uboot_event = HANK_CONNECT_ACK;
 	uboot_structure.uboot_ack = UBOOT_ACK;

@@ -27,6 +27,7 @@
 
 #define HEARTBEAT_INTERVAL_MS         500U
 #define HALT_BLINK_INTERVAL_MS        500U   /* 启动失败统一闪烁频率（与心跳同频，诊断走串口 0x0B 帧） */
+#define HALT_BLINK_NOUART_MS          100U   /* UART 自身故障：快闪，区别于 500ms，现场无串口可辨识 */
 
 /**
   * @brief  启动失败时：先经串口发 0x0B BOOT_STATUS 帧告知 PC 具体模块，
@@ -45,6 +46,21 @@ static void HaltOnInitFail(Proto_BootStatus_t status)
     }
 }
 
+/**
+  * @brief  UART 自身初始化失败时的死循环：诊断通道（串口）不可用，
+  *         不能走 HaltOnInitFail，改用快闪 LED（HALT_BLINK_NOUART_MS）
+  *         作可见指示，使现场能与"其它模块故障（500ms 慢闪 + 串口帧）"区分。
+  */
+static void HaltNoUart(void)
+{
+    while (1)
+    {
+        uint32_t t0 = BSP_GetTick();
+        while ((BSP_GetTick() - t0) < HALT_BLINK_NOUART_MS) { ; }
+        BSP_LED1_Toggle();
+    }
+}
+
 int main(void)
 {
     /* NVIC priority group — must be first */
@@ -56,8 +72,11 @@ int main(void)
     /* LED */
     BSP_LED_Init();
 
-    /* UART */
-    BSP_UART_Init();
+    /* UART — 诊断上报的唯一通道；自身失败时只能用快闪 LED 指示 */
+    if (BSP_UART_Init() != SUCCESS)
+    {
+        HaltNoUart();
+    }
 
     /* I2C1 (INA power/current measurement) */
     if (BSP_I2C1_Init() != SUCCESS)
