@@ -85,6 +85,7 @@ make clean        # 清理 build/
 |------|------|
 | `firmware.elf` | 含调试信息，用于 GDB |
 | `firmware.bin` | 纯二进制，用于烧录 |
+| `firmware.hex` | Intel HEX，用于第三方烧录器 |
 | `firmware.map` | 链接映射，查看内存占用 |
 
 > 关键编译标志：`-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb`、`-Wall -Wextra -Wshadow`、`-Wl,--gc-sections -specs=nano.specs`。栈 2 KB，**堆为 0（全项目静态分配，禁用 malloc/free）**。
