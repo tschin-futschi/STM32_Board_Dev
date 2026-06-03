@@ -145,13 +145,5 @@ SECTIONS
     /* Stack top = end of SRAM1 */
     _estack = ORIGIN(SRAM1) + LENGTH(SRAM1);
 
-    /* Discard unwanted sections */
-    /DISCARD/ :
-    {
-        libc.a(*)
-        libm.a(*)
-        libgcc.a(*)
-    }
-
     .ARM.attributes 0 : { *(.ARM.attributes) }
 }

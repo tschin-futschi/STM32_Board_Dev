@@ -68,7 +68,7 @@ WARN_FLAGS = -Wall -Wextra -Wshadow
 LINK_FLAGS = -Wl,--gc-sections -specs=nano.specs
 ```
 
-预定义宏：`USE_STDPERIPH_DRIVER`、`STM32F429xx`、`HSE_VALUE=8000000U`
+预定义宏：`USE_STDPERIPH_DRIVER`、`STM32F429_439xx`、`HSE_VALUE=8000000U`（SPL 设备族宏，非 CMSIS 风格的 `STM32F429xx`）
 
 ### 库路径
 
@@ -100,7 +100,7 @@ SPL_DIR = STM32F4xx_DSP_StdPeriph_Lib_V1.9.0/Libraries
 Core/Inc/    main.h, stm32f4xx_conf.h, stm32f4xx_it.h
 Core/Src/    main.c, stm32f4xx_it.c（全部 ISR 集中于此）,
              system_stm32f4xx.c, retarget.c（仅 DEBUG）
-Core/Startup/  startup_stm32f429zgtx.s
+Core/Startup/  startup_stm32f429_439xx.s
 BSP/Inc/     bsp_uart.h, bsp_i2c.h, bsp_tim.h, bsp_led.h, bsp_tick.h
 BSP/Src/     bsp_uart.c, bsp_i2c.c, bsp_tim.c, bsp_led.c, bsp_tick.c
 App/Inc/     app_protocol.h, app_motor.h, app_sample.h
