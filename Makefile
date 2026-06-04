@@ -60,6 +60,7 @@ C_SOURCES += App/Src/app_flashstore.c
 # Test sources
 C_SOURCES += Test/Src/test_pmic.c
 C_SOURCES += Test/Src/test_i2c_scan.c
+C_SOURCES += Test/Src/test_i2c2_pin.c
 
 # Flash (vendor ISP) sources — AW86008/AW86100
 C_SOURCES += Flash/AW/AW86008_86100/Src/aw_port_stm32.c

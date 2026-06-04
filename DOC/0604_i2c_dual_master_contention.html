@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>I2C2 "双主机抢总线" 讲解 — STM32F429ZG 电机调试板</title>
+<style>
+  :root {
+    --bg: #0f1419; --card: #1a2129; --fg: #d6deeb; --dim: #8a99a8;
+    --hi: #7fdbca; --acc: #82aaff; --warn: #f78c6c; --bad: #ef5350; --good: #c3e88d;
+    --kw: #c792ea; --num: #f78c6c; --str: #c3e88d; --cm: #637777; --mac: #ffcb6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0f1419; color: #d6deeb; font-family: "Segoe UI","Microsoft YaHei",sans-serif; line-height: 1.7; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 26px; border-bottom: 2px solid #7fdbca; padding-bottom: 12px; color: #7fdbca; }
+  h2 { font-size: 20px; color: #82aaff; margin-top: 40px; border-left: 4px solid #82aaff; padding-left: 12px; }
+  h3 { font-size: 16px; color: #ffcb6b; margin-top: 28px; }
+  p, li { font-size: 15px; }
+  code { background: #11161c; color: #7fdbca; padding: 2px 6px; border-radius: 4px; font-family: "Consolas","Cascadia Code",monospace; font-size: 13px; }
+  pre { background: #11161c; border: 1px solid #2a3441; border-radius: 8px; padding: 16px; overflow-x: auto; font-family: "Consolas","Cascadia Code",monospace; font-size: 13px; line-height: 1.55; }
+  pre code { background: none; padding: 0; color: #d6deeb; }
+  .kw { color: #c792ea; } .num { color: #f78c6c; } .str { color: #c3e88d; }
+  .cm { color: #637777; font-style: italic; } .mac { color: #ffcb6b; } .fn { color: #82aaff; }
+  .card { background: #1a2129; border: 1px solid #2a3441; border-radius: 10px; padding: 18px 22px; margin: 18px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+  th, td { border: 1px solid #2a3441; padding: 9px 12px; text-align: left; }
+  th { background: #232c36; color: #7fdbca; }
+  .callout { border-left: 4px solid #f78c6c; background: #211a14; padding: 12px 18px; border-radius: 0 8px 8px 0; margin: 18px 0; }
+  .callout.bad { border-color: #ef5350; background: #251616; }
+  .callout.good { border-color: #c3e88d; background: #18211a; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: #232c36; color: #7fdbca; margin-right: 6px; }
+  .mono-diag { font-family: "Consolas",monospace; font-size: 13px; white-space: pre; background: #11161c; border: 1px solid #2a3441; border-radius: 8px; padding: 18px; overflow-x: auto; color: #d6deeb; }
+  .bad-t { color: #ef5350; } .good-t { color: #c3e88d; } .acc-t { color: #82aaff; } .warn-t { color: #f78c6c; }
+  .small { color: #8a99a8; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>I2C2 "双主机抢总线" 是什么意思</h1>
+<p class="small">STM32F429ZG 电机调试板 · 软件 bit-bang I2C2 · 2026-06-04 · 配合扫描时 CLK 异常波形的诊断</p>
+
+<div class="callout">
+<b>一句话：</b>同一颗 MCU 里有<b>两段代码</b>（主循环的扫描、TIM6 中断里的采样）都把自己当成 I2C2 的唯一主机，去操作<b>同一对引脚 PB10/PB11</b>，互相踩踏，把总线时序搅乱。不是两块芯片，也不是标准多主机仲裁。
+</div>
+
+<h2>1. 先看 I2C 总线的前提</h2>
+<p>I2C 只有两根线，都是 <b>开漏输出 + 外部上拉电阻</b>：</p>
+<table>
+<tr><th>信号</th><th>谁驱动</th><th>作用</th></tr>
+<tr><td><code>SCL</code> 时钟</td><td>正常只有<b>主机</b>驱动</td><td>决定何时采样一个 bit、控制整笔事务的节奏</td></tr>
+<tr><td><code>SDA</code> 数据</td><td>主机 / 从机<b>分时</b>驱动</td><td>承载地址、数据、ACK</td></tr>
+</table>
+<p>正常一条总线上<b>只允许一个主机</b>。它独占地决定一笔事务的完整边界：<code>START → 地址 → 数据 → STOP</code>。从机只能被动应答，绝不会主动发起时钟。</p>
+
+<h2>2. 本项目的"双主机"其实是两段并发代码</h2>
+<p>关键：<b>不是两块芯片</b>。是 STM32 内部两段独立执行流，都对同一对引脚做软件 bit-bang：</p>
+<table>
+<tr><th></th><th>代码</th><th>运行上下文</th><th>优先级</th></tr>
+<tr><td><span class="tag">主机 A</span></td><td><code>BSP_I2C2_Scan</code> → <code>ProbeAddr</code></td><td>主循环（扫描指令 0x07）</td><td>—</td></tr>
+<tr><td><span class="tag">主机 B</span></td><td><code>App_Motor_ReadReg</code>（<code>app_sample.c:275</code>）</td><td>TIM6 采样中断</td><td>7</td></tr>
+</table>
+<p>因为 I2C2 是<b>软件 bit-bang</b>——用 GPIO 手动把 SCL/SDA 拉高拉低，而 TIM6 中断可以在<b>任意时刻</b>打断主循环。两段代码都在"裸写"同一对引脚，谁都不知道对方正处于事务中途，也没有任何互斥。</p>
+
+<h2>3. 物理上发生了什么（碰撞时间线）</h2>
+<div class="mono-diag">主循环（扫描 A）   …发到第 3 个 bit，刚把 SCL 拉低…
+                            │
+                            ▼  <span class="bad-t">← TIM6 中断在这一刻抢占</span>
+TIM6 中断（采样 B）         ├─ <span class="warn-t">自己跑一整笔事务：</span>
+                            │     START → 地址 → 寄存器地址 → 重复START → 读数据 → STOP
+                            │     <span class="warn-t">（在同一 SCL/SDA 上来回翻转十几次）</span>
+                            ▼  <span class="acc-t">← 中断返回</span>
+主循环（扫描 A）   …<span class="bad-t">以为还在第 3 个 bit</span>，继续翻转 SCL…</div>
+
+<p>从机和逻辑分析仪看到的，就是<b>两笔事务的时钟边沿交织在一起</b>：</p>
+<ul>
+<li><b>时钟"很奇怪"</b>：本该是「9 个脉冲一簇（地址字节+ACK）+ 规整间隔」的扫描，却冒出孤立窄脉冲和长间隔 —— 那是采样事务的时钟插进了扫描事务里。</li>
+<li><b>解码乱码</b>：一次 <code>ProbeAddr</code> 探测<b>只发 1 个地址字节</b>，绝不会有数据字节。但解码出现 <code>addr 00 + Wr</code> 后跟 <code>Data write:00 / DW:83 / 00 / 03</code> 多个数据字节 —— 那些就是采样事务的地址/数据字节，因为中间没有干净的 STOP 分隔，被解码器并进了同一帧。</li>
+<li><b>地址被解成 0x00</b>：两边同时把 SDA 拉低，8 个 bit 全成 0。</li>
+</ul>
+
+<div class="callout">
+<b>打个比方：</b>两个人同时用同一支笔在同一张纸上写字，或者两个人同时按下同一个对讲机讲话 —— 内容必然糊成一团。
+</div>
+
+<h3>为什么"只有一块板子"出现？</h3>
+<p>只有那块板子在你点扫描的瞬间<b>恰好正在采样 / 跑波形发生器</b>（在 I2C2 上持续流数据），所以主机 B 是活跃的。其它板子空闲，主机 B 没在跑，两者不冲突，因此波形正常。</p>
+
+<h2>4. 和"标准 I2C 多主机仲裁"的区别</h2>
+<table>
+<tr><th></th><th>标准多主机（两块芯片）</th><th>本项目（两段并发代码）</th></tr>
+<tr><td>是否有仲裁</td><td class="good-t">有：开始前检测总线空闲，发送时逐 bit 比对 SDA，谁让步谁退出</td><td class="bad-t">无：纯软件 bit-bang，两段代码之间没有互斥/检测，直接互相踩踏</td></tr>
+<tr><td>结果</td><td>失败方干净退出，赢家继续</td><td>边沿交织，两笔事务都损坏</td></tr>
+<tr><td>解决思路</td><td>靠硬件仲裁</td><td class="acc-t">靠软件保证"两者不同时上总线"</td></tr>
+</table>
+
+<h2>5. 解决办法：让两者不要同时上总线</h2>
+<table>
+<tr><th>事务类型</th><th>命令</th><th>策略</th><th>原因</th></tr>
+<tr><td>单次短事务</td><td><code>0x20</code>/<code>0x21</code>/<code>0x30</code>/<code>0x31</code></td><td><code>AcquireBus</code> 临时屏蔽 TIM6 中断（让主机 B 闭嘴几十 µs）</td><td>事务短，屏蔽 ISR 时间可接受</td></tr>
+<tr><td>长事务</td><td><code>0x22</code> bulk · <span class="bad-t">0x07 扫描（本次漏掉）</span></td><td>入口直接拒绝："采样/发生器在跑就别做"</td><td>126 次探测耗时 ~25ms+，屏蔽 ISR 太久会丢采样点</td></tr>
+</table>
+
+<div class="callout good">
+<b>本次根因：</b><code>HandleI2CScan</code>（0x07）对 I2C2 扫描既没有 <code>AcquireBus</code>，也没有像 <code>0x22</code>（<code>app_protocol.c:561</code>）那样在入口拒绝采样/发生器。补上同样的入口拒绝即可闭环。
+</div>
+
+<h3>0x22 已有的正确范式（待对齐的样板）</h3>
+<pre><code><span class="cm">/* Reject ... while sampling OR generator is active: both drive</span>
+<span class="cm"> * I2C2 from the TIM6 ISR. ... rejecting at entry is preferred (H-d). */</span>
+<span class="kw">if</span> ((<span class="fn">App_Sample_IsActive</span>() != <span class="num">0U</span>) || (<span class="fn">App_Generator_IsRunning</span>() != <span class="num">0U</span>))
+{
+    <span class="fn">SendErrorResp</span>(pFrame->seq, <span class="mac">PROTO_ERR_EXEC_FAIL</span>);
+    <span class="kw">return</span>;
+}</code></pre>
+
+<p class="small">参考：CLAUDE.md TODO H-d / H1 · <code>BSP/Src/bsp_i2c2.c</code> 软件 bit-bang · <code>App/Src/app_sample.c:275,522,532</code> · <code>App/Src/app_protocol.c:360,561</code></p>
+
+</div>
+</body>
+</html>

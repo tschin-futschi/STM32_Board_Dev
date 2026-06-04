@@ -24,8 +24,11 @@
 #if TEST_I2C_SCAN
 #include "test_i2c_scan.h"
 #endif
+#if TEST_I2C2_PIN_ID
+#include "test_i2c2_pin.h"
+#endif
 
-#define HEARTBEAT_INTERVAL_MS         500U
+#define HEARTBEAT_INTERVAL_MS         100U
 #define HALT_BLINK_INTERVAL_MS        500U   /* 启动失败统一闪烁频率（与心跳同频，诊断走串口 0x0B 帧） */
 #define HALT_BLINK_NOUART_MS          100U   /* UART 自身故障：快闪，区别于 500ms，现场无串口可辨识 */
 
@@ -132,6 +135,11 @@ int main(void)
         while (BSP_GetTick() - t0 < 1000U) {}
     }
     Test_I2C_Scan_Run();
+#endif
+
+#if TEST_I2C2_PIN_ID
+    /* SCL/SDA 串扰确认：永不返回，PB10 输出 1kHz 方波，PB11(SDA) 恒低 */
+    Test_I2C2_PinId_Run();
 #endif
 
     /* 全部初始化通过，告知 PC 系统就绪 */
