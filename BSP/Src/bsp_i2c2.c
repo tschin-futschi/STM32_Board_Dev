@@ -227,16 +227,24 @@ ErrorStatus BSP_I2C2_Init(void)
     RCC_AHB1PeriphClockCmd(BSP_I2C2_SCL_GPIO_CLK | BSP_I2C2_SDA_GPIO_CLK,
                            ENABLE);
 
-    /* 2. Configure SCL & SDA as output open-drain, no pull, 50 MHz */
+    /* 2. Configure pins, no internal pull.
+     *    串扰诊断：
+     *      - SCL 推挽 + 50MHz（master 单向驱动时钟，低阻、边沿锐利干净）；
+     *      - SDA 开漏（从机需驱动 SDA 做 ACK/读）+ 2MHz 慢速（软化数据沿，
+     *        减小窜入 SCL 的耦合尖刺）。 */
     gpioInit.GPIO_Mode  = GPIO_Mode_OUT;
-    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
-    gpioInit.GPIO_OType = GPIO_OType_OD;
     gpioInit.GPIO_PuPd  = GPIO_PuPd_NOPULL;
 
-    gpioInit.GPIO_Pin = BSP_I2C2_SCL_PIN;
+    /* SCL — push-pull, fast edge */
+    gpioInit.GPIO_OType = GPIO_OType_PP;
+    gpioInit.GPIO_Speed = GPIO_Speed_50MHz;
+    gpioInit.GPIO_Pin   = BSP_I2C2_SCL_PIN;
     GPIO_Init(BSP_I2C2_SCL_GPIO_PORT, &gpioInit);
 
-    gpioInit.GPIO_Pin = BSP_I2C2_SDA_PIN;
+    /* SDA — open-drain, slow edge (reduce coupling spikes onto SCL) */
+    gpioInit.GPIO_OType = GPIO_OType_OD;
+    gpioInit.GPIO_Speed = GPIO_Speed_2MHz;
+    gpioInit.GPIO_Pin   = BSP_I2C2_SDA_PIN;
     GPIO_Init(BSP_I2C2_SDA_GPIO_PORT, &gpioInit);
 
     /* 3. Release both lines (idle high) */
